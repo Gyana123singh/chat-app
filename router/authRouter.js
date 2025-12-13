@@ -13,22 +13,13 @@ router.get(
 );
 
 // 2️⃣ Google Callback
-// router.get(
-//   "/google/callback",
-//   passport.authenticate("google", {
-//     session: false,
-//     failureRedirect: "/failed",
-//   }),
-//   authController.googleAuthSuccess
-// );
-
-
 router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
-    failureRedirect: "/auth/google/failure",
+    failureRedirect: "/failed",
   }),
-  googleAuthSuccess
+  authController.googleAuthSuccess
 );
+
 module.exports = router;
