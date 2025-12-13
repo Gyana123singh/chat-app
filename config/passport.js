@@ -7,7 +7,11 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "https://chat-app-1-qvl9.onrender.com/auth/google/callback",
+      callbackURL:
+        process.env.NODE_ENV === "production"
+          ? "https://chat-app-1-qvl9.onrender.com/auth/google/callback"
+          : "http://localhost:5000/auth/google/callback",
+
       // callbackURL: "http://localhost:5000/auth/google/callback",
     },
     async (accessToken, refreshToken, profile, done) => {

@@ -1,50 +1,47 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
-const bodyParser = require("body-parser");
 const passport = require("passport");
-const session = require("express-session");
+
 dotenv.config();
 require("./config/passport");
 
 const { connectMongose } = require("./config/mongoDb");
 const authRoutes = require("./router/authRouter");
-const adminRoutes=require("./router/adminRouter")
+const adminRoutes = require("./router/adminRouter");
 
 const app = express();
+
+// 🔹 Connect MongoDB
 connectMongose();
 
-const PORT = process.env.PORT || 5001;
+// 🔹 Render provides PORT automatically
+const PORT = process.env.PORT || 5000;
 
-// middleware
+// 🔹 Middleware
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: [
+      "http://localhost:3000",              // local Next.js
+      "https://your-nextjs-domain.com"      // 🔁 replace when deployed
+    ],
     credentials: true,
   })
 );
 
-app.use(bodyParser.json());
 app.use(express.json());
+app.use(passport.initialize()); // ✅ NO session
 
-app.use(
-  session({
-    secret: "secret123",
-    resave: false,
-    saveUninitialized: true,
-  })
-);
-
-app.use(passport.initialize());
-// app.use(passport.session());
-
+// 🔹 Routes
 app.use("/auth", authRoutes);
 app.use("/api", adminRoutes);
 
+// 🔹 Health check
 app.get("/", (req, res) => {
   res.send("API is running...");
 });
 
+// 🔹 Start server
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
