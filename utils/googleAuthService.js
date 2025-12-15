@@ -1,5 +1,5 @@
-const User = require("../models/users");
-const { signToken  } = require("../utils/jwt");
+const User = require("../models/Users");
+const { signToken } = require("../utils/jwtAuth");
 
 const handleGoogleAuth = async (profile) => {
   const email = profile.emails[0].value;
@@ -21,7 +21,7 @@ const handleGoogleAuth = async (profile) => {
     await user.save();
   }
 
-  return signToken (user);
+  return signToken(user);
 };
 
 module.exports = { handleGoogleAuth };

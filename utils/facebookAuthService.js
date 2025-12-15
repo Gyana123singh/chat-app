@@ -1,4 +1,4 @@
-const User = require("../models/User");
+const User = require("../models/Users");
 const { generateToken } = require("../utils/jwt");
 
 const handleFacebookAuth = async (profile) => {

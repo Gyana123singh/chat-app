@@ -1,14 +1,16 @@
-const { signToken } = require("../utils/jwt");
+const { signToken } = require("../utils/jwtAuth");
 
 exports.googleAuthSuccess = async (req, res) => {
   if (!req.user) {
-    return res.redirect("http://localhost:3000/Login?error=google");
+    return res.redirect(
+      `${process.env.CLIENT_URL}/Login?error=google`
+    );
   }
 
   const token = signToken(req.user);
 
-  // ✅ MUST redirect, not res.json
+  // ✅ Redirect to Vercel frontend
   res.redirect(
-    `http://localhost:3000/auth/google/success?token=${token}`
+    `${process.env.CLIENT_URL}/auth/google/success?token=${token}`
   );
 };
