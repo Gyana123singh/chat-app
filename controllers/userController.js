@@ -1,16 +1,16 @@
 // controllers/userController.js
-const User = require('../models/Users');
+const User = require("../models/Users");
 
 exports.getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
-      .populate('followers', 'username profile.avatar')
-      .populate('following', 'username profile.avatar');
+      .populate("followers", "username profile.avatar")
+      .populate("following", "username profile.avatar");
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found',
+        message: "User not found",
       });
     }
 
@@ -21,7 +21,7 @@ exports.getProfile = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch profile',
+      message: "Failed to fetch profile",
       error: error.message,
     });
   }
@@ -35,10 +35,10 @@ exports.updateProfile = async (req, res) => {
       req.user.id,
       {
         profile: {
-          bio: bio || '',
-          avatar: avatar || '',
-          language: language || 'English',
-          theme: theme || 'dark',
+          bio: bio || "",
+          avatar: avatar || "",
+          language: language || "English",
+          theme: theme || "dark",
           interests: interests || [],
         },
       },
@@ -47,13 +47,13 @@ exports.updateProfile = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Profile updated successfully',
+      message: "Profile updated successfully",
       user: user.toJSON(),
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to update profile',
+      message: "Failed to update profile",
       error: error.message,
     });
   }
@@ -62,13 +62,13 @@ exports.updateProfile = async (req, res) => {
 exports.getUserById = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('followers', 'username profile.avatar')
-      .populate('following', 'username profile.avatar');
+      .populate("followers", "username profile.avatar")
+      .populate("following", "username profile.avatar");
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found',
+        message: "User not found",
       });
     }
 
@@ -79,7 +79,7 @@ exports.getUserById = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch user',
+      message: "Failed to fetch user",
       error: error.message,
     });
   }
@@ -93,7 +93,7 @@ exports.followUser = async (req, res) => {
     if (userId === id) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot follow yourself',
+        message: "Cannot follow yourself",
       });
     }
 
@@ -103,7 +103,7 @@ exports.followUser = async (req, res) => {
     if (!targetUser) {
       return res.status(404).json({
         success: false,
-        message: 'User not found',
+        message: "User not found",
       });
     }
 
@@ -128,13 +128,13 @@ exports.followUser = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: isFollowing ? 'Unfollowed' : 'Followed',
+      message: isFollowing ? "Unfollowed" : "Followed",
       isFollowing: !isFollowing,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Follow operation failed',
+      message: "Follow operation failed",
       error: error.message,
     });
   }
@@ -147,17 +147,17 @@ exports.searchUsers = async (req, res) => {
     if (!query || query.length < 2) {
       return res.status(400).json({
         success: false,
-        message: 'Query must be at least 2 characters',
+        message: "Query must be at least 2 characters",
       });
     }
 
     const users = await User.find({
       $or: [
-        { username: { $regex: query, $options: 'i' } },
-        { email: { $regex: query, $options: 'i' } },
+        { username: { $regex: query, $options: "i" } },
+        { email: { $regex: query, $options: "i" } },
       ],
     })
-      .select('username profile.avatar stats')
+      .select("username profile.avatar stats")
       .limit(20);
 
     res.status(200).json({
@@ -167,7 +167,7 @@ exports.searchUsers = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Search failed',
+      message: "Search failed",
       error: error.message,
     });
   }
@@ -176,8 +176,8 @@ exports.searchUsers = async (req, res) => {
 exports.getFollowers = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).populate(
-      'followers',
-      'username profile.avatar stats'
+      "followers",
+      "username profile.avatar stats"
     );
 
     res.status(200).json({
@@ -187,7 +187,7 @@ exports.getFollowers = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch followers',
+      message: "Failed to fetch followers",
       error: error.message,
     });
   }
@@ -196,8 +196,8 @@ exports.getFollowers = async (req, res) => {
 exports.getFollowing = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).populate(
-      'following',
-      'username profile.avatar stats'
+      "following",
+      "username profile.avatar stats"
     );
 
     res.status(200).json({
@@ -207,7 +207,7 @@ exports.getFollowing = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch following',
+      message: "Failed to fetch following",
       error: error.message,
     });
   }

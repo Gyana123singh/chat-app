@@ -1,6 +1,6 @@
 // controllers/roomController.js
-const Room = require('../models/Room');
-const User = require('../models/Users');
+const Room = require("../models/Room");
+const User = require("../models/Users");
 
 exports.createRoom = async (req, res) => {
   try {
@@ -10,38 +10,38 @@ exports.createRoom = async (req, res) => {
     if (!title) {
       return res.status(400).json({
         success: false,
-        message: 'Room title is required',
+        message: "Room title is required",
       });
     }
 
     const room = new Room({
       title,
-      description: description || '',
-      category: category || 'Other',
-      privacy: privacy || 'public',
+      description: description || "",
+      category: category || "Other",
+      privacy: privacy || "public",
       maxParticipants: maxParticipants || 100,
       tags: tags || [],
       host: req.user.id,
       participants: [
         {
           user: req.user.id,
-          role: 'host',
+          role: "host",
         },
       ],
     });
 
     await room.save();
-    await room.populate('host', 'username profile.avatar');
+    await room.populate("host", "username profile.avatar");
 
     res.status(201).json({
       success: true,
-      message: 'Room created successfully',
+      message: "Room created successfully",
       room,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to create room',
+      message: "Failed to create room",
       error: error.message,
     });
   }
@@ -51,7 +51,7 @@ exports.getAllRooms = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query;
 
-    let query = { isActive: true, privacy: 'public' };
+    let query = { isActive: true, privacy: "public" };
 
     if (category) {
       query.category = category;
@@ -59,15 +59,15 @@ exports.getAllRooms = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
       ];
     }
 
     const skip = (page - 1) * limit;
 
     const rooms = await Room.find(query)
-      .populate('host', 'username profile.avatar stats')
+      .populate("host", "username profile.avatar stats")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -86,7 +86,7 @@ exports.getAllRooms = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch rooms',
+      message: "Failed to fetch rooms",
       error: error.message,
     });
   }
@@ -95,13 +95,13 @@ exports.getAllRooms = async (req, res) => {
 exports.getRoomById = async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
-      .populate('host', 'username profile.avatar stats')
-      .populate('participants.user', 'username profile.avatar');
+      .populate("host", "username profile.avatar stats")
+      .populate("participants.user", "username profile.avatar");
 
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: 'Room not found',
+        message: "Room not found",
       });
     }
 
@@ -112,7 +112,7 @@ exports.getRoomById = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch room',
+      message: "Failed to fetch room",
       error: error.message,
     });
   }
@@ -125,14 +125,14 @@ exports.updateRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: 'Room not found',
+        message: "Room not found",
       });
     }
 
     if (room.host.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Only host can update room',
+        message: "Only host can update room",
       });
     }
 
@@ -150,13 +150,13 @@ exports.updateRoom = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Room updated successfully',
+      message: "Room updated successfully",
       room,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to update room',
+      message: "Failed to update room",
       error: error.message,
     });
   }
@@ -169,14 +169,14 @@ exports.deleteRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: 'Room not found',
+        message: "Room not found",
       });
     }
 
     if (room.host.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'Only host can delete room',
+        message: "Only host can delete room",
       });
     }
 
@@ -186,12 +186,12 @@ exports.deleteRoom = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Room deleted successfully',
+      message: "Room deleted successfully",
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to delete room',
+      message: "Failed to delete room",
       error: error.message,
     });
   }
@@ -204,7 +204,7 @@ exports.joinRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: 'Room not found',
+        message: "Room not found",
       });
     }
 
@@ -215,20 +215,20 @@ exports.joinRoom = async (req, res) => {
     if (isAlreadyParticipant) {
       return res.status(400).json({
         success: false,
-        message: 'Already in this room',
+        message: "Already in this room",
       });
     }
 
     if (room.participants.length >= room.maxParticipants) {
       return res.status(400).json({
         success: false,
-        message: 'Room is full',
+        message: "Room is full",
       });
     }
 
     room.participants.push({
       user: req.user.id,
-      role: 'listener',
+      role: "listener",
     });
 
     room.stats.totalJoins += 1;
@@ -236,13 +236,13 @@ exports.joinRoom = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Joined room successfully',
+      message: "Joined room successfully",
       room,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to join room',
+      message: "Failed to join room",
       error: error.message,
     });
   }
@@ -255,7 +255,7 @@ exports.leaveRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({
         success: false,
-        message: 'Room not found',
+        message: "Room not found",
       });
     }
 
@@ -267,12 +267,12 @@ exports.leaveRoom = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Left room successfully',
+      message: "Left room successfully",
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to leave room',
+      message: "Failed to leave room",
       error: error.message,
     });
   }
@@ -280,9 +280,9 @@ exports.leaveRoom = async (req, res) => {
 
 exports.getPopularRooms = async (req, res) => {
   try {
-    const rooms = await Room.find({ isActive: true, privacy: 'public' })
-      .populate('host', 'username profile.avatar')
-      .sort({ 'stats.totalJoins': -1 })
+    const rooms = await Room.find({ isActive: true, privacy: "public" })
+      .populate("host", "username profile.avatar")
+      .sort({ "stats.totalJoins": -1 })
       .limit(10);
 
     res.status(200).json({
@@ -292,7 +292,7 @@ exports.getPopularRooms = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch popular rooms',
+      message: "Failed to fetch popular rooms",
       error: error.message,
     });
   }

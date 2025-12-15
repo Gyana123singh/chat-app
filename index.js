@@ -27,7 +27,7 @@ const PORT = process.env.PORT || 5001;
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: process.env.CLIENT_URL || "https://chat-app-admin-dashboard-b3ut.vercel.app",
     credentials: true,
   })
 );

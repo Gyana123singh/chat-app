@@ -1,20 +1,20 @@
 // utils/socketEvents.js
-const User = require('../models/Users');
-const Room = require('../models/Room');
-const Message = require('../models/Message');
+const User = require("../models/Users");
+const Room = require("../models/Room");
+const Message = require("../models/Message");
 
 module.exports = (io) => {
   const onlineUsers = new Map();
 
-  io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+  io.on("connection", (socket) => {
+    console.log("User connected:", socket.id);
 
     // User connects
-    socket.on('user:connect', async (data) => {
+    socket.on("user:connect", async (data) => {
       const userId = data.userId;
       onlineUsers.set(userId, socket.id);
-      
-      io.emit('user:online', {
+
+      io.emit("user:online", {
         userId,
         timestamp: new Date(),
       });
@@ -23,9 +23,9 @@ module.exports = (io) => {
     });
 
     // User disconnects
-    socket.on('disconnect', async () => {
+    socket.on("disconnect", async () => {
       let disconnectedUserId = null;
-      
+
       for (const [userId, socketId] of onlineUsers.entries()) {
         if (socketId === socket.id) {
           disconnectedUserId = userId;
@@ -35,7 +35,7 @@ module.exports = (io) => {
       }
 
       if (disconnectedUserId) {
-        io.emit('user:offline', {
+        io.emit("user:offline", {
           userId: disconnectedUserId,
           timestamp: new Date(),
         });
@@ -44,11 +44,11 @@ module.exports = (io) => {
     });
 
     // Room events
-    socket.on('room:join', (data) => {
+    socket.on("room:join", (data) => {
       const { roomId, userId } = data;
       socket.join(`room:${roomId}`);
-      
-      io.to(`room:${roomId}`).emit('room:userJoined', {
+
+      io.to(`room:${roomId}`).emit("room:userJoined", {
         userId,
         roomId,
         timestamp: new Date(),
@@ -57,11 +57,11 @@ module.exports = (io) => {
       console.log(`User ${userId} joined room ${roomId}`);
     });
 
-    socket.on('room:leave', (data) => {
+    socket.on("room:leave", (data) => {
       const { roomId, userId } = data;
       socket.leave(`room:${roomId}`);
-      
-      io.to(`room:${roomId}`).emit('room:userLeft', {
+
+      io.to(`room:${roomId}`).emit("room:userLeft", {
         userId,
         roomId,
         timestamp: new Date(),
@@ -71,12 +71,12 @@ module.exports = (io) => {
     });
 
     // Message events
-    socket.on('message:send', async (data) => {
+    socket.on("message:send", async (data) => {
       try {
         const { content, roomId, userId, username, avatar } = data;
 
         // Broadcast to room
-        io.to(`room:${roomId}`).emit('message:receive', {
+        io.to(`room:${roomId}`).emit("message:receive", {
           content,
           roomId,
           userId,
@@ -87,23 +87,23 @@ module.exports = (io) => {
 
         console.log(`Message in room ${roomId}: ${content}`);
       } catch (error) {
-        console.error('Message send error:', error);
+        console.error("Message send error:", error);
       }
     });
 
     // Typing indicator
-    socket.on('typing:start', (data) => {
+    socket.on("typing:start", (data) => {
       const { roomId, userId, username } = data;
-      socket.to(`room:${roomId}`).emit('typing:update', {
+      socket.to(`room:${roomId}`).emit("typing:update", {
         userId,
         username,
         isTyping: true,
       });
     });
 
-    socket.on('typing:stop', (data) => {
+    socket.on("typing:stop", (data) => {
       const { roomId, userId, username } = data;
-      socket.to(`room:${roomId}`).emit('typing:update', {
+      socket.to(`room:${roomId}`).emit("typing:update", {
         userId,
         username,
         isTyping: false,
@@ -111,11 +111,11 @@ module.exports = (io) => {
     });
 
     // Gift events
-    socket.on('gift:send', (data) => {
+    socket.on("gift:send", (data) => {
       const { giftId, giftName, roomId, receiverId, senderId, senderName } =
         data;
 
-      io.to(`room:${roomId}`).emit('gift:received', {
+      io.to(`room:${roomId}`).emit("gift:received", {
         giftId,
         giftName,
         receiverId,
@@ -128,9 +128,9 @@ module.exports = (io) => {
     });
 
     // User status update
-    socket.on('user:statusUpdate', (data) => {
+    socket.on("user:statusUpdate", (data) => {
       const { userId, status } = data;
-      io.emit('user:statusChanged', {
+      io.emit("user:statusChanged", {
         userId,
         status,
         timestamp: new Date(),
@@ -138,43 +138,43 @@ module.exports = (io) => {
     });
 
     // Voice call events
-    socket.on('call:initiate', (data) => {
+    socket.on("call:initiate", (data) => {
       const { callerId, receiverId, offer } = data;
       const receiverSocketId = onlineUsers.get(receiverId);
-      
+
       if (receiverSocketId) {
-        io.to(receiverSocketId).emit('call:incoming', {
+        io.to(receiverSocketId).emit("call:incoming", {
           callerId,
           offer,
         });
       }
     });
 
-    socket.on('call:answer', (data) => {
+    socket.on("call:answer", (data) => {
       const { callerId, answer } = data;
       const callerSocketId = onlineUsers.get(callerId);
-      
+
       if (callerSocketId) {
-        io.to(callerSocketId).emit('call:answered', {
+        io.to(callerSocketId).emit("call:answered", {
           answer,
         });
       }
     });
 
-    socket.on('call:ice-candidate', (data) => {
+    socket.on("call:ice-candidate", (data) => {
       const { to, candidate } = data;
       const targetSocketId = onlineUsers.get(to);
-      
+
       if (targetSocketId) {
-        io.to(targetSocketId).emit('call:ice-candidate', {
+        io.to(targetSocketId).emit("call:ice-candidate", {
           candidate,
         });
       }
     });
 
     // Error handling
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
+    socket.on("error", (error) => {
+      console.error("Socket error:", error);
     });
   });
 };
