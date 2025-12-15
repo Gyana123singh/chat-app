@@ -1,5 +1,5 @@
 const Otp = require("../models/otp");
-const User = require("../models/Users");
+const User = require("../models/users");
 const { generateToken } = require("../utils/jwt");
 const twilio = require("twilio");
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;

@@ -1,4 +1,4 @@
-const User = require("../models/Users");
+const User = require("../models/users");
 const { signToken } = require("../utils/jwtAuth");
 
 const handleGoogleAuth = async (profile) => {
