@@ -1,6 +1,6 @@
 // controllers/roomController.js
-const Room = require("../models/Room");
-const User = require("../models/Users");
+const Room = require("../models/room");
+const User = require("../models/users");
 
 exports.createRoom = async (req, res) => {
   try {

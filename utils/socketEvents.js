@@ -1,7 +1,7 @@
 // utils/socketEvents.js
-const User = require("../models/Users");
-const Room = require("../models/Room");
-const Message = require("../models/Message");
+const User = require("../models/users");
+const Room = require("../models/room");
+const Message = require("../models/message");
 
 module.exports = (io) => {
   const onlineUsers = new Map();
