@@ -1,48 +1,53 @@
 // controllers/roomController.js
 const Room = require("../models/room");
 const User = require("../models/users");
+const { v4: uuidv4 } = require("uuid");
 
 exports.createRoom = async (req, res) => {
   try {
-    const { title, description, category, privacy, maxParticipants, tags } =
-      req.body;
+    const userId = req.user.id; // from JWT middleware
+    const { title, description, category, privacy } = req.body;
 
     if (!title) {
-      return res.status(400).json({
-        success: false,
-        message: "Room title is required",
-      });
+      return res.status(400).json({ message: "Room title is required" });
     }
 
-    const room = new Room({
+    // ✅ Generate unique roomId
+    const roomId = uuidv4();
+
+    const room = await Room.create({
+      roomId,
       title,
-      description: description || "",
-      category: category || "Other",
-      privacy: privacy || "public",
-      maxParticipants: maxParticipants || 100,
-      tags: tags || [],
-      host: req.user.id,
+      description,
+      category,
+      privacy,
+      host: userId,
+
+      // ✅ MAX PARTICIPANTS SET TO 100
+      maxParticipants: 100,
+
       participants: [
         {
-          user: req.user.id,
+          user: userId,
           role: "host",
         },
       ],
     });
 
-    await room.save();
-    await room.populate("host", "username profile.avatar");
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "Room created successfully",
-      room,
+      room: {
+        roomId: room.roomId,
+        title: room.title,
+        maxParticipants: room.maxParticipants,
+      },
     });
   } catch (error) {
+    console.error("Create Room Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to create room",
-      error: error.message,
     });
   }
 };
