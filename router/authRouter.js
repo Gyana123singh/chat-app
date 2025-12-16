@@ -17,7 +17,7 @@ router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
-    failureRedirect: "/failed",
+    failureRedirect: "https://chat-app-admin-dashboard-b3ut.vercel.app/login?error=google",
   }),
   authController.googleAuthSuccess
 );
