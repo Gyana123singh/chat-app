@@ -1,4 +1,3 @@
-// models/User.js
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
@@ -7,7 +6,7 @@ const userSchema = new mongoose.Schema(
     username: {
       type: String,
       required: function () {
-        return !this.googleId; // username not required for Google users
+        return !this.googleId;
       },
       unique: true,
       trim: true,
@@ -23,13 +22,12 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: function () {
-        return !this.googleId; // password not required for Google users
+        return !this.googleId;
       },
       minlength: 6,
       select: false,
     },
 
-    // ✅ Google Auth
     googleId: {
       type: String,
       default: null,
@@ -96,11 +94,10 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* 🔐 Hash password only if exists */
-userSchema.pre("save", async function (next) {
-  if (!this.password || !this.isModified("password")) return next();
+/* 🔐 Hash password ONLY when it exists */
+userSchema.pre("save", async function () {
+  if (!this.isModified("password") || !this.password) return;
   this.password = await bcrypt.hash(this.password, 10);
-  next();
 });
 
 userSchema.methods.comparePassword = async function (password) {
