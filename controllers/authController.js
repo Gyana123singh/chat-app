@@ -9,6 +9,6 @@ exports.googleAuthSuccess = async (req, res) => {
 
   // ✅ Redirect to Vercel frontend
   res.redirect(
-    `https://chat-app-admin-dashboard-b3ut.vercel.app/auth/google/success?token=${token}`
+    `/auth/google/success?token=${token}`
   );
 };
