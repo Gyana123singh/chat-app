@@ -3,29 +3,32 @@ const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 
+exports.getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json({ user });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 exports.createRoom = async (req, res) => {
   try {
-    const userId = req.user.id; // from JWT middleware
-    const { title, description, category, privacy } = req.body;
+    const userId = req.user.id;
+    const { mode } = req.body;
 
-    if (!title) {
-      return res.status(400).json({ message: "Room title is required" });
+    if (!mode) {
+      return res.status(400).json({ message: "Room mode is required" });
     }
 
-    // ✅ Generate unique roomId
-    const roomId = uuidv4();
-
     const room = await Room.create({
-      roomId,
-      title,
-      description,
-      category,
-      privacy,
+      roomId: uuidv4(),
+      title: `${mode} Room`,
+      mode,
       host: userId,
-
-      // ✅ MAX PARTICIPANTS SET TO 100
-      maxParticipants: 100,
-
       participants: [
         {
           user: userId,
@@ -34,21 +37,14 @@ exports.createRoom = async (req, res) => {
       ],
     });
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message: "Room created successfully",
-      room: {
-        roomId: room.roomId,
-        title: room.title,
-        maxParticipants: room.maxParticipants,
-      },
+      room,
     });
   } catch (error) {
     console.error("Create Room Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create room",
-    });
+    res.status(500).json({ message: "Server error" });
   }
 };
 

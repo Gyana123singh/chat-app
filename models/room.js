@@ -1,8 +1,18 @@
 // models/Room.js
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const roomSchema = new mongoose.Schema(
   {
+    roomId: {
+      type: String,
+      unique: true,
+      index: true,
+    },
+
+    // models/Room.js
+    creatorName: {
+      type: String,
+    },
     title: {
       type: String,
       required: true,
@@ -10,31 +20,42 @@ const roomSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 100,
     },
+    // ✅ NEW FIELD (IMPORTANT)
+    mode: {
+      type: String,
+      enum: ["Game-Carrom", "Game-Ludo", "Chat"],
+    },
     description: {
       type: String,
-      default: '',
+      default: "",
       maxlength: 500,
     },
     category: {
       type: String,
-      enum: ['Gaming', 'Music', 'Sports', 'Entertainment', 'Education', 'Other'],
-      default: 'Other',
+      enum: [
+        "Gaming",
+        "Music",
+        "Sports",
+        "Entertainment",
+        "Education",
+        "Other",
+      ],
+      default: "Other",
     },
     host: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
+      ref: "User",
     },
     participants: [
       {
         user: {
           type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
+          ref: "User",
         },
         role: {
           type: String,
-          enum: ['host', 'listener'],
-          default: 'listener',
+          enum: ["host", "listener"],
+          default: "listener",
         },
         joinedAt: {
           type: Date,
@@ -44,14 +65,12 @@ const roomSchema = new mongoose.Schema(
     ],
     maxParticipants: {
       type: Number,
-      default: 100,
-      min: 2,
-      max: 1000,
+      default: null,
     },
     privacy: {
       type: String,
-      enum: ['public', 'private', 'friends'],
-      default: 'public',
+      enum: ["public", "private", "friends"],
+      default: "public",
     },
     tags: [String],
     coverImage: {
@@ -88,4 +107,4 @@ const roomSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Room', roomSchema);
+module.exports = mongoose.model("Room", roomSchema);
