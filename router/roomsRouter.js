@@ -8,7 +8,7 @@ router.get("/user/:id", authMiddleware, roomController.getUserById);  //done get
 router.post("/create", authMiddleware, roomController.createRoom);  //done create room
 router.get("/get-all-rooms", roomController.getAllRooms); //done get all rooms with pagination, search, filter
 router.get("/popular", roomController.getPopularRooms);
-router.get("/:id", roomController.getRoomById);
+router.get("get-by-id/:id", roomController.getRoomById);
 router.put("/:id", authMiddleware, roomController.updateRoom);
 router.delete("/:id", authMiddleware, roomController.deleteRoom);
 router.post("/:id/join", authMiddleware, roomController.joinRoom);

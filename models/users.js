@@ -3,10 +3,17 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
+    // 🔹 Firebase UID (Phone OTP)
+    firebaseUid: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
     username: {
       type: String,
       required: function () {
-        return !this.googleId;
+        return !this.googleId && !this.firebaseUid;
       },
       unique: true,
       trim: true,
@@ -15,27 +22,34 @@ const userSchema = new mongoose.Schema(
 
     email: {
       type: String,
-      required: true,
+      required: function () {
+        return !this.firebaseUid;
+      },
       unique: true,
+      sparse: true,
     },
 
     password: {
       type: String,
       required: function () {
-        return !this.googleId;
+        return !this.googleId && !this.firebaseUid;
       },
       minlength: 6,
       select: false,
     },
 
+    // 🔹 Google Login
     googleId: {
       type: String,
       default: null,
       index: true,
     },
 
+    // 🔹 Phone OTP
     phone: {
       type: String,
+      unique: true,
+      sparse: true,
       default: null,
     },
 
@@ -94,10 +108,11 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* 🔐 Hash password ONLY when it exists */
-userSchema.pre("save", async function () {
-  if (!this.isModified("password") || !this.password) return;
+/* 🔐 Hash password ONLY if exists */
+userSchema.pre("save", async function (next) {
+  if (!this.password || !this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 10);
+  next();
 });
 
 userSchema.methods.comparePassword = async function (password) {

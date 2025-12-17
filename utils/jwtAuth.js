@@ -1,10 +1,14 @@
 const jwt = require("jsonwebtoken");
+
 function signToken(user) {
   const payload = {
     sub: user._id.toString(),
-    email: user.email,
-    name: user.name,
+    email: user.email || null,
+    name: user.username || null,
+    phone: user.phone || null,
+    role: user.role,
   };
+
   return jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   });

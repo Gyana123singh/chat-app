@@ -48,6 +48,32 @@ exports.createRoom = async (req, res) => {
   }
 };
 
+exports.getRoomById = async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id)
+      .populate("host", "username profile.avatar stats")
+      .populate("participants.user", "username profile.avatar");
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      room,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch room",
+      error: error.message,
+    });
+  }
+};
+
 exports.getAllRooms = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query;
@@ -88,32 +114,6 @@ exports.getAllRooms = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch rooms",
-      error: error.message,
-    });
-  }
-};
-
-exports.getRoomById = async (req, res) => {
-  try {
-    const room = await Room.findById(req.params.id)
-      .populate("host", "username profile.avatar stats")
-      .populate("participants.user", "username profile.avatar");
-
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      room,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch room",
       error: error.message,
     });
   }
