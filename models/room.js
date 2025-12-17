@@ -15,7 +15,6 @@ const roomSchema = new mongoose.Schema(
     },
     title: {
       type: String,
-      required: true,
       trim: true,
       minlength: 3,
       maxlength: 100,
