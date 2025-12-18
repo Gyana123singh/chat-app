@@ -3,28 +3,7 @@ const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 
-exports.getMyRooms  = async (req, res) => {
-   try {
-    const userId = req.user.id; // from JWT token
 
-    const rooms = await Room.find({ creator: userId })
-      .populate("creator", "username email")
-      .populate("participants.user", "username email")
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: rooms.length,
-      rooms,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch rooms",
-      error: error.message,
-    });
-  }
-};
 
 exports.createRoom = async (req, res) => {
   try {
@@ -59,7 +38,28 @@ exports.createRoom = async (req, res) => {
   }
 };
 
+exports.getMyRooms  = async (req, res) => {
+   try {
+    const userId = req.user.id; // from JWT token
 
+    const rooms = await Room.find({ creator: userId })
+      .populate("creator", "username email")
+      .populate("participants.user", "username email")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: rooms.length,
+      rooms,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch rooms",
+      error: error.message,
+    });
+  }
+};
 exports.getAllRooms = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query;
