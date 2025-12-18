@@ -3,15 +3,26 @@ const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 
-exports.getUserById = async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id).select("-password");
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    res.status(200).json({ user });
+exports.getMyRooms  = async (req, res) => {
+   try {
+    const userId = req.user.id; // from JWT token
+
+    const rooms = await Room.find({ creator: userId })
+      .populate("creator", "username email")
+      .populate("participants.user", "username email")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: rooms.length,
+      rooms,
+    });
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch rooms",
+      error: error.message,
+    });
   }
 };
 

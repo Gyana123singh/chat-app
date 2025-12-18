@@ -45,6 +45,10 @@ const roomSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    creator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     participants: [
       {
         user: {
