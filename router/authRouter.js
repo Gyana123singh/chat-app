@@ -3,27 +3,22 @@ const router = express.Router();
 const passport = require("passport");
 const authController = require("../controllers/authController");
 
-// 1️⃣ Start Google Auth
+// Start Google Login
 router.get(
   "/google",
   passport.authenticate("google", {
     scope: ["profile", "email"],
-    prompt: "select_account consent",
   })
 );
 
-// 2️⃣ Google Callback
+// Google Callback
 router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
-    failureRedirect: "/failed",
+    failureRedirect: "/auth/google/failed",
   }),
   authController.googleAuthSuccess
 );
 
-// router.post("/register", authController.register);
-// router.post("/login", authController.login);
-// router.post("/logout", authMiddleware, authController.logout);
-// router.post("/refresh-token", authMiddleware, authController.refreshToken);
 module.exports = router;

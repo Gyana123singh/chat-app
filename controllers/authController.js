@@ -1,18 +1,17 @@
 const { signToken } = require("../utils/jwtAuth");
-const User = require("../models/users");
 
-// for google OAuth login
 exports.googleAuthSuccess = async (req, res) => {
-  if (!req.user) {
-    return res.redirect(`${process.env.CLIENT_URL}/Login?error=google`);
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Google auth failed" });
+    }
+
+    const token = signToken(req.user);
+
+    // 🔥 Use HTTP redirect for Flutter / Web
+    res.redirect(res.redirect(`myapp://auth/google/success?token=${token}`));
+  } catch (error) {
+    console.error("❌ GOOGLE AUTH SUCCESS ERROR:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-
-  const token = signToken(req.user);
-
-  // ✅ Redirect to Vercel frontend
-  res.redirect(`myapp://auth/google/success?token=${token}`);
 };
-
-// for phone OTP login
-
-
