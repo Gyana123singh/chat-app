@@ -13,6 +13,10 @@ const roomSchema = new mongoose.Schema(
     creatorName: {
       type: String,
     },
+    creatorAvatar: {
+      type: String,
+      default: null,
+    },
     title: {
       type: String,
       trim: true,

@@ -12,9 +12,6 @@ const userSchema = new mongoose.Schema(
 
     username: {
       type: String,
-      required: function () {
-        return !this.googleId && !this.firebaseUid;
-      },
       unique: true,
       trim: true,
       minlength: 3,
@@ -22,18 +19,12 @@ const userSchema = new mongoose.Schema(
 
     email: {
       type: String,
-      required: function () {
-        return !this.firebaseUid;
-      },
       unique: true,
       sparse: true,
     },
 
     password: {
       type: String,
-      required: function () {
-        return !this.googleId && !this.firebaseUid;
-      },
       minlength: 6,
       select: false,
     },
@@ -91,7 +82,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "moderator", "admin"],
+      enum: ["user", "host", "admin"],
       default: "user",
     },
 
@@ -107,6 +98,5 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 module.exports = mongoose.model("User", userSchema);
