@@ -3,8 +3,6 @@ const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 
-
-
 exports.createRoom = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -38,25 +36,29 @@ exports.createRoom = async (req, res) => {
   }
 };
 
-exports.getMyRooms  = async (req, res) => {
-   try {
-    const userId = req.user.id; // from JWT token
+exports.getMyRooms = async (req, res) => {
+  try {
+    const rooms = await Room.find({ creator: req.user.id })
+      .populate("creator", "username email phone googleId firebaseUid")
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const rooms = await Room.find({ creator: userId })
-      .populate("creator", "username email")
-      .populate("participants.user", "username email")
-      .sort({ createdAt: -1 });
+    const formattedRooms = rooms.map((room) => {
+      const creator = room.creator || {};
+      return {
+        ...room,
+        creatorName: creator.username || creator.email || "Guest User",
+      };
+    });
 
     res.status(200).json({
       success: true,
-      count: rooms.length,
-      rooms,
+      rooms: formattedRooms,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to fetch rooms",
-      error: error.message,
+      message: error.message,
     });
   }
 };
