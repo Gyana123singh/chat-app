@@ -11,6 +11,8 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
+        console.log("Access Token:", accessToken);
+        console.log("Refresh Token:", refreshToken);
         const email = profile.emails?.[0]?.value;
         if (!email) return done(null, false);
 
