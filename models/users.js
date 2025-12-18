@@ -108,26 +108,5 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* 🔐 SAFE PASSWORD HASHING */
-userSchema.pre("save", async function (next) {
-  try {
-    // ✅ Skip hashing for Google / Phone users
-    if (!this.password) return next();
-
-    // ✅ Hash only when password changes
-    if (!this.isModified("password")) return next();
-
-    this.password = await bcrypt.hash(this.password, 10);
-    next();
-  } catch (err) {
-    next(err); // 🚨 critical for preventing crashes
-  }
-});
-
-/* 🔑 Password comparison */
-userSchema.methods.comparePassword = async function (password) {
-  if (!this.password) return false;
-  return bcrypt.compare(password, this.password);
-};
 
 module.exports = mongoose.model("User", userSchema);
