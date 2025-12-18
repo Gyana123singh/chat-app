@@ -9,14 +9,44 @@ exports.createRoom = async (req, res) => {
     const { mode } = req.body;
 
     if (!mode) {
-      return res.status(400).json({ message: "Room mode is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Room mode is required",
+      });
     }
 
+    // CHECK: user already has an active room
+    const existingRoom = await Room.findOne({
+      host: userId,
+      isActive: true,
+    });
+
+    if (existingRoom) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have an active room",
+        roomId: existingRoom.roomId,
+      });
+    }
+
+    // 🔹 Get creator name (snapshot)
+    const user = await User.findById(userId);
+
+    const creatorName =
+      user.username ||
+      user.email ||
+      user.phone ||
+      "Guest User";
+
+    // 🔹 Create room
     const room = await Room.create({
       roomId: uuidv4(),
       title: `${mode} Room`,
       mode,
       host: userId,
+      creator: userId,
+      creatorName,
+      isActive: true,
       participants: [
         {
           user: userId,
@@ -32,7 +62,10 @@ exports.createRoom = async (req, res) => {
     });
   } catch (error) {
     console.error("Create Room Error:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 
