@@ -7,7 +7,7 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "https://chat-app-1-qvl9.onrender.com/auth/google/callback",
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
@@ -22,8 +22,7 @@ passport.use(
           user = await User.create({
             googleId: profile.id,
             email,
-            username:
-              email.split("@")[0] + "_" + profile.id.slice(-5),
+            username: email.split("@")[0] + "_" + profile.id.slice(-5),
             isVerified: true,
             profile: {
               avatar: profile.photos?.[0]?.value,
@@ -39,6 +38,5 @@ passport.use(
     }
   )
 );
-
 
 module.exports = passport;
