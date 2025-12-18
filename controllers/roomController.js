@@ -33,10 +33,7 @@ exports.createRoom = async (req, res) => {
     const user = await User.findById(userId);
 
     const creatorName =
-      user.username ||
-      user.email ||
-      user.phone ||
-      "Guest User";
+      user.username || user.email || user.phone || "Guest User";
 
     // 🔹 Create room
     const room = await Room.create({
@@ -71,16 +68,21 @@ exports.createRoom = async (req, res) => {
 
 exports.getMyRooms = async (req, res) => {
   try {
-    const rooms = await Room.find({ creator: req.user.id })
-      .populate("creator", "username email phone googleId firebaseUid")
+    const rooms = await Room.find({ host: req.user.id }) // ✅ FIXED
+      .populate("host", "username email phone googleId firebaseUid")
       .sort({ createdAt: -1 })
       .lean();
 
     const formattedRooms = rooms.map((room) => {
-      const creator = room.creator || {};
+      const host = room.host || {};
       return {
         ...room,
-        creatorName: creator.username || creator.email || "Guest User",
+        creatorName:
+          host.username ||
+          host.email ||
+          host.phone ||
+          room.creatorName ||
+          "Guest User",
       };
     });
 
@@ -95,6 +97,7 @@ exports.getMyRooms = async (req, res) => {
     });
   }
 };
+
 exports.getAllRooms = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query;
