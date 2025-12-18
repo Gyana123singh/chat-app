@@ -2,7 +2,6 @@ const jwt = require("jsonwebtoken");
 
 function signToken(user) {
   const payload = {
-    id: user._id.toString(),
     sub: user._id.toString(),
     email: user.email || null,
     name: user.username || null,
