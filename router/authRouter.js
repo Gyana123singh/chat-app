@@ -22,8 +22,4 @@ router.get(
   authController.googleAuthSuccess
 );
 
-// router.post("/register", authController.register);
-// router.post("/login", authController.login);
-// router.post("/logout", authMiddleware, authController.logout);
-// router.post("/refresh-token", authMiddleware, authController.refreshToken);
 module.exports = router;
