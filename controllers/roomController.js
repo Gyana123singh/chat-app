@@ -5,42 +5,49 @@ const { v4: uuidv4 } = require("uuid");
 
 exports.createRoom = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
     const userId = req.user.id;
     const { mode } = req.body;
 
     if (!mode) {
-      return sendError(res, 400, "Room mode required");
+      return res.status(400).json({ message: "Room mode required" });
     }
 
-    // ✅ FETCH USER PROFILE
     const user = await User.findById(userId).select(
       "username email profile.avatar"
     );
 
     if (!user) {
-      return sendError(res, 404, "User not found");
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // ✅ SAFE FALLBACKS
-    const creatorName = user.username || user.email || "Guest";
-    const creatorEmail = user.email || null;
-    const creatorAvatar = user.profile?.avatar || null;
-
-    // ✅ CREATE ROOM
-    const room = await roomService.createRoom({
-      userId,
+    const room = await Room.create({
       roomId: uuidv4(),
       mode,
       title: `${mode} Room`,
-      creatorName,
-      creatorEmail,
-      creatorAvatar,
+      host: userId,
+      creator: userId,
+      creatorName: user.username || user.email,
+      creatorEmail: user.email,
+      creatorAvatar: user.profile?.avatar || null,
+      isActive: true,
+      participants: [{ user: userId, role: "host" }],
     });
 
-    return sendSuccess(res, 201, "Room created", room);
+    return res.status(201).json({
+      success: true,
+      message: "Room created",
+      room,
+    });
   } catch (err) {
-    console.error("CreateRoom Error:", err);
-    return sendError(res, 500, err.message || "Server error");
+    console.error("CREATE ROOM ERROR →", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
