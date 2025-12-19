@@ -53,7 +53,7 @@ exports.createRoom = async (req, res) => {
 exports.getMyRooms = async (req, res) => {
   try {
     const rooms = await Room.find({ creator: req.user.id })
-      .populate("creator", "username email phone googleId firebaseUid")
+      .populate("creator", "username email")
       .sort({ createdAt: -1 })
       .lean();
 
