@@ -1,3 +1,4 @@
+
 // middlewares/auth.js
 const { verifyToken } = require("../utils/jwtAuth");
 
@@ -13,12 +14,27 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
+    const decoded = verifyToken(token);
 
-    const decoded = verifyToken(token); // ✅ USING jwtAuth
-    req.user = decoded;
+    // ✅ sub = userId (JWT STANDARD)
+    req.user = {
+      id: decoded.sub,          // 🔥 FIX
+      email: decoded.email,
+      username: decoded.name,
+      phone: decoded.phone,
+      role: decoded.role || "user",
+    };
+
+    if (!req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token payload",
+      });
+    }
 
     next();
   } catch (error) {
+    console.error("AUTH ERROR:", error.message);
     return res.status(401).json({
       success: false,
       message: "Invalid or expired token",
@@ -26,17 +42,4 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-const adminMiddleware = (req, res, next) => {
-  if (req.user?.role !== "admin") {
-    return res.status(403).json({
-      success: false,
-      message: "Admin access required",
-    });
-  }
-  next();
-};
-
-module.exports = {
-  authMiddleware,
-  adminMiddleware,
-};
+module.exports = { authMiddleware };
