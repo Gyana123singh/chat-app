@@ -28,13 +28,12 @@ exports.createRoom = async (req, res) => {
       roomId: uuidv4(),
       mode,
       title: `${mode} Room`,
-      host: userId,
-      creator: userId,
+      host: userId.username,
+      creator: userId.username,
       creatorName: user.username || user.email,
       creatorEmail: user.email,
       creatorAvatar: user.profile?.avatar || null,
       isActive: true,
-      participants: [{ user: userId, role: "host" }],
     });
 
     return res.status(201).json({
