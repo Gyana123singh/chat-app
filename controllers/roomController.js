@@ -29,7 +29,7 @@ exports.createRoom = async (req, res) => {
       mode,
       title: `${mode} Room`,
       host: userId.username,
-      creator: userId.username,
+      creator: userId,
       creatorName: user.username || user.email,
       creatorEmail: user.email,
       creatorAvatar: user.profile?.avatar || null,
