@@ -17,6 +17,10 @@ const roomSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    creatorEmail: {
+      type: String,
+      default: null,
+    },
     title: {
       type: String,
       trim: true,

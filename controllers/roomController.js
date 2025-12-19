@@ -5,95 +5,42 @@ const { v4: uuidv4 } = require("uuid");
 
 exports.createRoom = async (req, res) => {
   try {
-    const userId = req.user.id; // from JWT
-    const userRole = req.user.role; // "user" | "admin"
+    const userId = req.user.id;
     const { mode } = req.body;
 
     if (!mode) {
-      return res.status(400).json({
-        success: false,
-        message: "Room mode is required",
-      });
+      return sendError(res, 400, "Room mode required");
     }
 
-    /* --------------------------------------------------
-       1️⃣ FIND CREATOR (USER OR ADMIN)
-    -------------------------------------------------- */
-    let creator = null;
+    // ✅ FETCH USER PROFILE
+    const user = await User.findById(userId).select(
+      "username email profile.avatar"
+    );
 
-    if (userRole === "user") {
-      creator = await User.findById(userId).select(
-        "username email phone profile.avatar"
-      );
-    } else if (userRole === "admin") {
-      creator = await Admin.findById(userId).select(
-        "username email profile.avatar"
-      );
+    if (!user) {
+      return sendError(res, 404, "User not found");
     }
 
-    if (!creator) {
-      return res.status(404).json({
-        success: false,
-        message: "User/Admin not found",
-      });
-    }
+    // ✅ SAFE FALLBACKS
+    const creatorName = user.username || user.email || "Guest";
+    const creatorEmail = user.email || null;
+    const creatorAvatar = user.profile?.avatar || null;
 
-    /* --------------------------------------------------
-       2️⃣ CHECK ACTIVE ROOM
-    -------------------------------------------------- */
-    const activeRoom = await Room.findOne({
-      host: userId,
-      isActive: true,
-    });
-
-    if (activeRoom) {
-      return res.status(400).json({
-        success: false,
-        message: "You already have an active room",
-        roomId: activeRoom.roomId,
-      });
-    }
-
-    /* --------------------------------------------------
-       3️⃣ SAFE CREATOR DETAILS
-    -------------------------------------------------- */
-    const creatorName =
-      creator.username || creator.email || creator.phone || "Guest User";
-
-    const creatorAvatar = creator.profile?.avatar || null;
-
-    /* --------------------------------------------------
-       4️⃣ CREATE ROOM
-    -------------------------------------------------- */
-    const room = await Room.create({
+    // ✅ CREATE ROOM
+    const room = await roomService.createRoom({
+      userId,
       roomId: uuidv4(),
-      title: `${mode} Room`,
       mode,
-      host: userId,
-      creator: userId,
-      creatorRole: userRole, // 👈 IMPORTANT
+      title: `${mode} Room`,
       creatorName,
+      creatorEmail,
       creatorAvatar,
-      isActive: true,
-      participants: [
-        {
-          user: userId,
-          role: "host",
-        },
-      ],
     });
 
-    return res.status(201).json({
-      success: true,
-      message: "Room created successfully",
-      room,
-    });
-  } catch (error) {
-    console.error("Create Room Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    return sendSuccess(res, 201, "Room created", room);
+  } catch (err) {
+    console.error("CreateRoom Error:", err);
+    return sendError(res, 500, err.message || "Server error");
   }
 };
 
