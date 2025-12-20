@@ -1,5 +1,4 @@
 const bcrypt = require("bcryptjs");
-const User = require("../models/users");
 const { signToken } = require("../utils/jwtAuth");
 
 exports.adminLogin = async (req, res) => {
@@ -14,42 +13,47 @@ exports.adminLogin = async (req, res) => {
       });
     }
 
-    // 2️⃣ Find user
-    const user = await User.findOne({ email }).select("+password");
-    if (!user) {
+    // 2️⃣ Match email from ENV
+    if (email !== process.env.ADMIN_EMAIL) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
     }
 
-    // 3️⃣ Compare password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    // 3️⃣ Match password from ENV
+    if (password !== process.env.ADMIN_PASSWORD) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
     }
 
-    // 4️⃣ Create JWT (IMPORTANT)
-    const token = signToken(user);
+    // 4️⃣ Create ADMIN payload (no DB user)
+    const adminUser = {
+      _id: "admin-id",
+      email: process.env.ADMIN_EMAIL,
+      username: "Admin",
+      role: "admin",
+    };
 
-    // 5️⃣ Success
-    res.status(200).json({
+    // 5️⃣ Sign token
+    const token = signToken(adminUser);
+
+    // 6️⃣ Success
+    return res.status(200).json({
       success: true,
-      message: "Login successful",
+      message: "Admin login successful",
       token,
       user: {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
+        email: adminUser.email,
+        username: adminUser.username,
+        role: adminUser.role,
       },
     });
   } catch (error) {
-    console.error("EMAIL LOGIN ERROR:", error);
-    res.status(500).json({
+    console.error("ADMIN LOGIN ERROR:", error);
+    return res.status(500).json({
       success: false,
       message: "Server error",
     });
