@@ -65,6 +65,7 @@ const io = new Server(server, {
   },
 });
 
+require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
 
 /* ===================== START SERVER ===================== */
