@@ -202,7 +202,10 @@ exports.deleteRoom = async (req, res) => {
 
 exports.joinRoom = async (req, res) => {
   try {
-    const room = await Room.findById(req.params.id);
+    const room = await Room.findById(req.params.id).populate(
+      "participants.user",
+      "username avatar"
+    );
 
     if (!room) {
       return res.status(404).json({
@@ -212,13 +215,14 @@ exports.joinRoom = async (req, res) => {
     }
 
     const isAlreadyParticipant = room.participants.some(
-      (p) => p.user.toString() === req.user.id
+      (p) => p.user._id.toString() === req.user.id
     );
 
     if (isAlreadyParticipant) {
-      return res.status(400).json({
-        success: false,
-        message: "Already in this room",
+      return res.status(200).json({
+        success: true,
+        message: "Already joined",
+        room,
       });
     }
 
@@ -231,16 +235,21 @@ exports.joinRoom = async (req, res) => {
 
     room.participants.push({
       user: req.user.id,
+      username: req.user.name,
+      avatar: req.user.avatar || "/avatar.png",
       role: "listener",
+      joinedAt: new Date(),
     });
 
     room.stats.totalJoins += 1;
+    room.stats.activeUsers = room.participants.length;
+
     await room.save();
 
     res.status(200).json({
       success: true,
       message: "Joined room successfully",
-      room,
+      participants: room.participants,
     });
   } catch (error) {
     res.status(500).json({
@@ -250,6 +259,7 @@ exports.joinRoom = async (req, res) => {
     });
   }
 };
+
 
 exports.leaveRoom = async (req, res) => {
   try {
@@ -262,9 +272,20 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
+    const beforeCount = room.participants.length;
+
     room.participants = room.participants.filter(
       (p) => p.user.toString() !== req.user.id
     );
+
+    if (beforeCount === room.participants.length) {
+      return res.status(400).json({
+        success: false,
+        message: "User not in room",
+      });
+    }
+
+    room.stats.activeUsers = room.participants.length;
 
     await room.save();
 
@@ -280,6 +301,7 @@ exports.leaveRoom = async (req, res) => {
     });
   }
 };
+
 
 exports.getPopularRooms = async (req, res) => {
   try {
