@@ -1,40 +1,5 @@
+// models/Room.js
 const mongoose = require("mongoose");
-
-const participantSchema = new mongoose.Schema(
-  {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    username: {
-      type: String,
-      required: true,
-    },
-    avatar: {
-      type: String,
-      default: "/avatar.png",
-    },
-    role: {
-      type: String,
-      enum: ["host", "listener"],
-      default: "listener",
-    },
-    isMuted: {
-      type: Boolean,
-      default: false,
-    },
-    isSpeaking: {
-      type: Boolean,
-      default: false,
-    },
-    joinedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { _id: false }
-);
 
 const roomSchema = new mongoose.Schema(
   {
@@ -44,36 +9,33 @@ const roomSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* =========================
-       CREATOR SNAPSHOT
-    ========================== */
-    host: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      index: true,
+    // models/Room.js
+    creatorName: {
+      type: String,
     },
-    creatorName: String,
-    creatorAvatar: String,
-    creatorEmail: String,
-
-    /* =========================
-       ROOM META
-    ========================== */
+    creatorAvatar: {
+      type: String,
+      default: null,
+    },
+    creatorEmail: {
+      type: String,
+      default: null,
+    },
     title: {
       type: String,
       trim: true,
       minlength: 3,
       maxlength: 100,
     },
-    description: {
-      type: String,
-      maxlength: 500,
-      default: "",
-    },
+    // ✅ NEW FIELD (IMPORTANT)
     mode: {
       type: String,
       enum: ["Game-Carrom", "Game-Ludo", "Chat"],
-      required: true,
+    },
+    description: {
+      type: String,
+      default: "",
+      maxlength: 500,
     },
     category: {
       type: String,
@@ -86,52 +48,80 @@ const roomSchema = new mongoose.Schema(
         "Other",
       ],
       default: "Other",
-      index: true,
     },
-    tags: [String],
-    coverImage: String,
-
-    /* =========================
-       ROOM STATE
-    ========================== */
-    participants: [participantSchema],
+    host: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    creator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    creatorRole: {
+      type: String,
+    },
+    participants: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        role: {
+          type: String,
+          enum: ["host", "listener"],
+          default: "listener",
+        },
+        isMuted: { type: Boolean, default: false },
+        isSpeaking: { type: Boolean, default: false },
+        avatar: String,
+        joinedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     maxParticipants: {
       type: Number,
-      default: 6,
+      default: null,
     },
     privacy: {
       type: String,
       enum: ["public", "private", "friends"],
       default: "public",
     },
+    tags: [String],
+    coverImage: {
+      type: String,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
-      index: true,
     },
     startedAt: {
       type: Date,
       default: Date.now,
     },
-    endedAt: Date,
-
-    /* =========================
-       STATS
-    ========================== */
+    endedAt: {
+      type: Date,
+      default: null,
+    },
     stats: {
-      totalJoins: { type: Number, default: 0 },
-      activeUsers: { type: Number, default: 0 },
-      totalDuration: { type: Number, default: 0 },
-      averageListeners: { type: Number, default: 0 },
+      totalJoins: {
+        type: Number,
+        default: 0,
+      },
+      totalDuration: {
+        type: Number,
+        default: 0,
+      },
+      averageListeners: {
+        type: Number,
+        default: 0,
+      },
     },
   },
   { timestamps: true }
 );
-
-/* =========================
-   INDEXES
-========================== */
-roomSchema.index({ category: 1, isActive: 1 });
-roomSchema.index({ "participants.user": 1 });
 
 module.exports = mongoose.model("Room", roomSchema);
