@@ -1,5 +1,5 @@
 // config/socket.js
-const Room = require("../models/room.model");
+const Room = require("../models/room");
 
 module.exports = (io) => {
   const onlineUsers = new Map(); // userId -> socketId
