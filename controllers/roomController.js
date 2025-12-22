@@ -235,9 +235,9 @@ exports.joinRoom = async (req, res) => {
 
     room.participants.push({
       user: req.user.id,
-      username: req.user.name,
+      username: req.user.username,
       avatar: req.user.avatar || "/avatar.png",
-      role: "listener",
+      role: room.host.toString() === req.user.id ? "host" : "listener",
       joinedAt: new Date(),
     });
 
@@ -259,7 +259,6 @@ exports.joinRoom = async (req, res) => {
     });
   }
 };
-
 
 exports.leaveRoom = async (req, res) => {
   try {
@@ -301,7 +300,6 @@ exports.leaveRoom = async (req, res) => {
     });
   }
 };
-
 
 exports.getPopularRooms = async (req, res) => {
   try {
