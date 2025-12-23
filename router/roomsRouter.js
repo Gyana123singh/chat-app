@@ -10,7 +10,7 @@ router.get("/get-all-rooms", roomController.getAllRooms); //done get all rooms w
 router.get("/popular", roomController.getPopularRooms);
 router.put("/:id", authMiddleware, roomController.updateRoom);
 router.delete("/:id", authMiddleware, roomController.deleteRoom);
-router.post("/:id/join", authMiddleware, roomController.joinRoom);
+router.post("/:roomId/join", authMiddleware, roomController.joinRoom);
 router.post("/:id/leave", authMiddleware, roomController.leaveRoom);
 
 module.exports = router;

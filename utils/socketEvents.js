@@ -1,193 +1,202 @@
-// config/socket.js
 const Room = require("../models/room");
 
 module.exports = (io) => {
   const onlineUsers = new Map(); // userId -> socketId
 
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+    console.log("✅ Socket connected:", socket.id);
 
     /* =========================
-       USER ONLINE / OFFLINE
+       USER CONNECT
     ========================== */
     socket.on("user:connect", ({ userId }) => {
+      if (!userId) return;
+
       onlineUsers.set(userId, socket.id);
       socket.data.userId = userId;
 
-      io.emit("user:online", {
-        userId,
-        timestamp: new Date(),
-      });
+      io.emit("user:online", { userId });
     });
 
     /* =========================
-       ROOM JOIN
+       ROOM JOIN (UUID SAFE)
     ========================== */
     socket.on("room:join", async ({ roomId, user }) => {
-      socket.join(`room:${roomId}`);
+      if (!roomId || !user?.id) return;
+
+      const roomName = `room:${roomId}`;
+
+      // Prevent duplicate joins
+      if (socket.data.roomId === roomId) return;
+
+      socket.join(roomName);
 
       socket.data.roomId = roomId;
-      socket.data.userId = user.id;
+      socket.data.user = {
+        id: user.id,
+        username: user.username,
+        avatar: user.avatar || "/avatar.png",
+      };
 
-      io.to(`room:${roomId}`).emit("room:userJoined", {
-        user,
-        timestamp: new Date(),
-      });
+      // Fetch all sockets in this room
+      const sockets = await io.in(roomName).fetchSockets();
+
+      // Unique users (multi-tab safe)
+      const usersInRoom = Array.from(
+        new Map(
+          sockets
+            .map((s) => s.data.user)
+            .filter(Boolean)
+            .map((u) => [u.id, u])
+        ).values()
+      );
+
+      // Send existing users to new joiner
+      socket.emit("room:users", usersInRoom);
+
+      // Notify others
+      socket.to(roomName).emit("room:userJoined", socket.data.user);
+
+      console.log(`👤 ${user.username} joined room ${roomId}`);
     });
 
     /* =========================
-       ROOM LEAVE (MANUAL)
+       ROOM LEAVE
     ========================== */
     socket.on("room:leave", async () => {
       await handleLeave(socket, io);
     });
 
     /* =========================
-       AUTO LEAVE ON DISCONNECT
+       DISCONNECT
     ========================== */
     socket.on("disconnect", async () => {
-      console.log("User disconnected:", socket.id);
+      console.log("❌ Socket disconnected:", socket.id);
 
       await handleLeave(socket, io);
 
-      // Online map cleanup
       for (const [userId, socketId] of onlineUsers.entries()) {
         if (socketId === socket.id) {
           onlineUsers.delete(userId);
-
-          io.emit("user:offline", {
-            userId,
-            timestamp: new Date(),
-          });
+          io.emit("user:offline", { userId });
           break;
         }
       }
     });
 
     /* =========================
-       MESSAGES
+       CHAT
     ========================== */
-    socket.on("message:send", ({ content, roomId, userId, username, avatar }) => {
+    socket.on("message:send", ({ roomId, content }) => {
+      if (!roomId || !content) return;
+
       io.to(`room:${roomId}`).emit("message:receive", {
         content,
-        userId,
-        username,
-        avatar,
+        userId: socket.data.user.id,
+        username: socket.data.user.username,
+        avatar: socket.data.user.avatar,
         timestamp: new Date(),
       });
     });
 
     /* =========================
-       TYPING INDICATOR
+       TYPING
     ========================== */
-    socket.on("typing:start", ({ roomId, userId, username }) => {
+    socket.on("typing:start", ({ roomId }) => {
       socket.to(`room:${roomId}`).emit("typing:update", {
-        userId,
-        username,
+        userId: socket.data.user.id,
+        username: socket.data.user.username,
         isTyping: true,
       });
     });
 
-    socket.on("typing:stop", ({ roomId, userId, username }) => {
+    socket.on("typing:stop", ({ roomId }) => {
       socket.to(`room:${roomId}`).emit("typing:update", {
-        userId,
-        username,
+        userId: socket.data.user.id,
+        username: socket.data.user.username,
         isTyping: false,
       });
     });
 
     /* =========================
-       GIFTS
+       🎤 MIC
     ========================== */
-    socket.on("gift:send", (data) => {
-      io.to(`room:${data.roomId}`).emit("gift:received", {
-        ...data,
+    socket.on("mic:update", ({ speaking, muted }) => {
+      if (!socket.data.roomId) return;
+
+      io.to(`room:${socket.data.roomId}`).emit("mic:update", {
+        userId: socket.data.user.id,
+        speaking,
+        muted,
+      });
+    });
+
+    /* =========================
+       🎁 GIFTS
+    ========================== */
+    socket.on("gift:send", ({ roomId, gift }) => {
+      io.to(`room:${roomId}`).emit("gift:received", {
+        ...gift,
+        from: socket.data.user,
         timestamp: new Date(),
       });
     });
 
     /* =========================
-       🎤 MIC / SPEAKING
+       📞 WEBRTC SIGNALING
     ========================== */
-    socket.on("mic:speaking", ({ isSpeaking }) => {
-      io.to(`room:${socket.data.roomId}`).emit("mic:update", {
-        userId: socket.data.userId,
-        isSpeaking,
+    socket.on("call:initiate", ({ receiverId, offer }) => {
+      const targetSocket = onlineUsers.get(receiverId);
+      if (!targetSocket) return;
+
+      io.to(targetSocket).emit("call:incoming", {
+        from: socket.data.user,
+        offer,
       });
     });
 
-    /* =========================
-       HOST CONTROLS
-    ========================== */
-    socket.on("host:mute", ({ targetUserId }) => {
-      io.to(`room:${socket.data.roomId}`).emit("user:muted", targetUserId);
-    });
-
-    socket.on("host:kick", ({ targetUserId }) => {
-      io.to(`room:${socket.data.roomId}`).emit("user:kicked", targetUserId);
-    });
-
-    /* =========================
-       VOICE CALL (WEBRTC)
-    ========================== */
-    socket.on("call:initiate", ({ callerId, receiverId, offer }) => {
-      const receiverSocketId = onlineUsers.get(receiverId);
-      if (receiverSocketId) {
-        io.to(receiverSocketId).emit("call:incoming", {
-          callerId,
-          offer,
-        });
-      }
-    });
-
     socket.on("call:answer", ({ callerId, answer }) => {
-      const callerSocketId = onlineUsers.get(callerId);
-      if (callerSocketId) {
-        io.to(callerSocketId).emit("call:answered", { answer });
-      }
+      const targetSocket = onlineUsers.get(callerId);
+      if (!targetSocket) return;
+
+      io.to(targetSocket).emit("call:answered", {
+        from: socket.data.user,
+        answer,
+      });
     });
 
     socket.on("call:ice-candidate", ({ to, candidate }) => {
-      const targetSocketId = onlineUsers.get(to);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit("call:ice-candidate", { candidate });
-      }
-    });
+      const targetSocket = onlineUsers.get(to);
+      if (!targetSocket) return;
 
-    /* =========================
-       ERROR
-    ========================== */
-    socket.on("error", (err) => {
-      console.error("Socket error:", err);
+      io.to(targetSocket).emit("call:ice-candidate", {
+        from: socket.data.user.id,
+        candidate,
+      });
     });
   });
 };
 
 /* =========================
-   LEAVE HANDLER
+   SAFE LEAVE HANDLER
 ========================== */
 async function handleLeave(socket, io) {
-  const { roomId, userId } = socket.data;
-  if (!roomId || !userId) return;
+  const { roomId, user } = socket.data;
+  if (!roomId || !user) return;
 
   try {
-    const room = await Room.findById(roomId);
-    if (!room) return;
-
-    room.participants = room.participants.filter(
-      (p) => p.user.toString() !== userId
+    await Room.findOneAndUpdate(
+      { roomId },
+      { $pull: { participants: { user: user.id } } }
     );
 
-    room.stats.activeUsers = room.participants.length;
-    await room.save();
-
     io.to(`room:${roomId}`).emit("room:userLeft", {
-      userId,
-      timestamp: new Date(),
+      userId: user.id,
     });
 
     socket.leave(`room:${roomId}`);
+    socket.data.roomId = null;
   } catch (err) {
-    console.error("Leave room error:", err.message);
+    console.error("❌ Leave error:", err.message);
   }
 }

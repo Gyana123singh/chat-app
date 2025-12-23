@@ -5,15 +5,18 @@ const { v4: uuidv4 } = require("uuid");
 
 exports.createRoom = async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     const userId = req.user.id;
     const { mode } = req.body;
 
     if (!mode) {
-      return res.status(400).json({ message: "Room mode required" });
+      return res.status(400).json({
+        success: false,
+        message: "Room mode required",
+      });
     }
 
     const user = await User.findById(userId).select(
@@ -21,24 +24,48 @@ exports.createRoom = async (req, res) => {
     );
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
+    const roomId = uuidv4();
+
     const room = await Room.create({
-      roomId: uuidv4(),
+      roomId, // ✅ UUID
       mode,
       title: `${mode} Room`,
-      host: userId.username,
+
+      host: userId, // ✅ FIX (ObjectId)
+
       creator: userId,
       creatorName: user.username || user.email,
       creatorEmail: user.email,
       creatorAvatar: user.profile?.avatar || null,
+
+      participants: [
+        {
+          user: userId,
+          username: user.username,
+          avatar: user.profile?.avatar || "/avatar.png",
+          role: "host",
+          joinedAt: new Date(),
+        },
+      ],
+
+      stats: {
+        totalJoins: 1,
+        activeUsers: 1,
+      },
+
       isActive: true,
     });
 
     return res.status(201).json({
       success: true,
-      message: "Room created",
+      message: "Room created successfully",
+      roomId: room.roomId, // 🔥 return UUID
       room,
     });
   } catch (err) {
@@ -202,27 +229,28 @@ exports.deleteRoom = async (req, res) => {
 
 exports.joinRoom = async (req, res) => {
   try {
-    const room = await Room.findById(req.params.id).populate(
-      "participants.user",
-      "username avatar"
-    );
+    const userId = req.user?.id;
+    const roomId = req.params.id;
 
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const isAlreadyParticipant = room.participants.some(
-      (p) => p.user._id.toString() === req.user.id
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ success: false, message: "Room not found" });
+    }
+
+    const alreadyJoined = room.participants.some(
+      (p) => p.user.toString() === userId
     );
 
-    if (isAlreadyParticipant) {
+    if (alreadyJoined) {
       return res.status(200).json({
         success: true,
         message: "Already joined",
-        room,
+        roomId: room.roomId,
+        participants: room.participants,
       });
     }
 
@@ -233,11 +261,13 @@ exports.joinRoom = async (req, res) => {
       });
     }
 
+    const isHost = room.host.toString() === userId;
+
     room.participants.push({
-      user: req.user.id,
-      username: req.user.username,
+      user: userId,
+      username: req.user.username || req.user.email,
       avatar: req.user.avatar || "/avatar.png",
-      role: room.host.toString() === req.user.id ? "host" : "listener",
+      role: isHost ? "host" : "listener",
       joinedAt: new Date(),
     });
 
@@ -245,20 +275,23 @@ exports.joinRoom = async (req, res) => {
     room.stats.activeUsers = room.participants.length;
 
     await room.save();
+    await room.populate("participants.user", "username avatar");
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Joined room successfully",
+      roomId: room.roomId,
       participants: room.participants,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("JOIN ROOM ERROR →", error);
+    return res.status(500).json({
       success: false,
       message: "Failed to join room",
-      error: error.message,
     });
   }
 };
+
 
 exports.leaveRoom = async (req, res) => {
   try {
