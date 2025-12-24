@@ -56,17 +56,20 @@ app.get("/", (req, res) => {
 
 /* ===================== SOCKET SETUP ===================== */
 
+
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: "*", // ✅ allow all clients
     methods: ["GET", "POST"],
   },
 });
 
+
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
+
 
 /* ===================== START SERVER ===================== */
 

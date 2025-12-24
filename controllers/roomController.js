@@ -259,24 +259,46 @@ exports.deleteRoom = async (req, res) => {
 exports.joinRoom = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const roomId = req.params.id;
+    const roomId = req.params.roomId;
+
+    console.log("🔍 JOIN REQUEST →", { userId, roomId });
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized - No user ID",
+      });
     }
 
     const room = await Room.findOne({ roomId });
+
     if (!room) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Room not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
     }
 
-    const alreadyJoined = room.participants.some(
-      (p) => p.user.toString() === userId
-    );
+    // ✅ FIX: Convert to strings for reliable comparison
+    const userIdString = userId.toString();
+    const hostId = room.host?.toString();
+    const creatorId = room.creator?.toString();
+
+    console.log("📊 Room data →", {
+      roomId,
+      hostId,
+      creatorId,
+      joiningUserId: userIdString,
+    });
+
+    // ✅ FIX: Check if already joined
+    const alreadyJoined = room.participants.some((p) => {
+      const participantUserId = p.user?.toString();
+      return participantUserId === userIdString;
+    });
 
     if (alreadyJoined) {
+      console.log("✅ User already in room");
       return res.status(200).json({
         success: true,
         message: "Already joined",
@@ -285,40 +307,67 @@ exports.joinRoom = async (req, res) => {
       });
     }
 
-    if (room.participants.length >= room.maxParticipants) {
+    // Check room capacity
+    if (
+      room.maxParticipants &&
+      room.participants.length >= room.maxParticipants
+    ) {
       return res.status(400).json({
         success: false,
         message: "Room is full",
       });
     }
 
-    const isHost = room.host.toString() === userId;
+    // ✅ FIX: Determine role - check both host and creator
+    let role = "listener";
+    if (hostId === userIdString || creatorId === userIdString) {
+      role = "host";
+    }
 
-    room.participants.push({
-      user: userId,
+    console.log("👤 Adding participant →", {
+      userId: userIdString,
+      role,
       username: req.user.username || req.user.email,
+    });
+
+    // Add to participants
+    room.participants.push({
+      user: userId, // Store as ObjectId
+      role,
+      isMuted: false,
+      isSpeaking: false,
       avatar: req.user.avatar || "/avatar.png",
-      role: isHost ? "host" : "listener",
       joinedAt: new Date(),
     });
 
+    // Update stats
     room.stats.totalJoins += 1;
     room.stats.activeUsers = room.participants.length;
 
+    // Save room
     await room.save();
-    await room.populate("participants.user", "username avatar");
+
+    // Populate user details
+    await room.populate("participants.user", "username avatar email");
+
+    console.log("✅ Join successful →", {
+      participants: room.participants.length,
+      activeUsers: room.stats.activeUsers,
+    });
 
     return res.status(200).json({
       success: true,
       message: "Joined room successfully",
       roomId: room.roomId,
+      room: room, // ✅ Send full room data
       participants: room.participants,
     });
   } catch (error) {
-    console.error("JOIN ROOM ERROR →", error);
+    console.error("❌ JOIN ROOM ERROR →", error.message, error.stack);
     return res.status(500).json({
       success: false,
       message: "Failed to join room",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
