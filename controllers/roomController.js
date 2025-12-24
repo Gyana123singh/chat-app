@@ -437,22 +437,4 @@ exports.leaveRoom = async (req, res) => {
   }
 };
 
-exports.getPopularRooms = async (req, res) => {
-  try {
-    const rooms = await Room.find({ isActive: true, privacy: "public" })
-      .populate("host", "username profile.avatar")
-      .sort({ "stats.totalJoins": -1 })
-      .limit(10);
 
-    res.status(200).json({
-      success: true,
-      rooms,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch popular rooms",
-      error: error.message,
-    });
-  }
-};
