@@ -2,7 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const roomController = require("../controllers/roomController");
-const { authMiddleware } = require("../middleware/auth");
+const { authMiddleware } = require("..//middleware/auth");
 
 
 router.get("/get-all-rooms", roomController.getAllRooms); //done get all rooms with pagination, search, filter

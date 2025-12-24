@@ -1,47 +1,34 @@
 const Room = require("../models/room");
 
 module.exports = (io) => {
-  const onlineUsers = new Map(); // userId -> socketId
+  const onlineUsers = new Map();
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
 
-    /* =========================
-       USER CONNECT
-    ========================== */
     socket.on("user:connect", ({ userId }) => {
       if (!userId) return;
-
       onlineUsers.set(userId, socket.id);
       socket.data.userId = userId;
-
       io.emit("user:online", { userId });
     });
 
-    /* =========================
-       ROOM JOIN (UUID SAFE)
-    ========================== */
     socket.on("room:join", async ({ roomId, user }) => {
-      if (!roomId || !user?.id) return;
+      if (!roomId) return;
 
       const roomName = `room:${roomId}`;
 
-      // Prevent duplicate joins
       if (socket.data.roomId === roomId) return;
 
       socket.join(roomName);
-
       socket.data.roomId = roomId;
       socket.data.user = {
-        id: user.id,
-        username: user.username,
-        avatar: user.avatar || "/avatar.png",
+        id: user?.id || socket.data.userId,
+        username: user?.username || "User",
+        avatar: user?.avatar || "/avatar.png",
       };
 
-      // Fetch all sockets in this room
       const sockets = await io.in(roomName).fetchSockets();
-
-      // Unique users (multi-tab safe)
       const usersInRoom = Array.from(
         new Map(
           sockets
@@ -51,28 +38,18 @@ module.exports = (io) => {
         ).values()
       );
 
-      // Send existing users to new joiner
       socket.emit("room:users", usersInRoom);
-
-      // Notify others
       socket.to(roomName).emit("room:userJoined", socket.data.user);
 
-      console.log(`👤 ${user.username} joined room ${roomId}`);
+      console.log(`👤 ${socket.data.user.username} joined room ${roomId}`);
     });
 
-    /* =========================
-       ROOM LEAVE
-    ========================== */
     socket.on("room:leave", async () => {
       await handleLeave(socket, io);
     });
 
-    /* =========================
-       DISCONNECT
-    ========================== */
     socket.on("disconnect", async () => {
       console.log("❌ Socket disconnected:", socket.id);
-
       await handleLeave(socket, io);
 
       for (const [userId, socketId] of onlineUsers.entries()) {
@@ -84,12 +61,46 @@ module.exports = (io) => {
       }
     });
 
-    /* =========================
-       CHAT
-    ========================== */
+    /* ========================
+       📞 WEBRTC SIGNALING
+    ======================== */
+    socket.on("call:offer", ({ roomId, offer, to }) => {
+      io.to(`room:${roomId}`).emit("call:offer", {
+        offer,
+        from: socket.data.user.id,
+        to,
+      });
+      console.log(`📤 Offer from ${socket.data.user.id} to ${to}`);
+    });
+
+    socket.on("call:answer", ({ roomId, answer, to }) => {
+      io.to(`room:${roomId}`).emit("call:answer", {
+        answer,
+        from: socket.data.user.id,
+        to,
+      });
+      console.log(`📤 Answer from ${socket.data.user.id} to ${to}`);
+    });
+
+    socket.on("call:ice", ({ roomId, candidate, to }) => {
+      io.to(`room:${roomId}`).emit("call:ice", {
+        candidate,
+        from: socket.data.user.id,
+        to,
+      });
+    });
+
+    socket.on("mic:update", ({ speaking, muted }) => {
+      if (!socket.data.roomId) return;
+      io.to(`room:${socket.data.roomId}`).emit("mic:update", {
+        userId: socket.data.user.id,
+        speaking,
+        muted,
+      });
+    });
+
     socket.on("message:send", ({ roomId, content }) => {
       if (!roomId || !content) return;
-
       io.to(`room:${roomId}`).emit("message:receive", {
         content,
         userId: socket.data.user.id,
@@ -98,88 +109,9 @@ module.exports = (io) => {
         timestamp: new Date(),
       });
     });
-
-    /* =========================
-       TYPING
-    ========================== */
-    socket.on("typing:start", ({ roomId }) => {
-      socket.to(`room:${roomId}`).emit("typing:update", {
-        userId: socket.data.user.id,
-        username: socket.data.user.username,
-        isTyping: true,
-      });
-    });
-
-    socket.on("typing:stop", ({ roomId }) => {
-      socket.to(`room:${roomId}`).emit("typing:update", {
-        userId: socket.data.user.id,
-        username: socket.data.user.username,
-        isTyping: false,
-      });
-    });
-
-    /* =========================
-       🎤 MIC
-    ========================== */
-    socket.on("mic:update", ({ speaking, muted }) => {
-      if (!socket.data.roomId) return;
-
-      io.to(`room:${socket.data.roomId}`).emit("mic:update", {
-        userId: socket.data.user.id,
-        speaking,
-        muted,
-      });
-    });
-
-    /* =========================
-       🎁 GIFTS
-    ========================== */
-    socket.on("gift:send", ({ roomId, gift }) => {
-      io.to(`room:${roomId}`).emit("gift:received", {
-        ...gift,
-        from: socket.data.user,
-        timestamp: new Date(),
-      });
-    });
-
-    /* =========================
-       📞 WEBRTC SIGNALING
-    ========================== */
-    socket.on("call:initiate", ({ receiverId, offer }) => {
-      const targetSocket = onlineUsers.get(receiverId);
-      if (!targetSocket) return;
-
-      io.to(targetSocket).emit("call:incoming", {
-        from: socket.data.user,
-        offer,
-      });
-    });
-
-    socket.on("call:answer", ({ callerId, answer }) => {
-      const targetSocket = onlineUsers.get(callerId);
-      if (!targetSocket) return;
-
-      io.to(targetSocket).emit("call:answered", {
-        from: socket.data.user,
-        answer,
-      });
-    });
-
-    socket.on("call:ice-candidate", ({ to, candidate }) => {
-      const targetSocket = onlineUsers.get(to);
-      if (!targetSocket) return;
-
-      io.to(targetSocket).emit("call:ice-candidate", {
-        from: socket.data.user.id,
-        candidate,
-      });
-    });
   });
 };
 
-/* =========================
-   SAFE LEAVE HANDLER
-========================== */
 async function handleLeave(socket, io) {
   const { roomId, user } = socket.data;
   if (!roomId || !user) return;
