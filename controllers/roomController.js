@@ -103,6 +103,35 @@ exports.getMyRooms = async (req, res) => {
     });
   }
 };
+
+exports.getRoomById = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const room = await Room.findOne({ roomId }).populate(
+      "participants.user",
+      "username avatar"
+    );
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      room,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch room",
+    });
+  }
+};
+
 exports.getAllRooms = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query;
@@ -238,7 +267,9 @@ exports.joinRoom = async (req, res) => {
 
     const room = await Room.findOne({ roomId });
     if (!room) {
-      return res.status(404).json({ success: false, message: "Room not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Room not found" });
     }
 
     const alreadyJoined = room.participants.some(
@@ -292,10 +323,21 @@ exports.joinRoom = async (req, res) => {
   }
 };
 
-
+// controllers/roomController.js
 exports.leaveRoom = async (req, res) => {
   try {
-    const room = await Room.findById(req.params.id);
+    const userId = req.user?.id;
+    const roomId = req.params.roomId || req.params.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    // ✅ Find room by UUID (NOT Mongo _id)
+    const room = await Room.findOne({ roomId });
 
     if (!room) {
       return res.status(404).json({
@@ -304,10 +346,19 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
+    // ❌ Prevent host from leaving (optional but recommended)
+    if (room.host?.toString() === userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Host cannot leave the room",
+      });
+    }
+
     const beforeCount = room.participants.length;
 
+    // ✅ Remove user safely
     room.participants = room.participants.filter(
-      (p) => p.user.toString() !== req.user.id
+      (p) => p.user.toString() !== userId
     );
 
     if (beforeCount === room.participants.length) {
@@ -317,16 +368,19 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
-    room.stats.activeUsers = room.participants.length;
+    // ❌ Do NOT use stats.activeUsers (not in schema)
 
     await room.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Left room successfully",
+      roomId: room.roomId,
+      participantsCount: room.participants.length,
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("LEAVE ROOM ERROR →", error);
+    return res.status(500).json({
       success: false,
       message: "Failed to leave room",
       error: error.message,
