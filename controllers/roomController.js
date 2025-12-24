@@ -259,46 +259,24 @@ exports.deleteRoom = async (req, res) => {
 exports.joinRoom = async (req, res) => {
   try {
     const userId = req.user?.id;
-    const roomId = req.params.roomId;
-
-    console.log("🔍 JOIN REQUEST →", { userId, roomId });
+    const roomId = req.params.id;
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized - No user ID",
-      });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     const room = await Room.findOne({ roomId });
-
     if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
+      return res
+        .status(404)
+        .json({ success: false, message: "Room not found" });
     }
 
-    // ✅ FIX: Convert to strings for reliable comparison
-    const userIdString = userId.toString();
-    const hostId = room.host?.toString();
-    const creatorId = room.creator?.toString();
-
-    console.log("📊 Room data →", {
-      roomId,
-      hostId,
-      creatorId,
-      joiningUserId: userIdString,
-    });
-
-    // ✅ FIX: Check if already joined
-    const alreadyJoined = room.participants.some((p) => {
-      const participantUserId = p.user?.toString();
-      return participantUserId === userIdString;
-    });
+    const alreadyJoined = room.participants.some(
+      (p) => p.user.toString() === userId
+    );
 
     if (alreadyJoined) {
-      console.log("✅ User already in room");
       return res.status(200).json({
         success: true,
         message: "Already joined",
@@ -307,67 +285,40 @@ exports.joinRoom = async (req, res) => {
       });
     }
 
-    // Check room capacity
-    if (
-      room.maxParticipants &&
-      room.participants.length >= room.maxParticipants
-    ) {
+    if (room.participants.length >= room.maxParticipants) {
       return res.status(400).json({
         success: false,
         message: "Room is full",
       });
     }
 
-    // ✅ FIX: Determine role - check both host and creator
-    let role = "listener";
-    if (hostId === userIdString || creatorId === userIdString) {
-      role = "host";
-    }
+    const isHost = room.host.toString() === userId;
 
-    console.log("👤 Adding participant →", {
-      userId: userIdString,
-      role,
-      username: req.user.username || req.user.email,
-    });
-
-    // Add to participants
     room.participants.push({
-      user: userId, // Store as ObjectId
-      role,
-      isMuted: false,
-      isSpeaking: false,
+      user: userId,
+      username: req.user.username || req.user.email,
       avatar: req.user.avatar || "/avatar.png",
+      role: isHost ? "host" : "listener",
       joinedAt: new Date(),
     });
 
-    // Update stats
     room.stats.totalJoins += 1;
     room.stats.activeUsers = room.participants.length;
 
-    // Save room
     await room.save();
-
-    // Populate user details
-    await room.populate("participants.user", "username avatar email");
-
-    console.log("✅ Join successful →", {
-      participants: room.participants.length,
-      activeUsers: room.stats.activeUsers,
-    });
+    await room.populate("participants.user", "username avatar");
 
     return res.status(200).json({
       success: true,
       message: "Joined room successfully",
       roomId: room.roomId,
-      room: room, // ✅ Send full room data
       participants: room.participants,
     });
   } catch (error) {
-    console.error("❌ JOIN ROOM ERROR →", error.message, error.stack);
+    console.error("JOIN ROOM ERROR →", error);
     return res.status(500).json({
       success: false,
       message: "Failed to join room",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
@@ -437,4 +388,22 @@ exports.leaveRoom = async (req, res) => {
   }
 };
 
+exports.getPopularRooms = async (req, res) => {
+  try {
+    const rooms = await Room.find({ isActive: true, privacy: "public" })
+      .populate("host", "username profile.avatar")
+      .sort({ "stats.totalJoins": -1 })
+      .limit(10);
 
+    res.status(200).json({
+      success: true,
+      rooms,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch popular rooms",
+      error: error.message,
+    });
+  }
+};
