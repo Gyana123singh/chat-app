@@ -39,9 +39,7 @@ const userSchema = new mongoose.Schema(
     // 🔹 Phone OTP
     phone: {
       type: String,
-      unique: true,
       sparse: true,
-      default: null,
     },
 
     profile: {
