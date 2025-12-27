@@ -4,11 +4,8 @@ const bcrypt = require("bcryptjs");
 const userSchema = new mongoose.Schema(
   {
     // 🔹 Firebase UID (Phone OTP)
-    firebaseUid: {
-      type: String,
-      default: null,
-      index: true,
-    },
+    firebaseUid: String,
+    createdAt: { type: Date, default: Date.now },
 
     username: {
       type: String,
@@ -40,6 +37,8 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
       sparse: true,
+      trim: true,
+      default: undefined,
     },
 
     profile: {
@@ -92,6 +91,20 @@ const userSchema = new mongoose.Schema(
     lastSeen: {
       type: Date,
       default: Date.now,
+    },
+
+    authProvider: {
+      type: String,
+      enum: ["email", "firebase-phone", "google"],
+      default: "firebase-phone",
+    },
+    country: {
+      type: String,
+      enum: ["IN", "PK", "BD"],
+    },
+    countryCode: {
+      type: String,
+      enum: ["+91", "+92", "+880"],
     },
   },
   { timestamps: true }

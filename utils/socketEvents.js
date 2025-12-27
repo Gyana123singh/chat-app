@@ -1,11 +1,14 @@
-const Room = require("../models/room");
 
 module.exports = (io) => {
   const onlineUsers = new Map();
-  const micStates = new Map(); // ✅ FIX: userId -> { muted, speaking }
+  const micStates = new Map(); // ✅ userId -> { muted, speaking }
+  const roomMessages = new Map(); // ✅ roomId -> [messages]
+  const typingUsers = new Map(); // ✅ roomId -> Set of userIds typing
+
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
+
 
     /* =========================
        USER CONNECT
@@ -24,6 +27,7 @@ module.exports = (io) => {
 
       console.log("🟢 User connected:", { userId, username });
     });
+
 
     /* =========================
        ROOM JOIN
@@ -54,10 +58,15 @@ module.exports = (io) => {
 
         socket.emit("room:users", usersInRoom);
         socket.to(roomName).emit("room:userJoined", user);
+
+        // ✅ Send existing messages to joined user
+        const messages = roomMessages.get(roomId) || [];
+        socket.emit("room:messages", messages);
       } catch (err) {
         console.error("❌ room:join error:", err);
       }
     });
+
 
     /* =========================
        MIC MUTE
@@ -77,6 +86,7 @@ module.exports = (io) => {
       console.log(`🔇 ${userId} muted mic`);
     });
 
+
     /* =========================
        MIC UNMUTE
     ========================= */
@@ -94,6 +104,7 @@ module.exports = (io) => {
 
       console.log(`🎤 ${userId} unmuted mic`);
     });
+
 
     /* =========================
        SPEAKING STATUS
@@ -114,6 +125,7 @@ module.exports = (io) => {
       });
     });
 
+
     /* =========================
        WEBRTC OFFER
     ========================= */
@@ -126,6 +138,7 @@ module.exports = (io) => {
         offer,
       });
     });
+
 
     /* =========================
        WEBRTC ANSWER
@@ -140,6 +153,7 @@ module.exports = (io) => {
       });
     });
 
+
     /* =========================
        WEBRTC ICE
     ========================= */
@@ -153,6 +167,172 @@ module.exports = (io) => {
       });
     });
 
+
+    /* =========================
+       SEND MESSAGE
+    ========================= */
+    socket.on("message:send", ({ roomId, text }) => {
+      const { userId, username, avatar } = socket.data;
+      if (!roomId || !text || !userId) return;
+
+      const roomName = `room:${roomId}`;
+
+      // ✅ Create message object with unique ID and timestamp
+      const message = {
+        id: `${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        userId,
+        username,
+        avatar,
+        text,
+        timestamp: new Date().toISOString(),
+        edited: false,
+        editedAt: null,
+      };
+
+      // ✅ Store message in room
+      if (!roomMessages.has(roomId)) {
+        roomMessages.set(roomId, []);
+      }
+      roomMessages.get(roomId).push(message);
+
+      // ✅ Broadcast to all users in room (including sender)
+      io.to(roomName).emit("message:receive", message);
+
+      console.log(`💬 Message sent in ${roomName}:`, { userId, text: text.substring(0, 50) });
+    });
+
+
+    /* =========================
+       TYPING INDICATOR
+    ========================= */
+    socket.on("message:typing", ({ roomId, isTyping }) => {
+      const { userId, username } = socket.data;
+      if (!roomId || !userId) return;
+
+      const roomName = `room:${roomId}`;
+
+      // ✅ Track typing users
+      if (!typingUsers.has(roomId)) {
+        typingUsers.set(roomId, new Set());
+      }
+
+      const typingSet = typingUsers.get(roomId);
+
+      if (isTyping) {
+        typingSet.add(userId);
+      } else {
+        typingSet.delete(userId);
+      }
+
+      // ✅ Broadcast typing status to others (not sender)
+      socket.to(roomName).emit("message:typing", {
+        userId,
+        username,
+        isTyping,
+        typingUsers: Array.from(typingSet),
+      });
+
+      console.log(`⌨️ ${username} is ${isTyping ? "typing" : "not typing"} in ${roomName}`);
+    });
+
+
+    /* =========================
+       EDIT MESSAGE
+    ========================= */
+    socket.on("message:edit", ({ roomId, messageId, newText }) => {
+      const { userId, roomId: userRoomId } = socket.data;
+      if (!roomId || !messageId || !newText || !userId) return;
+
+      // ✅ Verify user is in the room
+      if (userRoomId !== roomId) {
+        console.warn(`❌ User ${userId} tried to edit message in unauthorized room`);
+        return;
+      }
+
+      const roomName = `room:${roomId}`;
+      const messages = roomMessages.get(roomId);
+
+      if (!messages) return;
+
+      // ✅ Find and update message
+      const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+      if (messageIndex === -1) {
+        console.warn(`❌ Message ${messageId} not found`);
+        return;
+      }
+
+      const message = messages[messageIndex];
+
+      // ✅ Verify ownership (only sender can edit)
+      if (message.userId !== userId) {
+        console.warn(`❌ User ${userId} tried to edit message by ${message.userId}`);
+        socket.emit("message:error", {
+          messageId,
+          error: "You can only edit your own messages",
+        });
+        return;
+      }
+
+      // ✅ Update message
+      message.text = newText;
+      message.edited = true;
+      message.editedAt = new Date().toISOString();
+      messages[messageIndex] = message;
+
+      // ✅ Broadcast edited message to room
+      io.to(roomName).emit("message:edited", message);
+
+      console.log(`✏️ Message ${messageId} edited in ${roomName}`);
+    });
+
+
+    /* =========================
+       DELETE MESSAGE
+    ========================= */
+    socket.on("message:delete", ({ roomId, messageId }) => {
+      const { userId, roomId: userRoomId } = socket.data;
+      if (!roomId || !messageId || !userId) return;
+
+      // ✅ Verify user is in the room
+      if (userRoomId !== roomId) {
+        console.warn(`❌ User ${userId} tried to delete message in unauthorized room`);
+        return;
+      }
+
+      const roomName = `room:${roomId}`;
+      const messages = roomMessages.get(roomId);
+
+      if (!messages) return;
+
+      // ✅ Find message
+      const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+      if (messageIndex === -1) {
+        console.warn(`❌ Message ${messageId} not found`);
+        return;
+      }
+
+      const message = messages[messageIndex];
+
+      // ✅ Verify ownership (only sender can delete)
+      if (message.userId !== userId) {
+        console.warn(`❌ User ${userId} tried to delete message by ${message.userId}`);
+        socket.emit("message:error", {
+          messageId,
+          error: "You can only delete your own messages",
+        });
+        return;
+      }
+
+      // ✅ Remove message from storage
+      messages.splice(messageIndex, 1);
+
+      // ✅ Broadcast deletion to room
+      io.to(roomName).emit("message:deleted", { messageId });
+
+      console.log(`🗑️ Message ${messageId} deleted from ${roomName}`);
+    });
+
+
     /* =========================
        DISCONNECT
     ========================= */
@@ -162,6 +342,11 @@ module.exports = (io) => {
       if (userId) {
         onlineUsers.delete(userId);
         micStates.delete(userId);
+
+        // ✅ Remove from typing users
+        if (roomId && typingUsers.has(roomId)) {
+          typingUsers.get(roomId).delete(userId);
+        }
       }
 
       if (roomId && user) {
