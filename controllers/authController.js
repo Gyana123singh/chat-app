@@ -10,8 +10,7 @@ exports.googleAuthSuccess = async (req, res) => {
   const token = signToken(req.user);
 
   // ✅ Redirect to Vercel frontend
-  // res.redirect(`myapp://auth/google/success?token=${token}`);
-  res.redirect(`http://localhost:3001/auth/google/success?token=${token}`);
+  res.redirect(`myapp://auth/google/success?token=${token}`);
 
 };
 
