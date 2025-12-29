@@ -64,6 +64,7 @@ const io = new Server(server, {
   cors: {
     origin: true, // ✅ allow all clients
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
