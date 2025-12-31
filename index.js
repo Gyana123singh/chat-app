@@ -62,7 +62,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: true, // ✅ allow all clients
+    origin: ["https://yourwebdomain.com", "https://admin.yourwebdomain.com"],
     methods: ["GET", "POST"],
     credentials: true,
   },
