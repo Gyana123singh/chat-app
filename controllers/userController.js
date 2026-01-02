@@ -1,84 +1,13 @@
 // controllers/userController.js
 const User = require("../models/users");
 
-exports.getUserById = async (req, res) => {
+exports.getProfile = async (req, res) => {
   try {
     const { userId } = req.params;
 
     const user = await User.findById(userId).select(
-      "name profileImage level age gender country sentGifts receivedGifts isSVIP"
+      "username phone country countryCode role lastSeen profile stats isVerified"
     );
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        id: user._id,
-        name: user.name,
-        profileImage: user.profileImage,
-        level: user.level,
-        age: user.age,
-        gender: user.gender,
-        country: user.country,
-        sent: user.sentGifts,
-        received: user.receivedGifts,
-        isSVIP: user.isSVIP,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error });
-  }
-};
-
-exports.updateProfile = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const {
-      name,
-      birthday,
-      gender,
-      country,
-      whatsapp,
-      spaceBackgrounds,
-      profileImage,
-    } = req.body;
-
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      {
-        name,
-        birthday,
-        gender,
-        country,
-        whatsapp,
-        spaceBackgrounds,
-        profileImage,
-      },
-      { new: true }
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.json({
-      success: true,
-      message: "Profile updated successfully",
-      data: updatedUser,
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error });
-  }
-};
-exports.getProfile = async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id)
-      .populate("followers", "username profile.avatar")
-      .populate("following", "username profile.avatar");
 
     if (!user) {
       return res.status(404).json({
@@ -89,12 +18,112 @@ exports.getProfile = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      user: user.toJSON(),
+      data: {
+        id: user._id,
+        username: user.username,
+        avatar: user.profile.avatar,
+        bio: user.profile.bio,
+        language: user.profile.language,
+        theme: user.profile.theme,
+
+        country: user.country,
+        countryCode: user.countryCode,
+        phone: user.phone,
+
+        coins: user.stats.coins,
+        followers: user.stats.followers,
+        following: user.stats.following,
+        giftsReceived: user.stats.giftsReceived,
+        totalHostingMinutes: user.stats.totalHostingMinutes,
+
+        role: user.role,
+        isVerified: user.isVerified,
+        lastSeen: user.lastSeen,
+      },
+    });
+  } catch (error) {
+    console.error("Get Profile Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const {
+      username,
+      phone,
+      country,
+      countryCode,
+      avatar,
+      bio,
+      language,
+      theme,
+      interests,
+    } = req.body;
+
+    const updateData = {};
+
+    // Top-level fields
+    if (username) updateData.username = username;
+    if (phone) updateData.phone = phone;
+    if (country) updateData.country = country;
+    if (countryCode) updateData.countryCode = countryCode;
+
+    // Nested profile fields
+    if (avatar) updateData["profile.avatar"] = avatar;
+    if (bio) updateData["profile.bio"] = bio;
+    if (language) updateData["profile.language"] = language;
+    if (theme) updateData["profile.theme"] = theme;
+    if (interests) updateData["profile.interests"] = interests;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select("username phone country countryCode profile");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update Profile Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find({ isActive: true })
+      .select(
+        "username profile.avatar country role stats.followers stats.following stats.coins lastSeen"
+      )
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      users,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to fetch user",
+      message: "Failed to fetch users",
       error: error.message,
     });
   }
