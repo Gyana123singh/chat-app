@@ -15,7 +15,7 @@ const adminRoutes = require("./router/adminRouter");
 const usersRouter = require("./router/usersRouter");
 const roomsRouter = require("./router/roomsRouter");
 const firebaseOtpRouter = require("./router/authFirebaseRouter");
-const giftRouter=require("./router/giftsRouter")
+const giftRouter = require("./router/giftsRouter");
 
 const app = express();
 connectMongose();
