@@ -1,6 +1,8 @@
 const bcrypt = require("bcryptjs");
 const { signToken } = require("../utils/jwtAuth");
 const User = require("../models/users");
+const coinMapping = require("../models/coinMapping");
+const CoinPlan = require("../models/coinPlan");
 
 exports.adminLogin = async (req, res) => {
   try {
@@ -106,6 +108,165 @@ exports.registerUser = async (req, res) => {
   } catch (error) {
     console.error("REGISTER ERROR:", error);
     return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+//api for get all users
+
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find();
+
+    res.status(200).json({
+      success: true,
+      message: "Fetched all users successfully",
+      users,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateCoinMapping = async (req, res) => {
+  const { rate } = req.body;
+
+  if (!rate || rate <= 0) {
+    return res.status(400).json({ message: "Invalid rate" });
+  }
+
+  let config = await coinMapping.findOne();
+
+  if (!config) {
+    config = await coinMapping.create({ rate });
+  } else {
+    config.rate = rate;
+    await config.save();
+  }
+
+  res.json({
+    message: "INR → Coin mapping updated",
+    rate: config.rate,
+  });
+};
+
+exports.getCoinMapping = async (req, res) => {
+  const config = await coinMapping.findOne();
+  res.json({ rate: config?.rate || 0 });
+};
+
+// api for calculate the coin for the UI
+exports.calculateCoins = async (req, res) => {
+  try {
+    const { amountINR } = req.body;
+
+    if (!amountINR || amountINR <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    const config = await coinMapping.findOne();
+    if (!config) {
+      return res.status(500).json({ message: "Coin mapping not set" });
+    }
+
+    const coins = amountINR * config.rate;
+
+    res.json({
+      success: true,
+      amountINR,
+      rate: config.rate,
+      coins,
+    });
+  } catch (error) {
+    console.error("Calculate Coins Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ✅ Add Recharge Plan with calculated coins (secure)
+exports.addRechargePlan = async (req, res) => {
+  try {
+    // 🔒 Convert input explicitly
+    const amount = Number(req.body.amount);
+    const bonusCoins = Number(req.body.bonusCoins || 0);
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
+
+    const config = await coinMapping.findOne();
+    if (!config) {
+      return res.status(400).json({
+        message: "Coin mapping not set",
+      });
+    }
+
+    const baseCoins = amount * Number(config.rate);
+    const totalCoins = baseCoins + bonusCoins;
+
+    const plan = await CoinPlan.create({
+      amount,
+      coins: baseCoins,
+      bonusCoins,
+      totalCoins,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Recharge plan created",
+      plan,
+    });
+  } catch (error) {
+    console.error("Add Recharge Plan Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ✅ Get All Recharge Plans
+exports.getRechargePlans = async (req, res) => {
+  try {
+    const plans = await CoinPlan.find({ active: true }).sort({ amount: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: plans.length,
+      plans,
+    });
+  } catch (error) {
+    console.error("Get Recharge Plans Error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ✅ Soft delete recharge plan
+exports.deleteRechargePlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const plan = await CoinPlan.findById(id);
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        message: "Recharge plan not found",
+      });
+    }
+
+    plan.active = false;
+    await plan.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Recharge plan deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete Recharge Plan Error:", error);
+    res.status(500).json({
       success: false,
       message: "Server error",
     });

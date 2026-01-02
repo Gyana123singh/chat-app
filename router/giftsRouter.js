@@ -1,3 +1,18 @@
+const express = require("express");
+const router = express.Router();
+
+const giftController = require("../controllers/giftController");
+const { authMiddleware } = require("../middleware/auth");
+const multer = require("../middleware/multer.middleware");
+
+
+
+router.post("/addGift", multer.single("image"), giftController.addGift);
+router.get("/getAllGift", giftController.getAllGifts);
+router.post("/addCategory", giftController.addCategory);
+router.get("/getCategory", giftController.getCategory);
+
+
 // // routes/gifts.js
 // const express = require('express');
 // const router = express.Router();
