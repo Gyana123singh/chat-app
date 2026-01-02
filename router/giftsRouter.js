@@ -24,4 +24,4 @@ router.get("/getCategory", giftController.getCategory);
 // router.get('/history', authMiddleware, giftController.getGiftHistory);
 // router.get('/leaderboard', giftController.getLeaderboard);
 
-// module.exports = router;
+module.exports = router;
