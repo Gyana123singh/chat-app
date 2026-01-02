@@ -5,9 +5,9 @@ const userController = require("../controllers/userController");
 const userPhoneOtpAuth = require("../controllers/authController");
 const { authMiddleware } = require("../middleware/auth");
 
-router.get("/profile", authMiddleware, userController.getProfile);
-router.put("/profile", authMiddleware, userController.updateProfile);
-router.get("/:id", userController.getUserById);
+router.get("/profile/:userId", authMiddleware, userController.getUserById);
+router.put("/edit-profile/:userId", authMiddleware, userController.updateProfile);
+router.get("/:id", userController.getProfile);
 router.get("/search", userController.searchUsers);
 router.post("/follow/:id", authMiddleware, userController.followUser);
 router.get("/followers", authMiddleware, userController.getFollowers);

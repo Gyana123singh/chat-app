@@ -1,65 +1,80 @@
 // controllers/userController.js
 const User = require("../models/users");
 
-exports.getProfile = async (req, res) => {
+exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id)
-      .populate("followers", "username profile.avatar")
-      .populate("following", "username profile.avatar");
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select(
+      "name profileImage level age gender country sentGifts receivedGifts isSVIP"
+    );
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    res.status(200).json({
+    res.json({
       success: true,
-      user: user.toJSON(),
+      data: {
+        id: user._id,
+        name: user.name,
+        profileImage: user.profileImage,
+        level: user.level,
+        age: user.age,
+        gender: user.gender,
+        country: user.country,
+        sent: user.sentGifts,
+        received: user.receivedGifts,
+        isSVIP: user.isSVIP,
+      },
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch profile",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Server error", error });
   }
 };
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { bio, avatar, language, theme, interests } = req.body;
+    const { userId } = req.params;
 
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
+    const {
+      name,
+      birthday,
+      gender,
+      country,
+      whatsapp,
+      spaceBackgrounds,
+      profileImage,
+    } = req.body;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
       {
-        profile: {
-          bio: bio || "",
-          avatar: avatar || "",
-          language: language || "English",
-          theme: theme || "dark",
-          interests: interests || [],
-        },
+        name,
+        birthday,
+        gender,
+        country,
+        whatsapp,
+        spaceBackgrounds,
+        profileImage,
       },
       { new: true }
     );
 
-    res.status(200).json({
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
       success: true,
       message: "Profile updated successfully",
-      user: user.toJSON(),
+      data: updatedUser,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to update profile",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Server error", error });
   }
 };
-
-exports.getUserById = async (req, res) => {
+exports.getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .populate("followers", "username profile.avatar")
@@ -84,7 +99,6 @@ exports.getUserById = async (req, res) => {
     });
   }
 };
-
 exports.followUser = async (req, res) => {
   try {
     const { id } = req.params;
