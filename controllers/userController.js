@@ -1,7 +1,7 @@
 // controllers/userController.js
 const User = require("../models/users");
 
-exports.getProfile = async (req, res) => {
+exports.getUserById = async (req, res) => {
   try {
     const { userId } = req.params;
 
