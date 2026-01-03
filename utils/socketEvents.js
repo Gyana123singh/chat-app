@@ -1,14 +1,11 @@
-
 module.exports = (io) => {
   const onlineUsers = new Map();
   const micStates = new Map(); // ✅ userId -> { muted, speaking }
   const roomMessages = new Map(); // ✅ roomId -> [messages]
   const typingUsers = new Map(); // ✅ roomId -> Set of userIds typing
 
-
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
-
 
     /* =========================
        USER CONNECT
@@ -27,7 +24,6 @@ module.exports = (io) => {
 
       console.log("🟢 User connected:", { userId, username });
     });
-
 
     /* =========================
        ROOM JOIN
@@ -67,7 +63,6 @@ module.exports = (io) => {
       }
     });
 
-
     /* =========================
        MIC MUTE
     ========================= */
@@ -86,7 +81,6 @@ module.exports = (io) => {
       console.log(`🔇 ${userId} muted mic`);
     });
 
-
     /* =========================
        MIC UNMUTE
     ========================= */
@@ -104,7 +98,6 @@ module.exports = (io) => {
 
       console.log(`🎤 ${userId} unmuted mic`);
     });
-
 
     /* =========================
        SPEAKING STATUS
@@ -125,7 +118,6 @@ module.exports = (io) => {
       });
     });
 
-
     /* =========================
        WEBRTC OFFER
     ========================= */
@@ -138,7 +130,6 @@ module.exports = (io) => {
         offer,
       });
     });
-
 
     /* =========================
        WEBRTC ANSWER
@@ -153,7 +144,6 @@ module.exports = (io) => {
       });
     });
 
-
     /* =========================
        WEBRTC ICE
     ========================= */
@@ -167,7 +157,6 @@ module.exports = (io) => {
       });
     });
 
-
     /* =========================
        SEND MESSAGE
     ========================= */
@@ -179,7 +168,9 @@ module.exports = (io) => {
 
       // ✅ Create message object with unique ID and timestamp
       const message = {
-        id: `${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id: `${userId}-${Date.now()}-${Math.random()
+          .toString(36)
+          .substr(2, 9)}`,
         userId,
         username,
         avatar,
@@ -198,9 +189,11 @@ module.exports = (io) => {
       // ✅ Broadcast to all users in room (including sender)
       io.to(roomName).emit("message:receive", message);
 
-      console.log(`💬 Message sent in ${roomName}:`, { userId, text: text.substring(0, 50) });
+      console.log(`💬 Message sent in ${roomName}:`, {
+        userId,
+        text: text.substring(0, 50),
+      });
     });
-
 
     /* =========================
        TYPING INDICATOR
@@ -232,9 +225,10 @@ module.exports = (io) => {
         typingUsers: Array.from(typingSet),
       });
 
-      console.log(`⌨️ ${username} is ${isTyping ? "typing" : "not typing"} in ${roomName}`);
+      console.log(
+        `⌨️ ${username} is ${isTyping ? "typing" : "not typing"} in ${roomName}`
+      );
     });
-
 
     /* =========================
        EDIT MESSAGE
@@ -245,7 +239,9 @@ module.exports = (io) => {
 
       // ✅ Verify user is in the room
       if (userRoomId !== roomId) {
-        console.warn(`❌ User ${userId} tried to edit message in unauthorized room`);
+        console.warn(
+          `❌ User ${userId} tried to edit message in unauthorized room`
+        );
         return;
       }
 
@@ -265,7 +261,9 @@ module.exports = (io) => {
 
       // ✅ Verify ownership (only sender can edit)
       if (message.userId !== userId) {
-        console.warn(`❌ User ${userId} tried to edit message by ${message.userId}`);
+        console.warn(
+          `❌ User ${userId} tried to edit message by ${message.userId}`
+        );
         socket.emit("message:error", {
           messageId,
           error: "You can only edit your own messages",
@@ -285,7 +283,6 @@ module.exports = (io) => {
       console.log(`✏️ Message ${messageId} edited in ${roomName}`);
     });
 
-
     /* =========================
        DELETE MESSAGE
     ========================= */
@@ -295,7 +292,9 @@ module.exports = (io) => {
 
       // ✅ Verify user is in the room
       if (userRoomId !== roomId) {
-        console.warn(`❌ User ${userId} tried to delete message in unauthorized room`);
+        console.warn(
+          `❌ User ${userId} tried to delete message in unauthorized room`
+        );
         return;
       }
 
@@ -315,7 +314,9 @@ module.exports = (io) => {
 
       // ✅ Verify ownership (only sender can delete)
       if (message.userId !== userId) {
-        console.warn(`❌ User ${userId} tried to delete message by ${message.userId}`);
+        console.warn(
+          `❌ User ${userId} tried to delete message by ${message.userId}`
+        );
         socket.emit("message:error", {
           messageId,
           error: "You can only delete your own messages",
@@ -332,7 +333,43 @@ module.exports = (io) => {
       console.log(`🗑️ Message ${messageId} deleted from ${roomName}`);
     });
 
+    /* ======================
+       FRIEND REQUEST SEND
+    ====================== */
+    socket.on("friend:request:send", ({ toUserId }) => {
+      const fromUserId = socket.data.userId;
+      if (!fromUserId || !toUserId) return;
 
+      const targetSocket = onlineUsers.get(toUserId);
+
+      if (targetSocket) {
+        io.to(targetSocket).emit("friend:request:received", {
+          fromUserId,
+          fromUsername: socket.data.username, 
+          fromAvatar: socket.data.avatar,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+
+    /* ======================
+       FRIEND REQUEST ACCEPT
+    ====================== */
+    socket.on("friend:request:accept", ({ toUserId }) => {
+      const fromUserId = socket.data.userId;
+      if (!fromUserId || !toUserId) return;
+
+      const targetSocket = onlineUsers.get(toUserId);
+
+      if (targetSocket) {
+        io.to(targetSocket).emit("friend:request:accepted", {
+          fromUserId,
+          fromUsername: socket.data.username,
+          fromAvatar: socket.data.avatar,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
     /* =========================
        DISCONNECT
     ========================= */

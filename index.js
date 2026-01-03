@@ -16,6 +16,7 @@ const usersRouter = require("./router/usersRouter");
 const roomsRouter = require("./router/roomsRouter");
 const firebaseOtpRouter = require("./router/authFirebaseRouter");
 const giftRouter = require("./router/giftsRouter");
+const friendRequestRouter = require("./router/friendRequestRouter");
 
 const app = express();
 connectMongose();
@@ -53,6 +54,9 @@ app.use("/api/users", usersRouter);
 app.use("/api/rooms", roomsRouter);
 app.use("/api/auth/otp", firebaseOtpRouter);
 app.use("/api/gift", giftRouter);
+app.use("/api/friend", friendRequestRouter);
+
+
 
 app.get("/", (req, res) => {
   res.send("API is running...");
