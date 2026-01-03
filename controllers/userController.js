@@ -1,5 +1,6 @@
 // controllers/userController.js
 const User = require("../models/users");
+const cloudinary = require("../config/cloudinary");
 
 exports.getUserById = async (req, res) => {
   try {
@@ -59,7 +60,7 @@ exports.updateProfile = async (req, res) => {
       phone,
       country,
       countryCode,
-      avatar,
+      avatar, // base64 image (only if user uploads)
       bio,
       language,
       theme,
@@ -68,15 +69,31 @@ exports.updateProfile = async (req, res) => {
 
     const updateData = {};
 
-    // Top-level fields
+    /* =========================
+       TOP-LEVEL FIELDS
+    ========================= */
     if (username) updateData.username = username;
     if (phone) updateData.phone = phone;
     if (country) updateData.country = country;
     if (countryCode) updateData.countryCode = countryCode;
 
-    // Nested profile fields
-    if (avatar) updateData["profile.avatar"] = avatar;
-    if (bio) updateData["profile.bio"] = bio;
+    /* =========================
+       AVATAR (CUSTOM IMAGE)
+    ========================= */
+    if (avatar) {
+      const uploadResult = await cloudinary.uploader.upload(avatar, {
+        folder: "users/avatar",
+        transformation: [{ width: 300, height: 300, crop: "fill" }],
+      });
+
+      updateData["profile.avatar"] = uploadResult.secure_url;
+      updateData["profile.avatarSource"] = "custom"; // 🔥 important
+    }
+
+    /* =========================
+       PROFILE FIELDS
+    ========================= */
+    if (bio !== undefined) updateData["profile.bio"] = bio;
     if (language) updateData["profile.language"] = language;
     if (theme) updateData["profile.theme"] = theme;
     if (interests) updateData["profile.interests"] = interests;

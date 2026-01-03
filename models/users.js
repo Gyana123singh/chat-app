@@ -44,7 +44,13 @@ const userSchema = new mongoose.Schema(
     profile: {
       avatar: {
         type: String,
-        default: "https://via.placeholder.com/150",
+        default: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+      },
+      // 🔥 Track where avatar comes from
+      avatarSource: {
+        type: String,
+        enum: ["google", "custom"],
+        default: "custom",
       },
       bio: {
         type: String,
