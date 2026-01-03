@@ -54,7 +54,7 @@ app.use("/api/users", usersRouter);
 app.use("/api/rooms", roomsRouter);
 app.use("/api/auth/otp", firebaseOtpRouter);
 app.use("/api/gift", giftRouter);
-app.use("/api/friend", friendRequestRouter);
+app.use("/api/friends", friendRequestRouter);
 
 
 
