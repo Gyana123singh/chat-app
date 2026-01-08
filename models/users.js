@@ -136,6 +136,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["+91", "+92", "+880"],
     },
+    coins: {
+      type: Number,
+      default: 10000,
+      min: 0,
+    },
+    totalSpent: {
+      type: Number,
+      default: 0,
+    },
+    totalEarned: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

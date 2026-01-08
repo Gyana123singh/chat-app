@@ -1,7 +1,9 @@
 const cloudinary = require("../config/cloudinary");
 const User = require("../models/users");
-const Gift = require("../models/giftTransaction");
 const Category = require("../models/category");
+const Room = require("../models/room");
+const GiftTransaction = require("../models/giftTransaction");
+const User = require("../models/users");
 
 exports.addGift = async (req, res) => {
   try {
@@ -173,6 +175,67 @@ exports.checkEligibility = async (req, res) => {
   }
 };
 
+exports.sendGift = async (req, res) => {
+  try {
+    const senderId = req.user.id;
+    const { roomId, giftName, giftPrice, sendTo } = req.body;
+    // sendTo = "ALL_ROOM" | "ALL_MIC"
 
+    const sender = await User.findById(senderId);
+    if (!sender) return res.status(404).json({ message: "Sender not found" });
 
+    const room = await Room.findById(roomId).populate("participants.user");
+    if (!room) return res.status(404).json({ message: "Room not found" });
 
+    let receivers = [];
+
+    if (sendTo === "ALL_ROOM") {
+      receivers = room.users.filter((u) => u._id.toString() !== senderId);
+    }
+
+    if (sendTo === "ALL_MIC") {
+      receivers = room.users.filter(
+        (u) => u.isOnMic && u._id.toString() !== senderId
+      );
+    }
+
+    if (receivers.length === 0) {
+      return res.status(400).json({ message: "No users to send gift" });
+    }
+
+    const totalCost = giftPrice * receivers.length;
+
+    if (sender.coins < totalCost) {
+      return res.status(400).json({
+        message: "Insufficient coins",
+        required: totalCost,
+        available: sender.coins,
+      });
+    }
+
+    // 🔻 Deduct sender coins
+    sender.coins -= totalCost;
+    await sender.save();
+
+    // 🎁 Create gift transactions
+    const giftLogs = receivers.map((user) => ({
+      sender: senderId,
+      receiver: user._id,
+      giftName,
+      giftPrice,
+      roomId,
+    }));
+
+    await GiftTransaction.insertMany(giftLogs);
+
+    return res.status(200).json({
+      message: "Gift sent successfully",
+      sentTo: receivers.length,
+      giftPrice,
+      totalCoinsDeducted: totalCost,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};

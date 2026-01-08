@@ -6,18 +6,17 @@ const Block = require("../models/blockUsers");
  */
 exports.blockUser = async (req, res) => {
   try {
-    const blockerId = req.userId;
+    const blockerId = req.user.id; // ✅ FIX
     const { blockedUserId } = req.body;
 
     if (!blockedUserId) {
       return res.status(400).json({ message: "blockedUserId is required" });
     }
 
-    if (blockerId === blockedUserId) {
+    if (blockerId.toString() === blockedUserId.toString()) {
       return res.status(400).json({ message: "You cannot block yourself" });
     }
 
-    // Prevent duplicate block
     const alreadyBlocked = await Block.findOne({
       blocker: blockerId,
       blocked: blockedUserId,
@@ -42,12 +41,13 @@ exports.blockUser = async (req, res) => {
   }
 };
 
+
 /**
  * UNBLOCK USER
  */
 exports.unblockUser = async (req, res) => {
   try {
-    const blockerId = req.userId;
+    const blockerId = req.user.id; // ✅ FIX
     const { blockedUserId } = req.body;
 
     if (!blockedUserId) {
@@ -73,12 +73,13 @@ exports.unblockUser = async (req, res) => {
   }
 };
 
+
 /**
  * GET BLOCKLIST
  */
 exports.getBlockList = async (req, res) => {
   try {
-    const blockerId = req.userId;
+    const blockerId = req.user.id; // ✅ FIX
 
     const blockedUsers = await Block.find({ blocker: blockerId })
       .populate("blocked", "username diiId profile.avatar")
@@ -106,3 +107,4 @@ exports.getBlockList = async (req, res) => {
     });
   }
 };
+
