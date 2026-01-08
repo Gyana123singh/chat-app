@@ -12,4 +12,4 @@ router.post(
 );
 router.get("/block-list", authMiddleware, blockUsersController.getBlockList);
 
-module.exports = ro;
+module.exports = router;
