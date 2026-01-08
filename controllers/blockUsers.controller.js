@@ -72,9 +72,9 @@ exports.unblockUser = async (req, res) => {
   }
 };
 
-/**
- * GET BLOCKLIST
- */
+
+//  * GET BLOCKLIST
+
 exports.getBlockList = async (req, res) => {
   try {
     const blockerId = req.user.id; // logged-in user
