@@ -9,12 +9,11 @@ const giftSchema = new mongoose.Schema(
     },
     icon: {
       type: String,
-      required: true,
     },
     name: { type: String },
     price: {
       type: Number,
-      required: true,
+
       min: 1,
     },
     category: {
