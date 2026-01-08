@@ -5,13 +5,15 @@ const giftController = require("../controllers/giftController");
 const { authMiddleware } = require("../middleware/auth");
 const multer = require("../middleware/multer.middleware");
 
-
-
 router.post("/addGift", multer.single("image"), giftController.addGift);
 router.get("/getAllGift", giftController.getAllGifts);
 router.post("/addCategory", giftController.addCategory);
 router.get("/getCategory", giftController.getCategory);
-
+router.post(
+  "/check-eligibility",
+  authMiddleware,
+  giftController.checkEligibility
+);
 
 // // routes/gifts.js
 // const express = require('express');

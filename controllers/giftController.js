@@ -47,42 +47,7 @@ exports.addGift = async (req, res) => {
     });
   }
 };
-exports.getAllGifts = async (req, res) => {
-  try {
-    const { category, page = 1, limit = 20 } = req.query;
 
-    let query = { isActive: true }; // ✅ FIXED
-
-    if (category) {
-      query.category = category;
-    }
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const gifts = await Gift.find(query)
-      .sort({ createdAt: -1 }) // rarity sort optional
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Gift.countDocuments(query);
-
-    res.status(200).json({
-      success: true,
-      gifts,
-      pagination: {
-        total,
-        page: parseInt(page),
-        pages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    console.error("Get All Gifts Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch gifts",
-    });
-  }
-};
 exports.addCategory = async (req, res) => {
   try {
     const { name } = req.body;
@@ -133,6 +98,148 @@ exports.getCategory = async (req, res) => {
       success: false,
       message: "Internal server error",
     });
+  }
+};
+
+exports.getAllGifts = async (req, res) => {
+  try {
+    const { category, page = 1, limit = 20 } = req.query;
+
+    let query = { isActive: true }; // ✅ FIXED
+
+    if (category) {
+      query.category = category;
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const gifts = await Gift.find(query)
+      .sort({ createdAt: -1 }) // rarity sort optional
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Gift.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      gifts,
+      pagination: {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Get All Gifts Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch gifts",
+    });
+  }
+};
+exports.checkEligibility = async (req, res) => {
+  try {
+    const { giftId, recipientId } = req.body;
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found", eligible: false });
+    }
+
+    const gift = await Gift.findOne({ giftId, isActive: true });
+    if (!gift) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Gift not found", eligible: false });
+    }
+
+    const eligible = user.coinBalance >= gift.coinCost;
+
+    return res.json({
+      success: true,
+      eligible,
+      userCoins: user.coinBalance,
+      giftCost: gift.coinCost,
+      giftName: gift.giftName,
+      message: eligible
+        ? "Sufficient balance"
+        : `Need ${gift.coinCost - user.coinBalance} more coins`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get all gifts
+// app.get('/api/gifts/all', async (req, res, next) => {
+//   try {
+//     const { category } = req.query;
+//     const filter = { isActive: true };
+//     if (category) filter.category = category;
+
+//     const gifts = await Gift.find(filter).sort({ createdAt: -1 });
+//     return res.json({ success: true, gifts });
+//   } catch (error) {
+//     next(error);
+//   }
+// });
+// Send gift
+exports.sendGift = async (req, res) => {
+  try {
+    const { giftId, recipientId } = req.body;
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const gift = await Gift.findOne({ giftId, isActive: true });
+    if (!gift) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Gift not found" });
+    }
+
+    if (user.coinBalance < gift.coinCost) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient coin balance",
+        required: gift.coinCost,
+        available: user.coinBalance,
+      });
+    }
+
+    user.coinBalance -= gift.coinCost;
+    user.totalSpent += gift.coinCost;
+    await user.save();
+
+    const transaction = new Transaction({
+      transactionId: uuidv4(),
+      userId,
+      type: "GIFT_SEND",
+      giftId: gift._id,
+      giftName: gift.giftName,
+      recipientId,
+      coinsUsed: gift.coinCost,
+      status: "SUCCESS",
+    });
+    await transaction.save();
+
+    return res.json({
+      success: true,
+      message: "Gift sent successfully",
+      transactionId: transaction.transactionId,
+      remainingCoins: user.coinBalance,
+      giftName: gift.giftName,
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
