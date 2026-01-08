@@ -1,19 +1,15 @@
-// controllers/block.controller.js
-const Block = require("../models/blockUsers");
+const mongoose = require("mongoose");
+const Block = require("../models/Block.model");
 
 /**
  * BLOCK USER
  */
 exports.blockUser = async (req, res) => {
   try {
-    const blockerId = req.user.id; // logged-in user
-    const blockedUserId = req.params.userId; // clicked user
+    const blockerId = new mongoose.Types.ObjectId(req.user.id);
+    const blockedUserId = new mongoose.Types.ObjectId(req.params.userId);
 
-    if (!blockedUserId) {
-      return res.status(400).json({ message: "Target user is required" });
-    }
-
-    if (blockerId.toString() === blockedUserId.toString()) {
+    if (blockerId.equals(blockedUserId)) {
       return res.status(400).json({ message: "You cannot block yourself" });
     }
 
@@ -46,12 +42,8 @@ exports.blockUser = async (req, res) => {
  */
 exports.unblockUser = async (req, res) => {
   try {
-    const blockerId = req.user.id; // logged-in user
-    const blockedUserId = req.params.userId; // clicked user
-
-    if (!blockedUserId) {
-      return res.status(400).json({ message: "Target user is required" });
-    }
+    const blockerId = new mongoose.Types.ObjectId(req.user.id);
+    const blockedUserId = new mongoose.Types.ObjectId(req.params.userId);
 
     const result = await Block.findOneAndDelete({
       blocker: blockerId,
@@ -72,22 +64,19 @@ exports.unblockUser = async (req, res) => {
   }
 };
 
-
-//  * GET BLOCKLIST
-
+/**
+ * GET BLOCK LIST
+ */
 exports.getBlockList = async (req, res) => {
   try {
-    const blockerId = req.user.id; // logged-in user
+    const blockerId = new mongoose.Types.ObjectId(req.user.id);
 
     const blockedUsers = await Block.find({ blocker: blockerId })
-      .populate({
-        path: "blocked",
-        select: "username diiId profile.avatar",
-      })
-      .sort({ createdAt: -1 }); // or blockedAt if you have it
+      .populate("blocked", "username diiId profile.avatar")
+      .sort({ createdAt: -1 });
 
     const users = blockedUsers
-      .filter((item) => item.blocked) // in case user is deleted
+      .filter((item) => item.blocked)
       .map((item) => ({
         userId: item.blocked._id,
         username: item.blocked.username,
@@ -106,7 +95,6 @@ exports.getBlockList = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch block list",
-      error: error.message,
     });
   }
 };
