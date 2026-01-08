@@ -2,7 +2,7 @@ const cloudinary = require("../config/cloudinary");
 const User = require("../models/users");
 const Category = require("../models/category");
 const Room = require("../models/room");
-const GiftTransaction = require("../models/giftTransaction");
+const Gift = require("../models/gifts");
 
 exports.addGift = async (req, res) => {
   try {
@@ -177,64 +177,82 @@ exports.checkEligibility = async (req, res) => {
 exports.sendGift = async (req, res) => {
   try {
     const senderId = req.user.id;
-    const { roomId, giftName, giftPrice, sendTo } = req.body;
-    // sendTo = "ALL_ROOM" | "ALL_MIC"
+    const { giftId, sendTo } = req.body;
 
-    const sender = await User.findById(senderId);
-    if (!sender) return res.status(404).json({ message: "Sender not found" });
-
-    const room = await Room.findById(roomId).populate("participants.user");
-    if (!room) return res.status(404).json({ message: "Room not found" });
-
-    let receivers = [];
-
-    if (sendTo === "ALL_ROOM") {
-      receivers = room.users.filter((u) => u._id.toString() !== senderId);
-    }
-
-    if (sendTo === "ALL_MIC") {
-      receivers = room.users.filter(
-        (u) => u.isOnMic && u._id.toString() !== senderId
-      );
-    }
-
-    if (receivers.length === 0) {
-      return res.status(400).json({ message: "No users to send gift" });
-    }
-
-    const totalCost = giftPrice * receivers.length;
-
-    if (sender.coins < totalCost) {
+    if (!["ALL_ROOM", "ALL_MIC"].includes(sendTo)) {
       return res.status(400).json({
-        message: "Insufficient coins",
-        required: totalCost,
-        available: sender.coins,
+        success: false,
+        message: "Invalid sendTo value",
       });
     }
 
-    // 🔻 Deduct sender coins
+    // 🔐 FETCH GIFT (PRICE & IMAGE FROM DB)
+    const gift = await Gift.findById(giftId);
+    if (!gift || !gift.isAvailable) {
+      return res.status(404).json({
+        success: false,
+        message: "Gift not available",
+      });
+    }
+
+    // 🎯 COLLECT RECEIVERS
+    const receivers = [];
+    connectedUsers.forEach((data, userId) => {
+      if (userId === senderId) return;
+
+      if (sendTo === "ALL_ROOM") receivers.push(userId);
+      if (sendTo === "ALL_MIC" && data.isOnMic) receivers.push(userId);
+    });
+
+    if (!receivers.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No users available",
+      });
+    }
+
+    const totalCost = gift.price * receivers.length;
+
+    const sender = await User.findById(senderId);
+    if (!sender || sender.coins < totalCost) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient coins",
+      });
+    }
+
+    // 🔻 DEDUCT COINS
     sender.coins -= totalCost;
     await sender.save();
 
-    // 🎁 Create gift transactions
-    const giftLogs = receivers.map((user) => ({
-      sender: senderId,
-      receiver: user._id,
-      giftName,
-      giftPrice,
-      roomId,
-    }));
+    // 🧾 SAVE TRANSACTIONS
+    await GiftTransaction.insertMany(
+      receivers.map((receiverId) => ({
+        senderId,
+        receiverId,
+        giftId: gift._id,
+        giftIcon: gift.icon,
+        giftPrice: gift.price,
+        giftCategory: gift.category,
+        giftRarity: gift.rarity,
+      }))
+    );
 
-    await GiftTransaction.insertMany(giftLogs);
-
-    return res.status(200).json({
-      message: "Gift sent successfully",
+    return res.json({
+      success: true,
       sentTo: receivers.length,
-      giftPrice,
-      totalCoinsDeducted: totalCost,
+      coinsDeducted: totalCost,
+      gift: {
+        icon: gift.icon,
+        price: gift.price,
+        rarity: gift.rarity,
+      },
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    console.error("SEND GIFT ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
