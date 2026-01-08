@@ -6,75 +6,102 @@ const ProfileVisit = require("../models/profileVisit");
  * Call this when someone opens a profile
  */
 exports.recordVisit = async (req, res) => {
-  const visitorId = req.userId;
-  const { profileOwnerId } = req.body;
+  try {
+    const visitorId = req.userId;
+    const { profileOwnerId } = req.body;
 
-  if (visitorId === profileOwnerId) return res.sendStatus(204);
+    if (!profileOwnerId) {
+      return res.status(400).json({ message: "profileOwnerId is required" });
+    }
 
-  // Prevent multiple visits in same day
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+    // Prevent self-visit
+    if (visitorId === profileOwnerId) {
+      return res.sendStatus(204);
+    }
 
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
+    // Prevent multiple visits in same day
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
 
-  const alreadyVisited = await ProfileVisit.findOne({
-    visitor: visitorId,
-    profileOwner: profileOwnerId,
-    visitedAt: { $gte: start, $lte: end },
-  });
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
 
-  if (!alreadyVisited) {
-    await ProfileVisit.create({
+    const alreadyVisited = await ProfileVisit.findOne({
       visitor: visitorId,
       profileOwner: profileOwnerId,
+      visitedAt: { $gte: start, $lte: end },
+    });
+
+    if (!alreadyVisited) {
+      await ProfileVisit.create({
+        visitor: visitorId,
+        profileOwner: profileOwnerId,
+      });
+    }
+
+    return res.status(200).json({ message: "Visit recorded" });
+  } catch (error) {
+    console.error("recordVisit error:", error);
+    return res.status(500).json({
+      message: "Failed to record profile visit",
+      error: error.message,
     });
   }
-
-  res.sendStatus(200);
 };
 
 /**
  * GET PROFILE VISITORS LIST
  */
 exports.getVisitors = async (req, res) => {
-  const userId = req.userId;
+  try {
+    const userId = req.userId;
 
-  const visits = await ProfileVisit.find({ profileOwner: userId })
-    .populate("visitor", "username profile.avatar lastSeen")
-    .sort({ visitedAt: -1 });
+    const visits = await ProfileVisit.find({ profileOwner: userId })
+      .populate("visitor", "username profile.avatar lastSeen")
+      .sort({ visitedAt: -1 });
 
-  const today = [];
-  const yesterday = [];
-  const older = [];
+    const today = [];
+    const yesterday = [];
+    const older = [];
 
-  const now = new Date();
-  const todayStart = new Date(now.setHours(0, 0, 0, 0));
-  const yesterdayStart = new Date(todayStart);
-  yesterdayStart.setDate(todayStart.getDate() - 1);
+    const now = new Date();
+    const todayStart = new Date(now.setHours(0, 0, 0, 0));
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(todayStart.getDate() - 1);
 
-  visits.forEach((v) => {
-    const visitDate = v.visitedAt;
+    visits.forEach((v) => {
+      if (!v.visitor) return; // safety for deleted users
 
-    const data = {
-      userId: v.visitor._id,
-      username: v.visitor.username,
-      avatar: v.visitor.profile.avatar,
-      visitedAt: v.visitedAt,
-      online:
-        Date.now() - new Date(v.visitor.lastSeen).getTime() < 5 * 60 * 1000,
-    };
+      const visitDate = v.visitedAt;
 
-    if (visitDate >= todayStart) today.push(data);
-    else if (visitDate >= yesterdayStart) yesterday.push(data);
-    else older.push(data);
-  });
+      const data = {
+        userId: v.visitor._id,
+        username: v.visitor.username,
+        avatar: v.visitor.profile?.avatar,
+        visitedAt: v.visitedAt,
+        online:
+          v.visitor.lastSeen &&
+          Date.now() - new Date(v.visitor.lastSeen).getTime() <
+            5 * 60 * 1000,
+      };
 
-  res.json({
-    totalVisitors: visits.length,
-    newToday: today.length,
-    today,
-    yesterday,
-    older,
-  });
+      if (visitDate >= todayStart) today.push(data);
+      else if (visitDate >= yesterdayStart) yesterday.push(data);
+      else older.push(data);
+    });
+
+    return res.status(200).json({
+      totalVisitors: visits.length,
+      newToday: today.length,
+      today,
+      yesterday,
+      older,
+    });
+  } catch (error) {
+    console.error("getVisitors error:", error);
+    return res.status(500).json({
+      message: "Failed to fetch profile visitors",
+      error: error.message,
+    });
+  }
 };
