@@ -16,7 +16,7 @@ router.post(
 );
 
 router.post("/sendGift", authMiddleware, giftController.sendGift);
-router.get("/giftHistory", authMiddleware, giftController.getGiftHistory);
+// router.get("/giftHistory", authMiddleware, giftController.getGiftHistory);
 
 // // routes/gifts.js
 // const express = require('express');
