@@ -46,11 +46,11 @@ exports.blockUser = async (req, res) => {
  */
 exports.unblockUser = async (req, res) => {
   try {
-    const blockerId = req.user.id; // ✅ FIX
-    const { blockedUserId } = req.body;
+    const blockerId = req.user.id; // logged-in user
+    const blockedUserId = req.params.userId; // clicked user
 
     if (!blockedUserId) {
-      return res.status(400).json({ message: "blockedUserId is required" });
+      return res.status(400).json({ message: "Target user is required" });
     }
 
     const result = await Block.findOneAndDelete({
