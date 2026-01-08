@@ -3,7 +3,6 @@ const User = require("../models/users");
 const Category = require("../models/category");
 const Room = require("../models/room");
 const GiftTransaction = require("../models/giftTransaction");
-const User = require("../models/users");
 
 exports.addGift = async (req, res) => {
   try {

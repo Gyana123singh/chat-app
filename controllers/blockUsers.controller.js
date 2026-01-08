@@ -77,29 +77,34 @@ exports.unblockUser = async (req, res) => {
  */
 exports.getBlockList = async (req, res) => {
   try {
-    const blockerId = req.user.id; // ✅ FIX
+    const blockerId = req.user.id; // logged-in user
 
     const blockedUsers = await Block.find({ blocker: blockerId })
-      .populate("blocked", "username diiId profile.avatar")
-      .sort({ blockedAt: -1 });
+      .populate({
+        path: "blocked",
+        select: "username diiId profile.avatar",
+      })
+      .sort({ createdAt: -1 }); // or blockedAt if you have it
 
-    const formatted = blockedUsers
-      .filter((item) => item.blocked) // handle deleted users
+    const users = blockedUsers
+      .filter((item) => item.blocked) // in case user is deleted
       .map((item) => ({
         userId: item.blocked._id,
         username: item.blocked.username,
         diiId: item.blocked.diiId,
-        avatar: item.blocked.profile?.avatar,
-        blockedAt: item.blockedAt,
+        avatar: item.blocked.profile?.avatar || null,
+        blockedAt: item.createdAt,
       }));
 
     return res.status(200).json({
-      totalBlocked: formatted.length,
-      users: formatted,
+      success: true,
+      totalBlocked: users.length,
+      users,
     });
   } catch (error) {
     console.error("getBlockList error:", error);
     return res.status(500).json({
+      success: false,
       message: "Failed to fetch block list",
       error: error.message,
     });
