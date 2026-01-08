@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Block = require("../models/blockUsers");
+const Block = require("../models/blockUsers"); // your filename
 
 /**
  * BLOCK USER
@@ -76,7 +76,7 @@ exports.getBlockList = async (req, res) => {
       .sort({ createdAt: -1 });
 
     const users = blockedUsers
-      .filter((item) => item.blocked)
+      .filter((item) => item.blocked) // safety if user deleted
       .map((item) => ({
         userId: item.blocked._id,
         username: item.blocked.username,
