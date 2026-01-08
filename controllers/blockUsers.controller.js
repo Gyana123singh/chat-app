@@ -6,11 +6,11 @@ const Block = require("../models/blockUsers");
  */
 exports.blockUser = async (req, res) => {
   try {
-    const blockerId = req.user.id; // ✅ FIX
-    const { blockedUserId } = req.body;
+    const blockerId = req.user.id; // logged-in user
+    const blockedUserId = req.params.userId; // clicked user
 
     if (!blockedUserId) {
-      return res.status(400).json({ message: "blockedUserId is required" });
+      return res.status(400).json({ message: "Target user is required" });
     }
 
     if (blockerId.toString() === blockedUserId.toString()) {
@@ -40,7 +40,6 @@ exports.blockUser = async (req, res) => {
     });
   }
 };
-
 
 /**
  * UNBLOCK USER
@@ -72,7 +71,6 @@ exports.unblockUser = async (req, res) => {
     });
   }
 };
-
 
 /**
  * GET BLOCKLIST
@@ -107,4 +105,3 @@ exports.getBlockList = async (req, res) => {
     });
   }
 };
-
