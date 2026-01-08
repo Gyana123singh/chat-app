@@ -11,7 +11,7 @@ const giftSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    name: { String },
+    name: { type: String },
     price: {
       type: Number,
       required: true,
