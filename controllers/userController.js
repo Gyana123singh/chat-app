@@ -272,3 +272,67 @@ exports.getFollowing = async (req, res) => {
     });
   }
 };
+
+exports.getAccountSecurity = async (req, res) => {
+  const user = await User.findById(req.userId).select("-password");
+
+  res.json({
+    securityStatus: "Safe",
+    lastLogin: user.lastLogin,
+    accountInfo: {
+      diiId: user.diiId,
+      phone: user.phone,
+      email: user.email ? "Linked" : "Not Linked",
+    },
+    security: {
+      biometric: user.biometricEnabled,
+      protection: user.accountProtection,
+    },
+    thirdParty: user.thirdParty,
+  });
+};
+
+// * CHANGE PASSWORD
+
+exports.changePassword = async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.userId);
+
+  const isMatch = await bcrypt.compare(oldPassword, user.password);
+  if (!isMatch) {
+    return res.status(400).json({ message: "Old password incorrect" });
+  }
+
+  user.password = await bcrypt.hash(newPassword, 10);
+  await user.save();
+
+  res.json({ message: "Password changed successfully" });
+};
+
+/**
+ * TOGGLE BIOMETRIC LOGIN
+ */
+exports.toggleBiometric = async (req, res) => {
+  const user = await User.findById(req.userId);
+  user.biometricEnabled = !user.biometricEnabled;
+  await user.save();
+
+  res.json({
+    message: "Biometric setting updated",
+    enabled: user.biometricEnabled,
+  });
+};
+
+/**
+ * LINK / UNLINK THIRD PARTY
+ */
+exports.updateThirdParty = async (req, res) => {
+  const { provider, status } = req.body; // google / facebook
+
+  const user = await User.findById(req.userId);
+  user.thirdParty[provider] = status;
+  await user.save();
+
+  res.json({ message: `${provider} updated` });
+};

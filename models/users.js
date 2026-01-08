@@ -3,9 +3,14 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
-    // 🔹 Firebase UID (Phone OTP)
     firebaseUid: String,
-    createdAt: { type: Date, default: Date.now },
+
+    // 🆔 Public Account ID
+    diiId: {
+      type: String,
+      unique: true,
+      index: true,
+    },
 
     username: {
       type: String,
@@ -26,14 +31,12 @@ const userSchema = new mongoose.Schema(
       select: false,
     },
 
-    // 🔹 Google Login
     googleId: {
       type: String,
       default: null,
       index: true,
     },
 
-    // 🔹 Phone OTP
     phone: {
       type: String,
       sparse: true,
@@ -46,17 +49,12 @@ const userSchema = new mongoose.Schema(
         type: String,
         default: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
       },
-      // 🔥 Track where avatar comes from
       avatarSource: {
         type: String,
         enum: ["google", "custom"],
         default: "custom",
       },
-      bio: {
-        type: String,
-        default: "",
-        maxlength: 250,
-      },
+      bio: { type: String, default: "", maxlength: 250 },
       language: {
         type: String,
         enum: ["English", "Hindi", "Tamil", "Telugu", "Urdu"],
@@ -78,32 +76,58 @@ const userSchema = new mongoose.Schema(
       totalHostingMinutes: { type: Number, default: 0 },
     },
 
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-
+    isVerified: { type: Boolean, default: false },
     role: {
       type: String,
       enum: ["user", "host", "admin"],
       default: "user",
     },
-
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
+    isActive: { type: Boolean, default: true },
 
     lastSeen: {
       type: Date,
       default: Date.now,
     },
 
+    // 🔐 SECURITY
+    lastLogin: {
+      type: Date,
+      default: null,
+    },
+
+    biometricEnabled: {
+      type: Boolean,
+      default: false,
+    },
+
+    accountProtection: {
+      type: String,
+      enum: ["Low", "Medium", "High"],
+      default: "High",
+    },
+
+    // 🔗 THIRD PARTY BIND
+    thirdParty: {
+      google: { type: Boolean, default: false },
+      facebook: { type: Boolean, default: false },
+    },
+
+    // 🧾 LOGIN HISTORY
+    loginHistory: [
+      {
+        device: String,
+        ip: String,
+        location: String,
+        loggedAt: { type: Date, default: Date.now },
+      },
+    ],
+
     authProvider: {
       type: String,
       enum: ["email", "firebase-phone", "google"],
       default: "firebase-phone",
     },
+
     country: {
       type: String,
       enum: ["IN", "PK", "BD"],
