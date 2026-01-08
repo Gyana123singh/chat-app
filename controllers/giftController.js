@@ -34,7 +34,7 @@ exports.addGift = async (req, res) => {
 
       mediaType: uploadResult.format === "gif" ? "gif" : "image",
     });
-
+    await gift.save();
     return res.status(201).json({
       success: true,
       message: "Gift added successfully",
