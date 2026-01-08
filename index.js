@@ -30,7 +30,8 @@ const PORT = process.env.PORT || 5001;
 
 app.use(
   cors({
-    origin: "https://test-admin-chat-pl4q81dca-gyana123singhs-projects.vercel.app",
+    origin:
+      "https://test-admin-chat-duqa4ysxr-gyana123singhs-projects.vercel.app",
     credentials: true,
   })
 );
