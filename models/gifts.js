@@ -18,8 +18,6 @@ const giftSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ["flower", "luxury", "emoji", "special"],
-      default: "flower",
     },
     animationUrl: {
       type: String,
