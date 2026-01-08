@@ -4,8 +4,8 @@ const router = express.Router();
 const { authMiddleware } = require("../middleware/auth");
 const blockUsersController = require("../controllers/blockUsers.controller");
 
-router.post("/block", authMiddleware, blockUsersController.blockUser);
+router.post("/", authMiddleware, blockUsersController.blockUser);
 router.post("/unblock", authMiddleware, blockUsersController.unblockUser);
-router.get("/list", authMiddleware, blockUsersController.getBlockList);
+router.get("/block-list", authMiddleware, blockUsersController.getBlockList);
 
 module.exports = router;
