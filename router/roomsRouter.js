@@ -13,5 +13,6 @@ router.put("/:id", authMiddleware, roomController.updateRoom);
 router.delete("/:id", authMiddleware, roomController.deleteRoom);
 router.post("/:roomId/join", authMiddleware, roomController.joinRoom);
 router.post("/:roomId/leave", authMiddleware, roomController.leaveRoom);
+router.get("get-popular-rooms", roomController.getPopularRooms);
 
 module.exports = router;
