@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Block = require("../models/Block.model");
+const Block = require("../models/blockUsers");
 
 /**
  * BLOCK USER
