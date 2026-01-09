@@ -3,6 +3,7 @@ const User = require("../models/users");
 const Category = require("../models/category");
 const Room = require("../models/room");
 const Gift = require("../models/gifts");
+const GiftTransaction = require("../models/giftTransaction");
 
 exports.addGift = async (req, res) => {
   try {
@@ -174,85 +175,81 @@ exports.checkEligibility = async (req, res) => {
   }
 };
 
-exports.sendGift = async (req, res) => {
-  try {
-    const senderId = req.user.id;
-    const { giftId, sendTo } = req.body;
+exports.sendGift = async ({
+  senderId,
+  roomId,
+  giftId,
+  targetType, // single | all | mic
+  targetUserId,
+  micUsers = [],
+  roomUsers = [],
+}) => {
+  // 1️⃣ Gift validation
+  const gift = await Gift.findById(giftId);
+  if (!gift || !gift.isAvailable) {
+    throw new Error("Gift not available");
+  }
 
-    if (!["ALL_ROOM", "ALL_MIC"].includes(sendTo)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid sendTo value",
-      });
-    }
+  // 2️⃣ Sender wallet
+  const sender = await User.findById(senderId);
+  if (!sender) throw new Error("Sender not found");
 
-    // 🔐 FETCH GIFT (PRICE & IMAGE FROM DB)
-    const gift = await Gift.findById(giftId);
-    if (!gift || !gift.isAvailable) {
-      return res.status(404).json({
-        success: false,
-        message: "Gift not available",
-      });
-    }
+  // 3️⃣ Decide receivers
+  let receivers = [];
 
-    // 🎯 COLLECT RECEIVERS
-    const receivers = [];
-    connectedUsers.forEach((data, userId) => {
-      if (userId === senderId) return;
+  if (targetType === "single") {
+    receivers = [targetUserId];
+  }
 
-      if (sendTo === "ALL_ROOM") receivers.push(userId);
-      if (sendTo === "ALL_MIC" && data.isOnMic) receivers.push(userId);
+  if (targetType === "all") {
+    receivers = roomUsers;
+  }
+
+  if (targetType === "mic") {
+    receivers = micUsers;
+  }
+
+  if (!receivers.length) {
+    throw new Error("No receivers found");
+  }
+
+  // 4️⃣ Calculate total cost
+  const totalCost = gift.price * receivers.length;
+
+  if (sender.coins < totalCost) {
+    throw new Error("Insufficient coins");
+  }
+
+  // 5️⃣ Deduct sender coins
+  sender.coins -= totalCost;
+  await sender.save();
+
+  // 6️⃣ Credit receivers & store transactions
+  const transactions = [];
+
+  for (const receiverId of receivers) {
+    await User.findByIdAndUpdate(receiverId, {
+      $inc: { coins: gift.price },
     });
 
-    if (!receivers.length) {
-      return res.status(400).json({
-        success: false,
-        message: "No users available",
-      });
-    }
-
-    const totalCost = gift.price * receivers.length;
-
-    const sender = await User.findById(senderId);
-    if (!sender || sender.coins < totalCost) {
-      return res.status(400).json({
-        success: false,
-        message: "Insufficient coins",
-      });
-    }
-
-    // 🔻 DEDUCT COINS
-    sender.coins -= totalCost;
-    await sender.save();
-
-    // 🧾 SAVE TRANSACTIONS
-    await GiftTransaction.insertMany(
-      receivers.map((receiverId) => ({
-        senderId,
-        receiverId,
-        giftId: gift._id,
-        giftIcon: gift.icon,
-        giftPrice: gift.price,
-        giftCategory: gift.category,
-        giftRarity: gift.rarity,
-      }))
-    );
-
-    return res.json({
-      success: true,
-      sentTo: receivers.length,
-      coinsDeducted: totalCost,
-      gift: {
-        icon: gift.icon,
-        price: gift.price,
-        rarity: gift.rarity,
-      },
-    });
-  } catch (error) {
-    console.error("SEND GIFT ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
+    transactions.push({
+      roomId,
+      senderId,
+      receiverId,
+      giftId: gift._id,
+      giftIcon: gift.icon,
+      giftPrice: gift.price,
+      giftCategory: gift.category,
+      giftRarity: gift.rarity,
     });
   }
+
+  await GiftTransaction.insertMany(transactions);
+
+  return {
+    gift,
+    receivers,
+    totalCost,
+    senderBalance: sender.coins,
+  };
 };
