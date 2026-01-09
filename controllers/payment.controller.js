@@ -37,7 +37,7 @@ exports.createOrder = async (req, res) => {
     const { packageId, paymentMethod = "upi" } = req.body;
     const userId = req.user.id;
 
-    const coinPackage = await Transaction.findById(packageId);
+    const coinPackage = await CoinPlan.findById(packageId);
     if (!coinPackage || !coinPackage.active) {
       return res
         .status(400)
