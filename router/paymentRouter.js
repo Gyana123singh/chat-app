@@ -5,7 +5,7 @@ const { authMiddleware } = require("../middleware/auth");
 router.get("/get-coin-packages", paymentController.getCoinPackages);
 router.post("/create-order", authMiddleware, paymentController.createOrder);
 router.post("/verify-payment", authMiddleware, paymentController.verifyPayment);
-router.get("/balance", authMiddleware, getBalance);
+router.get("/balance", authMiddleware, paymentController.getBalance);
 // router.post("/handle-webhook", paymentController.handleWebhook);
 // router.post("/refund-payment", authMiddleware, paymentController.refundPayment);
 
