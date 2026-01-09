@@ -1,5 +1,3 @@
-const { sendGift } = require("../controllers/giftController");
-
 module.exports = (io) => {
   const onlineUsers = new Map();
   const micStates = new Map(); // ✅ userId -> { muted, speaking }
@@ -347,7 +345,7 @@ module.exports = (io) => {
       if (targetSocket) {
         io.to(targetSocket).emit("friend:request:received", {
           fromUserId,
-          fromUsername: socket.data.username,
+          fromUsername: socket.data.username, 
           fromAvatar: socket.data.avatar,
           timestamp: new Date().toISOString(),
         });
@@ -372,59 +370,6 @@ module.exports = (io) => {
         });
       }
     });
-
-    
-    socket.on("gift:send", async (data) => {
-      try {
-        const senderId = socket.data.userId;
-        const roomId = socket.data.roomId;
-
-        if (!senderId || !roomId) return;
-
-        const roomName = `room:${roomId}`;
-
-        // Get mic users
-        const micUsers = [];
-        micStates.forEach((state, userId) => {
-          if (!state.muted && state.speaking) {
-            micUsers.push(userId);
-          }
-        });
-
-        // Get all users in room
-        const sockets = await io.in(roomName).fetchSockets();
-        const roomUsers = sockets.map((s) => s.data.userId);
-
-        const result = await sendGift({
-          senderId,
-          roomId,
-          giftId: data.giftId,
-          targetType: data.targetType,
-          targetUserId: data.targetUserId,
-          micUsers,
-          roomUsers,
-        });
-
-        // 🔥 Broadcast gift animation
-        io.to(roomName).emit("gift:received", {
-          senderId,
-          gift: result.gift,
-          receivers: result.receivers,
-          animationUrl: result.gift.animationUrl,
-          totalCost: result.totalCost,
-        });
-
-        // 🔄 Update sender wallet
-        socket.emit("wallet:update", {
-          coins: result.senderBalance,
-        });
-      } catch (err) {
-        socket.emit("gift:error", {
-          message: err.message,
-        });
-      }
-    });
-
     /* =========================
        DISCONNECT
     ========================= */

@@ -84,6 +84,10 @@ const roomSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    currentParticipants: {
+      type: Number,
+      default: 0,
+    },
     privacy: {
       type: String,
       enum: ["public", "private", "friends"],

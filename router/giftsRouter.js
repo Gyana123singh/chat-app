@@ -16,17 +16,14 @@ router.post(
 );
 
 router.post("/sendGift", authMiddleware, giftController.sendGift);
-// router.get("/giftHistory", authMiddleware, giftController.getGiftHistory);
 
-// // routes/gifts.js
-// const express = require('express');
-// const router = express.Router();
-// const giftController = require('../controllers/giftController');
-// const { authMiddleware } = require('../middleware/auth');
+// Get all gift transactions in a room
+router.get("/room/:roomId", authMiddleware, giftController.getGiftTransactions);
 
-// router.get('/', giftController.getAllGifts);
-// router.post('/send', authMiddleware, giftController.sendGift);
-// router.get('/history', authMiddleware, giftController.getGiftHistory);
-// router.get('/leaderboard', giftController.getLeaderboard);
+// Get gifts received by a user
+router.get("/received", authMiddleware, giftController.getUserReceivedGifts);
+
+// Get gift sending analytics for a user
+router.get("/analytics", authMiddleware, giftController.getGiftAnalytics);
 
 module.exports = router;

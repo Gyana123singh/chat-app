@@ -182,81 +182,350 @@ exports.checkEligibility = async (req, res) => {
   }
 };
 
-exports.sendGift = async ({
-  senderId,
-  roomId,
-  giftId,
-  targetType, // single | all | mic
-  targetUserId,
-  micUsers = [],
-  roomUsers = [],
-}) => {
-  // 1️⃣ Gift validation
-  const gift = await Gift.findById(giftId);
-  if (!gift || !gift.isAvailable) {
-    throw new Error("Gift not available");
-  }
+/**
+ * 🔥 SEND GIFT - Main function
+ * Handles: Individual, All in Room, All on Mic
+ */
+exports.sendGift = async (req, res) => {
+  try {
+    const senderId = req.user.id; // From auth middleware
+    const {
+      roomId,
+      giftId,
+      recipients, // [userId1, userId2, ...] for individual
+      sendType, // "individual", "all_in_room", "all_on_mic"
+      micOnlineUsers, // { userId: { muted, speaking } } from socket
+    } = req.body;
 
-  // 2️⃣ Sender wallet
-  const sender = await User.findById(senderId);
-  if (!sender) throw new Error("Sender not found");
+    // ✅ Validation
+    if (!roomId || !giftId || !sendType) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: roomId, giftId, sendType",
+      });
+    }
 
-  // 3️⃣ Decide receivers
-  let receivers = [];
+    if (!["individual", "all_in_room", "all_on_mic"].includes(sendType)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid sendType. Must be individual, all_in_room, or all_on_mic",
+      });
+    }
 
-  if (targetType === "single") {
-    receivers = [targetUserId];
-  }
+    // ✅ Get sender
+    const sender = await User.findById(senderId);
+    if (!sender) {
+      return res.status(404).json({
+        success: false,
+        message: "Sender not found",
+      });
+    }
 
-  if (targetType === "all") {
-    receivers = roomUsers;
-  }
+    // ✅ Get gift
+    const gift = await Gift.findById(giftId);
+    if (!gift) {
+      return res.status(404).json({
+        success: false,
+        message: "Gift not found",
+      });
+    }
 
-  if (targetType === "mic") {
-    receivers = micUsers;
-  }
+    if (!gift.isAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: "Gift is not available",
+      });
+    }
 
-  if (!receivers.length) {
-    throw new Error("No receivers found");
-  }
+    // ✅ Get room
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
 
-  // 4️⃣ Calculate total cost
-  const totalCost = gift.price * receivers.length;
+    // ✅ Determine recipients based on sendType
+    let finalRecipients = [];
 
-  if (sender.coins < totalCost) {
-    throw new Error("Insufficient coins");
-  }
+    if (sendType === "individual") {
+      if (
+        !recipients ||
+        !Array.isArray(recipients) ||
+        recipients.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Recipients array required for individual send",
+        });
+      }
+      finalRecipients = recipients;
+    } else if (sendType === "all_in_room") {
+      if (!Array.isArray(micOnlineUsers) || micOnlineUsers.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No users in room",
+        });
+      }
+      finalRecipients = micOnlineUsers;
+    } else if (sendType === "all_on_mic") {
+      if (!Array.isArray(micOnlineUsers) || micOnlineUsers.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No users on mic",
+        });
+      }
+      // 🔥 Filter only users who are currently speaking (on mic)
+      finalRecipients = micOnlineUsers.filter(
+        (userId) => req.body.micStatus && req.body.micStatus[userId]?.speaking
+      );
 
-  // 5️⃣ Deduct sender coins
-  sender.coins -= totalCost;
-  await sender.save();
+      if (finalRecipients.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No users currently on mic",
+        });
+      }
+    }
 
-  // 6️⃣ Credit receivers & store transactions
-  const transactions = [];
+    // ✅ Remove sender from recipients (can't send to self)
+    finalRecipients = finalRecipients.filter(
+      (recipientId) => recipientId.toString() !== senderId.toString()
+    );
 
-  for (const receiverId of receivers) {
-    await User.findByIdAndUpdate(receiverId, {
-      $inc: { coins: gift.price },
-    });
+    if (finalRecipients.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid recipients found",
+      });
+    }
 
-    transactions.push({
+    // ✅ Calculate total cost
+    const recipientCount = finalRecipients.length;
+    const totalCoinsRequired = gift.price * recipientCount;
+
+    // ✅ Check sender's balance
+    if (sender.coins < totalCoinsRequired) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient coins. Required: ${totalCoinsRequired}, Available: ${sender.coins}`,
+        required: totalCoinsRequired,
+        available: sender.coins,
+      });
+    }
+
+    // ✅ Start transaction - deduct from sender
+    sender.coins -= totalCoinsRequired;
+    await sender.save();
+
+    // ✅ Add coins to each recipient
+    const recipientUpdateResults = await Promise.allSettled(
+      finalRecipients.map(async (recipientId) => {
+        const recipient = await User.findById(recipientId);
+        if (recipient) {
+          recipient.coins += gift.price;
+          await recipient.save();
+          return recipient;
+        }
+        return null;
+      })
+    );
+
+    // ✅ Track successful updates
+    const successfulRecipients = recipientUpdateResults
+      .filter((result) => result.status === "fulfilled" && result.value)
+      .map((result) => result.value._id);
+
+    // ✅ Create gift transaction record
+    const transaction = await GiftTransaction.create({
       roomId,
       senderId,
-      receiverId,
-      giftId: gift._id,
+      receiverId: finalRecipients[0], // Primary recipient (for display)
+      giftId,
+      giftName: gift.name,
       giftIcon: gift.icon,
       giftPrice: gift.price,
       giftCategory: gift.category,
       giftRarity: gift.rarity,
+      sendType,
+      totalCoinsDeducted: totalCoinsRequired,
+      recipientCount: successfulRecipients.length,
+      recipientIds: successfulRecipients,
+      status: "completed",
+    });
+
+    // ✅ Response
+    res.status(200).json({
+      success: true,
+      message: `Gift sent successfully to ${successfulRecipients.length} recipient(s)`,
+      data: {
+        transactionId: transaction._id,
+        giftName: gift.name,
+        giftIcon: gift.icon,
+        sendType,
+        recipientCount: successfulRecipients.length,
+        coinsPerRecipient: gift.price,
+        totalCoinsDeducted: totalCoinsRequired,
+        senderNewBalance: sender.coins,
+        timestamp: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error("❌ sendGift error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Error sending gift",
+      error: error.message,
     });
   }
+};
 
-  await GiftTransaction.insertMany(transactions);
+/**
+ * 🔥 GET GIFT TRANSACTIONS IN ROOM
+ */
+exports.getGiftTransactions = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { limit = 50, skip = 0 } = req.query;
 
-  return {
-    gift,
-    receivers,
-    totalCost,
-    senderBalance: sender.coins,
-  };
+    const transactions = await GiftTransaction.find({ roomId })
+      .populate("senderId", "username avatar")
+      .populate("receiverId", "username avatar")
+      .populate("giftId", "name icon rarity")
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip(Number(skip));
+
+    const total = await GiftTransaction.countDocuments({ roomId });
+
+    res.status(200).json({
+      success: true,
+      data: transactions,
+      pagination: {
+        total,
+        limit: Number(limit),
+        skip: Number(skip),
+      },
+    });
+  } catch (error) {
+    console.error("❌ getGiftTransactions error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching gift transactions",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * 🔥 GET GIFTS RECEIVED BY USER
+ */
+exports.getUserReceivedGifts = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 50, skip = 0 } = req.query;
+
+    const transactions = await GiftTransaction.find({
+      recipientIds: userId,
+    })
+      .populate("senderId", "username avatar")
+      .populate("giftId", "name icon rarity")
+      .populate("roomId", "roomName")
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip(Number(skip));
+
+    const total = await GiftTransaction.countDocuments({
+      recipientIds: userId,
+    });
+
+    // 🔥 Calculate total gifts received
+    const totalCoinsReceived = transactions.reduce(
+      (sum, t) => sum + t.giftPrice,
+      0
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        transactions,
+        summary: {
+          totalGiftsReceived: transactions.length,
+          totalCoinsReceived,
+          pagination: {
+            total,
+            limit: Number(limit),
+            skip: Number(skip),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ getUserReceivedGifts error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching received gifts",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * 🔥 GET GIFT ANALYTICS
+ */
+exports.getGiftAnalytics = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Total gifts sent
+    const sentGifts = await GiftTransaction.find({ senderId: userId });
+
+    // Total coins spent
+    const totalCoinsSpent = sentGifts.reduce(
+      (sum, t) => sum + t.totalCoinsDeducted,
+      0
+    );
+
+    // Breakdown by sendType
+    const sendTypeBreakdown = {
+      individual: sentGifts.filter((g) => g.sendType === "individual").length,
+      all_in_room: sentGifts.filter((g) => g.sendType === "all_in_room").length,
+      all_on_mic: sentGifts.filter((g) => g.sendType === "all_on_mic").length,
+    };
+
+    // Most sent gift
+    const giftCounts = {};
+    sentGifts.forEach((t) => {
+      giftCounts[t.giftName] = (giftCounts[t.giftName] || 0) + 1;
+    });
+
+    const mostSentGift =
+      Object.keys(giftCounts).length > 0
+        ? Object.entries(giftCounts).sort((a, b) => b[1] - a[1])[0]
+        : null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalGiftsSent: sentGifts.length,
+        totalCoinsSpent,
+        sendTypeBreakdown,
+        mostSentGift: mostSentGift
+          ? {
+              name: mostSentGift[0],
+              count: mostSentGift[1],
+            }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("❌ getGiftAnalytics error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching analytics",
+      error: error.message,
+    });
+  }
 };
