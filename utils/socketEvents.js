@@ -325,78 +325,71 @@ module.exports = (io) => {
     /* =========================
        🔥 GIFT SEND - REAL-TIME
     ========================= */
-    socket.on(
-      "gift:send",
-      async ({ roomId, giftId, sendType, recipientIds, speakingUsers }) => {
-        const { userId, username, avatar } = socket.data;
+    socket.on("gift:send", async ({ roomId, giftData, sendType }) => {
+      const { userId, username, avatar } = socket.data;
+      if (!roomId || !userId || !giftData) return;
 
-        if (!roomId || !userId || !giftId) {
+      const roomName = `room:${roomId}`;
+
+      try {
+        // 🔥 Get all users in room based on sendType
+        let recipientIds = [];
+
+        if (sendType === "individual") {
+          recipientIds = giftData.recipientIds || [];
+        } else if (sendType === "all_in_room") {
+          // All users currently in room
+          recipientIds = Array.from(roomUsers.get(roomId) || []);
+        } else if (sendType === "all_on_mic") {
+          // Only users currently speaking
+          const roomUserIds = Array.from(roomUsers.get(roomId) || []);
+          recipientIds = roomUserIds.filter(
+            (uid) => micStates.get(uid)?.speaking === true
+          );
+        }
+
+        // Remove sender from recipients
+        recipientIds = recipientIds.filter(
+          (id) => id.toString() !== userId.toString()
+        );
+
+        if (recipientIds.length === 0) {
           socket.emit("gift:error", {
-            message: "Missing required data",
+            message: "No valid recipients found",
           });
           return;
         }
 
-        try {
-          // 🔥 Get gift data (for UI display only)
-          const gift = await Gift.findById(giftId);
-          if (!gift) {
-            socket.emit("gift:error", { message: "Gift not found" });
-            return;
-          }
+        // 🔥 Emit gift animation to all users in room
+        io.to(roomName).emit("gift:received", {
+          senderId: userId,
+          senderUsername: username,
+          senderAvatar: avatar,
+          giftName: giftData.name,
+          giftIcon: giftData.icon,
+          giftPrice: giftData.price,
+          giftRarity: giftData.rarity,
+          sendType,
+          recipientCount: recipientIds.length,
+          totalCoinsTransferred: giftData.price * recipientIds.length,
+          timestamp: new Date().toISOString(),
+          animation: true,
+        });
 
-          // 📋 Prepare recipient list based on sendType
-          let finalRecipients = [];
-
-          if (sendType === "individual") {
-            finalRecipients = recipientIds || [];
-          } else if (sendType === "all_in_room") {
-            const roomName = `room:${roomId}`;
-            const sockets = await io.in(roomName).fetchSockets();
-            finalRecipients = sockets
-              .map((s) => s.data.userId)
-              .filter((id) => id && id.toString() !== userId.toString());
-          } else if (sendType === "all_on_mic") {
-            finalRecipients = speakingUsers || [];
-          }
-
-          // Remove sender from recipients
-          finalRecipients = finalRecipients.filter(
-            (id) => id.toString() !== userId.toString()
-          );
-
-          if (finalRecipients.length === 0) {
-            socket.emit("gift:error", { message: "No valid recipients" });
-            return;
-          }
-
-          // 🎁 Broadcast gift animation (no coin logic here)
-          const roomName = `room:${roomId}`;
-          io.to(roomName).emit("gift:received", {
-            senderId: userId,
-            senderUsername: username,
-            senderAvatar: avatar,
-            giftName: gift.name,
-            giftIcon: gift.icon,
-            giftPrice: gift.price,
-            giftRarity: gift.rarity,
-            sendType,
-            recipientCount: finalRecipients.length,
-            totalCoinsTransferred: gift.price * finalRecipients.length,
-            timestamp: new Date().toISOString(),
-            animation: true,
-          });
-
-          console.log(`🎁 Gift "${gift.name}" animation sent in ${roomName}`);
-        } catch (error) {
-          console.error("❌ gift:send socket error:", error.message);
-          socket.emit("gift:error", {
-            message: "Error sending gift",
-            error: error.message,
-          });
-        }
+        console.log(`🎁 Gift "${giftData.name}" sent in ${roomName}:`, {
+          sender: username,
+          recipientCount: recipientIds.length,
+          sendType,
+          totalCoins: giftData.price * recipientIds.length,
+        });
+      } catch (error) {
+        console.error("❌ gift:send error:", error.message);
+        socket.emit("gift:error", {
+          message: "Error sending gift",
+          error: error.message,
+        });
       }
-    );
+    });
 
     /* =========================
        🔥 GET ROOM USERS & MIC STATUS
