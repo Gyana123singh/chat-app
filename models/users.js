@@ -68,7 +68,11 @@ const userSchema = new mongoose.Schema(
       },
       interests: [String],
     },
-
+    coins: {
+      type: Number,
+      default: 0,
+      min: 0, // ← Prevent negative coins
+    },
     stats: {
       // ✅ SINGLE SOURCE OF TRUTH FOR COINS
       coins: {
@@ -142,9 +146,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["+91", "+92", "+880"],
     },
-
-    // ❌ REMOVED: coins field (duplicate of stats.coins)
-    // ❌ REMOVED: totalSpent and totalEarned - track in Transaction model instead
 
     totalSpent: {
       type: Number,
