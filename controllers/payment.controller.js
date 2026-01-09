@@ -85,6 +85,7 @@ exports.createOrder = async (req, res) => {
       bonusCoins: coinPackage.bonusCoins || 0,
       packageId: coinPackage._id,
       transactionId,
+      razorpayKey: process.env.RAZORPAY_KEY_ID,
     });
   } catch (error) {
     console.error("Error creating order:", error);
