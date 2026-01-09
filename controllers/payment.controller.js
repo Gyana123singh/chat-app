@@ -100,35 +100,46 @@ exports.createOrder = async (req, res) => {
 exports.verifyPayment = async (req, res) => {
   try {
     const {
-      razorpayOrderId,
-      razorpayPaymentId,
-      razorpaySignature,
-      transactionId,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      transactionId, // ✅ REQUIRED
     } = req.body;
+
     const userId = req.user.id;
 
-    const body = razorpayOrderId + "|" + razorpayPaymentId;
+    if (!transactionId) {
+      return res.status(400).json({
+        success: false,
+        message: "Transaction ID missing",
+      });
+    }
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+
     const expectedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET) // ✅ FIXED
       .update(body)
       .digest("hex");
 
-    if (expectedSignature !== razorpaySignature) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Payment verification failed" });
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed",
+      });
     }
 
     const transaction = await Transaction.findOne({
-      razorpayOrderId,
       transactionId,
+      razorpayOrderId: razorpay_order_id,
       userId,
     });
 
     if (!transaction) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Transaction not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Transaction not found",
+      });
     }
 
     if (transaction.status === "SUCCESS") {
@@ -138,8 +149,8 @@ exports.verifyPayment = async (req, res) => {
       });
     }
 
-    transaction.razorpayPaymentId = razorpayPaymentId;
-    transaction.razorpaySignature = razorpaySignature;
+    transaction.razorpayPaymentId = razorpay_payment_id;
+    transaction.razorpaySignature = razorpay_signature;
     transaction.status = "SUCCESS";
     transaction.completedAt = new Date();
     await transaction.save();
@@ -167,7 +178,6 @@ exports.verifyPayment = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error verifying payment",
-      error: error.message,
     });
   }
 };
