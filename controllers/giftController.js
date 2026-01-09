@@ -110,7 +110,7 @@ exports.getAllGifts = async (req, res) => {
     // ✅ FIX 1: correct field name
     let query = { isAvailable: true };
 
-    // ✅ FIX 2: category filter (ObjectId-safe)
+    // ✅ FIX 2: category filter
     if (category) {
       query.category = category;
     }
