@@ -21,7 +21,7 @@ router.post("/sendGift", authMiddleware, giftController.sendGift);
 router.get("/room/:roomId", authMiddleware, giftController.getGiftTransactions);
 
 // Get gifts received by a user
-router.get("/received", authMiddleware, giftController.getUserReceivedGifts);
+router.get("/received-gift", authMiddleware, giftController.getUserReceivedGifts);
 
 // Get gift sending analytics for a user
 router.get("/analytics", authMiddleware, giftController.getGiftAnalytics);

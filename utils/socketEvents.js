@@ -1,8 +1,9 @@
 module.exports = (io) => {
   const onlineUsers = new Map();
-  const micStates = new Map(); // ✅ userId -> { muted, speaking }
-  const roomMessages = new Map(); // ✅ roomId -> [messages]
-  const typingUsers = new Map(); // ✅ roomId -> Set of userIds typing
+  const micStates = new Map(); // userId -> { muted, speaking }
+  const roomMessages = new Map(); // roomId -> [messages]
+  const typingUsers = new Map(); // roomId -> Set of userIds typing
+  const roomUsers = new Map(); // roomId -> Set of userIds in room
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
@@ -14,12 +15,10 @@ module.exports = (io) => {
       if (!userId) return;
 
       onlineUsers.set(userId, socket.id);
-
       socket.data.userId = userId;
       socket.data.username = username;
       socket.data.avatar = avatar;
 
-      // default mic state
       micStates.set(userId, { muted: false, speaking: false });
 
       console.log("🟢 User connected:", { userId, username });
@@ -36,6 +35,12 @@ module.exports = (io) => {
 
       socket.data.roomId = roomId;
       socket.data.user = user;
+
+      // 🔥 Track users in room
+      if (!roomUsers.has(roomId)) {
+        roomUsers.set(roomId, new Set());
+      }
+      roomUsers.get(roomId).add(user.id);
 
       console.log(`📍 ${user.username} joined ${roomName}`);
 
@@ -55,7 +60,6 @@ module.exports = (io) => {
         socket.emit("room:users", usersInRoom);
         socket.to(roomName).emit("room:userJoined", user);
 
-        // ✅ Send existing messages to joined user
         const messages = roomMessages.get(roomId) || [];
         socket.emit("room:messages", messages);
       } catch (err) {
@@ -166,7 +170,6 @@ module.exports = (io) => {
 
       const roomName = `room:${roomId}`;
 
-      // ✅ Create message object with unique ID and timestamp
       const message = {
         id: `${userId}-${Date.now()}-${Math.random()
           .toString(36)
@@ -180,13 +183,11 @@ module.exports = (io) => {
         editedAt: null,
       };
 
-      // ✅ Store message in room
       if (!roomMessages.has(roomId)) {
         roomMessages.set(roomId, []);
       }
       roomMessages.get(roomId).push(message);
 
-      // ✅ Broadcast to all users in room (including sender)
       io.to(roomName).emit("message:receive", message);
 
       console.log(`💬 Message sent in ${roomName}:`, {
@@ -204,7 +205,6 @@ module.exports = (io) => {
 
       const roomName = `room:${roomId}`;
 
-      // ✅ Track typing users
       if (!typingUsers.has(roomId)) {
         typingUsers.set(roomId, new Set());
       }
@@ -217,7 +217,6 @@ module.exports = (io) => {
         typingSet.delete(userId);
       }
 
-      // ✅ Broadcast typing status to others (not sender)
       socket.to(roomName).emit("message:typing", {
         userId,
         username,
@@ -237,7 +236,6 @@ module.exports = (io) => {
       const { userId, roomId: userRoomId } = socket.data;
       if (!roomId || !messageId || !newText || !userId) return;
 
-      // ✅ Verify user is in the room
       if (userRoomId !== roomId) {
         console.warn(
           `❌ User ${userId} tried to edit message in unauthorized room`
@@ -250,7 +248,6 @@ module.exports = (io) => {
 
       if (!messages) return;
 
-      // ✅ Find and update message
       const messageIndex = messages.findIndex((msg) => msg.id === messageId);
       if (messageIndex === -1) {
         console.warn(`❌ Message ${messageId} not found`);
@@ -259,7 +256,6 @@ module.exports = (io) => {
 
       const message = messages[messageIndex];
 
-      // ✅ Verify ownership (only sender can edit)
       if (message.userId !== userId) {
         console.warn(
           `❌ User ${userId} tried to edit message by ${message.userId}`
@@ -271,13 +267,11 @@ module.exports = (io) => {
         return;
       }
 
-      // ✅ Update message
       message.text = newText;
       message.edited = true;
       message.editedAt = new Date().toISOString();
       messages[messageIndex] = message;
 
-      // ✅ Broadcast edited message to room
       io.to(roomName).emit("message:edited", message);
 
       console.log(`✏️ Message ${messageId} edited in ${roomName}`);
@@ -290,7 +284,6 @@ module.exports = (io) => {
       const { userId, roomId: userRoomId } = socket.data;
       if (!roomId || !messageId || !userId) return;
 
-      // ✅ Verify user is in the room
       if (userRoomId !== roomId) {
         console.warn(
           `❌ User ${userId} tried to delete message in unauthorized room`
@@ -303,7 +296,6 @@ module.exports = (io) => {
 
       if (!messages) return;
 
-      // ✅ Find message
       const messageIndex = messages.findIndex((msg) => msg.id === messageId);
       if (messageIndex === -1) {
         console.warn(`❌ Message ${messageId} not found`);
@@ -312,7 +304,6 @@ module.exports = (io) => {
 
       const message = messages[messageIndex];
 
-      // ✅ Verify ownership (only sender can delete)
       if (message.userId !== userId) {
         console.warn(
           `❌ User ${userId} tried to delete message by ${message.userId}`
@@ -324,13 +315,112 @@ module.exports = (io) => {
         return;
       }
 
-      // ✅ Remove message from storage
       messages.splice(messageIndex, 1);
 
-      // ✅ Broadcast deletion to room
       io.to(roomName).emit("message:deleted", { messageId });
 
       console.log(`🗑️ Message ${messageId} deleted from ${roomName}`);
+    });
+
+    /* =========================
+       🔥 GIFT SEND - REAL-TIME
+    ========================= */
+    socket.on("gift:send", async ({ roomId, giftData, sendType }) => {
+      const { userId, username, avatar } = socket.data;
+      if (!roomId || !userId || !giftData) return;
+
+      const roomName = `room:${roomId}`;
+
+      try {
+        // 🔥 Get all users in room based on sendType
+        let recipientIds = [];
+
+        if (sendType === "individual") {
+          recipientIds = giftData.recipientIds || [];
+        } else if (sendType === "all_in_room") {
+          // All users currently in room
+          recipientIds = Array.from(roomUsers.get(roomId) || []);
+        } else if (sendType === "all_on_mic") {
+          // Only users currently speaking
+          const roomUserIds = Array.from(roomUsers.get(roomId) || []);
+          recipientIds = roomUserIds.filter(
+            (uid) => micStates.get(uid)?.speaking === true
+          );
+        }
+
+        // Remove sender from recipients
+        recipientIds = recipientIds.filter(
+          (id) => id.toString() !== userId.toString()
+        );
+
+        if (recipientIds.length === 0) {
+          socket.emit("gift:error", {
+            message: "No valid recipients found",
+          });
+          return;
+        }
+
+        // 🔥 Emit gift animation to all users in room
+        io.to(roomName).emit("gift:received", {
+          senderId: userId,
+          senderUsername: username,
+          senderAvatar: avatar,
+          giftName: giftData.name,
+          giftIcon: giftData.icon,
+          giftPrice: giftData.price,
+          giftRarity: giftData.rarity,
+          sendType,
+          recipientCount: recipientIds.length,
+          totalCoinsTransferred: giftData.price * recipientIds.length,
+          timestamp: new Date().toISOString(),
+          animation: true,
+        });
+
+        console.log(`🎁 Gift "${giftData.name}" sent in ${roomName}:`, {
+          sender: username,
+          recipientCount: recipientIds.length,
+          sendType,
+          totalCoins: giftData.price * recipientIds.length,
+        });
+      } catch (error) {
+        console.error("❌ gift:send error:", error.message);
+        socket.emit("gift:error", {
+          message: "Error sending gift",
+          error: error.message,
+        });
+      }
+    });
+
+    /* =========================
+       🔥 GET ROOM USERS & MIC STATUS
+    ========================= */
+    socket.on("room:getUsersStatus", async ({ roomId }) => {
+      if (!roomId) return;
+
+      try {
+        const roomName = `room:${roomId}`;
+        const sockets = await io.in(roomName).fetchSockets();
+
+        const usersStatus = sockets
+          .filter((s) => s.data.user)
+          .map((s) => ({
+            userId: s.data.user.id,
+            username: s.data.user.username,
+            avatar: s.data.user.avatar,
+            mic: micStates.get(s.data.user.id) || {
+              muted: false,
+              speaking: false,
+            },
+          }));
+
+        socket.emit("room:usersStatus", {
+          allUsers: usersStatus,
+          onMicUsers: usersStatus.filter((u) => !u.mic.muted),
+          speakingUsers: usersStatus.filter((u) => u.mic.speaking),
+        });
+      } catch (error) {
+        console.error("❌ room:getUsersStatus error:", error.message);
+      }
     });
 
     /* ======================
@@ -345,7 +435,7 @@ module.exports = (io) => {
       if (targetSocket) {
         io.to(targetSocket).emit("friend:request:received", {
           fromUserId,
-          fromUsername: socket.data.username, 
+          fromUsername: socket.data.username,
           fromAvatar: socket.data.avatar,
           timestamp: new Date().toISOString(),
         });
@@ -370,6 +460,7 @@ module.exports = (io) => {
         });
       }
     });
+
     /* =========================
        DISCONNECT
     ========================= */
@@ -380,9 +471,13 @@ module.exports = (io) => {
         onlineUsers.delete(userId);
         micStates.delete(userId);
 
-        // ✅ Remove from typing users
         if (roomId && typingUsers.has(roomId)) {
           typingUsers.get(roomId).delete(userId);
+        }
+
+        // 🔥 Remove from room users
+        if (roomId && roomUsers.has(roomId)) {
+          roomUsers.get(roomId).delete(userId);
         }
       }
 
@@ -395,4 +490,10 @@ module.exports = (io) => {
       console.log("❌ Socket disconnected:", socket.id);
     });
   });
+
+  return {
+    getMicStates: () => micStates,
+    getRoomUsers: () => roomUsers,
+    getOnlineUsers: () => onlineUsers,
+  };
 };
