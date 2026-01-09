@@ -30,7 +30,7 @@ exports.addGift = async (req, res) => {
       category,
 
       // 🔥 IMPORTANT PART
-      giftImage: uploadResult.secure_url, // ✅ MAIN IMAGE
+      icon: uploadResult.secure_url, // ✅ MAIN IMAGE
       cloudinaryId: uploadResult.public_id,
 
       mediaType: uploadResult.format === "gif" ? "gif" : "image",
