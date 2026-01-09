@@ -148,7 +148,7 @@ exports.verifyPayment = async (req, res) => {
       userId,
       {
         $inc: {
-          "stats.coins": transaction.coinsAdded,
+          coins: transaction.coinsAdded,
           totalSpent: transaction.amount,
         },
       },
@@ -159,7 +159,7 @@ exports.verifyPayment = async (req, res) => {
       success: true,
       message: "Payment verified and coins added",
       coinsAdded: transaction.coinsAdded,
-      newBalance: user.stats.coins,
+      newBalance: user.coins,
       transactionId: transaction.transactionId,
     });
   } catch (error) {
@@ -186,7 +186,7 @@ exports.getBalance = async (req, res) => {
 
     return res.json({
       success: true,
-      coinBalance: user.stats.coins,
+      coinBalance: user.coins,
       totalSpent: user.totalSpent,
       totalEarned: user.totalEarned,
     });

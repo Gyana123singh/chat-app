@@ -74,12 +74,12 @@ const userSchema = new mongoose.Schema(
       min: 0, // ← Prevent negative coins
     },
     stats: {
-      // ✅ SINGLE SOURCE OF TRUTH FOR COINS
-      coins: {
-        type: Number,
-        default: 0,
-        min: 0, // ← Prevent negative coins
-      },
+      // // ✅ SINGLE SOURCE OF TRUTH FOR COINS
+      // coins: {
+      //   type: Number,
+      //   default: 0,
+      //   min: 0, // ← Prevent negative coins
+      // },
       followers: { type: Number, default: 0 },
       following: { type: Number, default: 0 },
       giftsReceived: { type: Number, default: 0 },
