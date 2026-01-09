@@ -71,11 +71,7 @@ const transactionSchema = new mongoose.Schema(
       enum: ["gift", "purchase", "reward"],
       default: "gift",
     },
-    status: {
-      type: String,
-      enum: ["pending", "completed", "failed"],
-      default: "completed",
-    },
+
     message: {
       type: String,
       default: "",
