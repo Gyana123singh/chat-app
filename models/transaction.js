@@ -3,8 +3,8 @@ const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema(
   {
-    transactionId: { type: String, unique: true, required: true },
-    userId: { type: String, required: true, ref: "User", index: true },
+    transactionId: { type: String, unique: true },
+    userId: { type: String, ref: "User", index: true },
     type: {
       type: String,
       enum: ["COIN_RECHARGE", "COIN_SPENT", "COIN_REFUND"],
@@ -13,7 +13,6 @@ const transactionSchema = new mongoose.Schema(
     packageId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "CoinPlan",
-      required: true,
     },
 
     giftId: String,
@@ -35,24 +34,21 @@ const transactionSchema = new mongoose.Schema(
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
     },
     receiver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
     },
     gift: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Gift",
-      required: true,
     },
     room: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Room",
       default: null,
     },
-   
+
     paymentMethod: {
       type: String,
       enum: ["upi", "wallets", "gpay", "gift"],
