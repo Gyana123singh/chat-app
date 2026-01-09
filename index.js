@@ -72,7 +72,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: true,
+    origin: "https://test-admin-chat-nine.vercel.app",
     methods: ["GET", "POST"],
     credentials: true,
   },
