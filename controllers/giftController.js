@@ -8,6 +8,7 @@ exports.addGift = async (req, res) => {
   try {
     const { name, price, category } = req.body;
 
+    // ❌ Validation
     if (!name || !price || !category || !req.file) {
       return res.status(400).json({
         success: false,
@@ -15,17 +16,22 @@ exports.addGift = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
+    // ✅ Upload image to Cloudinary
     const uploadResult = await cloudinary.uploader.upload(req.file.path, {
       folder: "gifts",
+      resource_type: "image",
     });
 
+    // ✅ Save gift
     const gift = await Gift.create({
       name,
       price,
       category,
-      giftImage: uploadResult.secure_url,
+
+      // 🔥 IMPORTANT PART
+      giftImage: uploadResult.secure_url, // ✅ MAIN IMAGE
       cloudinaryId: uploadResult.public_id,
+
       mediaType: uploadResult.format === "gif" ? "gif" : "image",
     });
 
