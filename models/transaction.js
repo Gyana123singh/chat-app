@@ -7,9 +7,15 @@ const transactionSchema = new mongoose.Schema(
     userId: { type: String, required: true, ref: "User", index: true },
     type: {
       type: String,
-      enum: ["GIFT_SEND", "COIN_RECHARGE"],
+      enum: ["COIN_RECHARGE", "COIN_SPENT", "COIN_REFUND"],
+      default: "COIN_RECHARGE",
+    },
+    packageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CoinPlan",
       required: true,
     },
+
     giftId: String,
     giftName: String,
     recipientId: String,
@@ -17,11 +23,13 @@ const transactionSchema = new mongoose.Schema(
     coinsAdded: Number,
     razorpayOrderId: String,
     razorpayPaymentId: String,
+    razorpaySignature: String,
     amount: Number,
     status: {
       type: String,
-      enum: ["PENDING", "SUCCESS", "FAILED"],
+      enum: ["PENDING", "SUCCESS", "FAILED", "REFUNDED"],
       default: "PENDING",
+      index: true,
     },
     metadata: mongoose.Schema.Types.Mixed,
     sender: {
@@ -48,6 +56,16 @@ const transactionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    paymentMethod: {
+      type: String,
+      enum: ["upi", "wallets", "gpay", "gift"],
+      default: "upi",
+    },
+
+    refundId: String,
+    failureReason: String,
+    completedAt: Date,
+    refundedAt: Date,
     transactionType: {
       type: String,
       enum: ["gift", "purchase", "reward"],
