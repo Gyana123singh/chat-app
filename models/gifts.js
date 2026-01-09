@@ -16,8 +16,11 @@ const giftSchema = new mongoose.Schema(
 
       min: 1,
     },
+    // ✅ FIX HERE
     category: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
     },
     animationUrl: {
       type: String,

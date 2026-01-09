@@ -107,38 +107,45 @@ exports.getAllGifts = async (req, res) => {
   try {
     const { category, page = 1, limit = 20 } = req.query;
 
-    let query = { isActive: true }; // ✅ FIXED
+    // ✅ FIX 1: correct field name
+    let query = { isAvailable: true };
 
+    // ✅ FIX 2: category filter (ObjectId-safe)
     if (category) {
       query.category = category;
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
+    // ✅ FIX 3: populate category name
     const gifts = await Gift.find(query)
-      .sort({ createdAt: -1 }) // rarity sort optional
+      .populate("category", "name") // 🔥 IMPORTANT
+      .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(limitNum);
 
     const total = await Gift.countDocuments(query);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       gifts,
       pagination: {
         total,
-        page: parseInt(page),
-        pages: Math.ceil(total / limit),
+        page: pageNum,
+        pages: Math.ceil(total / limitNum),
       },
     });
   } catch (error) {
     console.error("Get All Gifts Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch gifts",
     });
   }
 };
+
 exports.checkEligibility = async (req, res) => {
   try {
     const { giftId, recipientId } = req.body;
