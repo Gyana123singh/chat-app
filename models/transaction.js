@@ -52,10 +52,7 @@ const transactionSchema = new mongoose.Schema(
       ref: "Room",
       default: null,
     },
-    amount: {
-      type: Number,
-      required: true,
-    },
+   
     paymentMethod: {
       type: String,
       enum: ["upi", "wallets", "gpay", "gift"],
