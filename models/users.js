@@ -1,3 +1,4 @@
+// models/User.js - REFACTORED
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
@@ -69,7 +70,12 @@ const userSchema = new mongoose.Schema(
     },
 
     stats: {
-      coins: { type: Number, default: 0 },
+      // ✅ SINGLE SOURCE OF TRUTH FOR COINS
+      coins: {
+        type: Number,
+        default: 0,
+        min: 0, // ← Prevent negative coins
+      },
       followers: { type: Number, default: 0 },
       following: { type: Number, default: 0 },
       giftsReceived: { type: Number, default: 0 },
@@ -136,12 +142,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["+91", "+92", "+880"],
     },
-    coins: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-    
+
+    // ❌ REMOVED: coins field (duplicate of stats.coins)
+    // ❌ REMOVED: totalSpent and totalEarned - track in Transaction model instead
+
     totalSpent: {
       type: Number,
       default: 0,
@@ -153,5 +157,11 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// ✅ Index for coin-based queries (leaderboards, etc.)
+userSchema.index({ "stats.coins": -1 });
+
+// ✅ Index for user activity queries
+userSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("User", userSchema);

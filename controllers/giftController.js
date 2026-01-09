@@ -5,6 +5,8 @@ const Room = require("../models/room");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 
+const CoinTransactionHelper = require("../utils/coinTransactionHelper");
+
 exports.addGift = async (req, res) => {
   try {
     const { name, price, category } = req.body;
@@ -188,16 +190,16 @@ exports.checkEligibility = async (req, res) => {
  */
 exports.sendGift = async (req, res) => {
   try {
-    const senderId = req.user.id; // From auth middleware
+    const senderId = req.user.id;
     const {
       roomId,
       giftId,
       recipients, // [userId1, userId2, ...] for individual
       sendType, // "individual", "all_in_room", "all_on_mic"
-      micOnlineUsers, // { userId: { muted, speaking } } from socket
+      micOnlineUsers, // Array of user IDs from socket
     } = req.body;
 
-    // ✅ Validation
+    // ✅ Validation 1: Required fields
     if (!roomId || !giftId || !sendType) {
       return res.status(400).json({
         success: false,
@@ -205,6 +207,7 @@ exports.sendGift = async (req, res) => {
       });
     }
 
+    // ✅ Validation 2: sendType enum
     if (!["individual", "all_in_room", "all_on_mic"].includes(sendType)) {
       return res.status(400).json({
         success: false,
@@ -213,8 +216,10 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ Get sender
-    const sender = await User.findById(senderId);
+    // ✅ Validation 3: Get sender
+    const sender = await User.findById(senderId).select(
+      "stats.coins username avatar"
+    );
     if (!sender) {
       return res.status(404).json({
         success: false,
@@ -222,7 +227,7 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ Get gift
+    // ✅ Validation 4: Get gift
     const gift = await Gift.findById(giftId);
     if (!gift) {
       return res.status(404).json({
@@ -238,7 +243,7 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ Get room
+    // ✅ Validation 5: Get room
     const room = await Room.findById(roomId);
     if (!room) {
       return res.status(404).json({
@@ -247,7 +252,7 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ Determine recipients based on sendType
+    // ✅ Validation 6: Determine recipients based on sendType
     let finalRecipients = [];
 
     if (sendType === "individual") {
@@ -277,9 +282,10 @@ exports.sendGift = async (req, res) => {
           message: "No users on mic",
         });
       }
-      // 🔥 Filter only users who are currently speaking (on mic)
-      finalRecipients = micOnlineUsers.filter(
-        (userId) => req.body.micStatus && req.body.micStatus[userId]?.speaking
+      // Filter only speaking users (from socket data)
+      const speakingUsers = req.body.speakingUsers || [];
+      finalRecipients = micOnlineUsers.filter((userId) =>
+        speakingUsers.includes(userId)
       );
 
       if (finalRecipients.length === 0) {
@@ -290,7 +296,7 @@ exports.sendGift = async (req, res) => {
       }
     }
 
-    // ✅ Remove sender from recipients (can't send to self)
+    // ✅ Validation 7: Remove sender from recipients
     finalRecipients = finalRecipients.filter(
       (recipientId) => recipientId.toString() !== senderId.toString()
     );
@@ -302,73 +308,63 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ Calculate total cost
+    // ✅ Validation 8: Calculate total coins required
     const recipientCount = finalRecipients.length;
     const totalCoinsRequired = gift.price * recipientCount;
 
-    // ✅ Check sender's balance
-    if (sender.coins < totalCoinsRequired) {
+    // ✅ Validation 9: Check balance BEFORE transaction
+    const balanceCheck = await CoinTransactionHelper.validateBalance(
+      senderId,
+      totalCoinsRequired
+    );
+
+    if (!balanceCheck.valid) {
       return res.status(400).json({
         success: false,
-        message: `Insufficient coins. Required: ${totalCoinsRequired}, Available: ${sender.coins}`,
+        message: balanceCheck.message,
         required: totalCoinsRequired,
-        available: sender.coins,
+        available: balanceCheck.senderCoins,
       });
     }
 
-    // ✅ Start transaction - deduct from sender
-    sender.coins -= totalCoinsRequired;
-    await sender.save();
-
-    // ✅ Add coins to each recipient
-    const recipientUpdateResults = await Promise.allSettled(
-      finalRecipients.map(async (recipientId) => {
-        const recipient = await User.findById(recipientId);
-        if (recipient) {
-          recipient.coins += gift.price;
-          await recipient.save();
-          return recipient;
-        }
-        return null;
-      })
-    );
-
-    // ✅ Track successful updates
-    const successfulRecipients = recipientUpdateResults
-      .filter((result) => result.status === "fulfilled" && result.value)
-      .map((result) => result.value._id);
-
-    // ✅ Create gift transaction record
-    const transaction = await GiftTransaction.create({
-      roomId,
+    // 🔥 ATOMIC TRANSACTION: Deduct from sender & add to recipients
+    const transactionResult = await CoinTransactionHelper.transferCoins({
       senderId,
-      receiverId: finalRecipients[0], // Primary recipient (for display)
-      giftId,
-      giftName: gift.name,
-      giftIcon: gift.icon,
-      giftPrice: gift.price,
-      giftCategory: gift.category,
-      giftRarity: gift.rarity,
-      sendType,
-      totalCoinsDeducted: totalCoinsRequired,
-      recipientCount: successfulRecipients.length,
-      recipientIds: successfulRecipients,
-      status: "completed",
+      recipientIds: finalRecipients,
+      coinsPerRecipient: gift.price,
+      giftData: {
+        giftId,
+        giftName: gift.name,
+        giftIcon: gift.icon,
+        giftPrice: gift.price,
+        giftCategory: gift.category?.toString() || "unknown",
+        giftRarity: gift.rarity,
+        sendType,
+      },
+      roomId,
     });
 
-    // ✅ Response
+    if (!transactionResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to process gift transaction",
+        error: transactionResult.error,
+      });
+    }
+
+    // ✅ Response: Success
     res.status(200).json({
       success: true,
-      message: `Gift sent successfully to ${successfulRecipients.length} recipient(s)`,
+      message: `Gift sent successfully to ${recipientCount} recipient(s)`,
       data: {
-        transactionId: transaction._id,
+        transactionId: transactionResult.transactionId,
         giftName: gift.name,
         giftIcon: gift.icon,
         sendType,
-        recipientCount: successfulRecipients.length,
+        recipientCount,
         coinsPerRecipient: gift.price,
-        totalCoinsDeducted: totalCoinsRequired,
-        senderNewBalance: sender.coins,
+        totalCoinsDeducted: transactionResult.totalCoinsDeducted,
+        senderNewBalance: transactionResult.senderNewBalance,
         timestamp: new Date(),
       },
     });
@@ -383,7 +379,7 @@ exports.sendGift = async (req, res) => {
 };
 
 /**
- * 🔥 GET GIFT TRANSACTIONS IN ROOM
+ * 🔥 GET GIFT TRANSACTIONS IN ROOM (unchanged)
  */
 exports.getGiftTransactions = async (req, res) => {
   try {
@@ -420,7 +416,7 @@ exports.getGiftTransactions = async (req, res) => {
 };
 
 /**
- * 🔥 GET GIFTS RECEIVED BY USER
+ * 🔥 GET GIFTS RECEIVED BY USER (unchanged)
  */
 exports.getUserReceivedGifts = async (req, res) => {
   try {
@@ -441,7 +437,7 @@ exports.getUserReceivedGifts = async (req, res) => {
       recipientIds: userId,
     });
 
-    // 🔥 Calculate total gifts received
+    // Calculate total gifts received
     const totalCoinsReceived = transactions.reduce(
       (sum, t) => sum + t.giftPrice,
       0
@@ -473,7 +469,7 @@ exports.getUserReceivedGifts = async (req, res) => {
 };
 
 /**
- * 🔥 GET GIFT ANALYTICS
+ * 🔥 GET GIFT ANALYTICS (unchanged)
  */
 exports.getGiftAnalytics = async (req, res) => {
   try {
@@ -503,7 +499,7 @@ exports.getGiftAnalytics = async (req, res) => {
 
     const mostSentGift =
       Object.keys(giftCounts).length > 0
-        ? Object.entries(giftCounts).sort((a, b) => b[1] - a[1])[0]
+        ? Object.entries(giftCounts).sort((a, b) => b - a)
         : null;
 
     res.status(200).json({
@@ -514,8 +510,8 @@ exports.getGiftAnalytics = async (req, res) => {
         sendTypeBreakdown,
         mostSentGift: mostSentGift
           ? {
-              name: mostSentGift[0],
-              count: mostSentGift[1],
+              name: mostSentGift,
+              count: mostSentGift,
             }
           : null,
       },
