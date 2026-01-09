@@ -20,6 +20,7 @@ const friendRequestRouter = require("./router/friendRequestRouter");
 const blockUsersRouter = require("./router/blockUsersRouter");
 const profileVisitRouter = require("./router/profileVisitRouter");
 const paymentRouter = require("./router/paymentRouter");
+const configRazorpayKeyRouter = require("./config/configRazorpayKeyRouter");
 
 const app = express();
 connectMongose();
@@ -61,6 +62,7 @@ app.use("/api/friends", friendRequestRouter);
 app.use("/api/block", blockUsersRouter);
 app.use("/api/profile-visits", profileVisitRouter);
 app.use("/api/payment", paymentRouter);
+app.use("/api/config", configRazorpayKeyRouter);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
