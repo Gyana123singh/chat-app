@@ -5,6 +5,7 @@ const Room = require("../models/room");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 
+// this for admin side to add gift and category
 exports.addGift = async (req, res) => {
   try {
     const { name, price, category } = req.body;
@@ -49,7 +50,7 @@ exports.addGift = async (req, res) => {
     });
   }
 };
-
+// this for admin side to add gift and category
 exports.addCategory = async (req, res) => {
   try {
     const { name } = req.body;
@@ -85,6 +86,7 @@ exports.addCategory = async (req, res) => {
     });
   }
 };
+// this for admin side to add gift and category
 exports.getCategory = async (req, res) => {
   try {
     const categories = await Category.find().sort({ createdAt: -1 }); // ✅ OLD → NEW (new data at bottom)
@@ -103,6 +105,7 @@ exports.getCategory = async (req, res) => {
   }
 };
 
+// this for admin side to add gift and category
 exports.getAllGifts = async (req, res) => {
   try {
     const { category, page = 1, limit = 20 } = req.query;
@@ -145,7 +148,7 @@ exports.getAllGifts = async (req, res) => {
     });
   }
 };
-
+// this for admin side to add gift and category
 exports.checkEligibility = async (req, res) => {
   try {
     const { giftId, recipientId } = req.body;
@@ -182,6 +185,8 @@ exports.checkEligibility = async (req, res) => {
   }
 };
 
+// ..........................................................
+// this is for user side to send gift
 /**
  * 🔥 SEND GIFT - Main function
  * Handles: Individual, All in Room, All on Mic

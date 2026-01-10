@@ -20,6 +20,8 @@ const friendRequestRouter = require("./router/friendRequestRouter");
 const blockUsersRouter = require("./router/blockUsersRouter");
 const profileVisitRouter = require("./router/profileVisitRouter");
 const paymentRouter = require("./router/paymentRouter");
+const storeGiftRouter = require("./router/storeGiftRouter");
+const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 
 const app = express();
 connectMongose();
@@ -61,6 +63,8 @@ app.use("/api/friends", friendRequestRouter);
 app.use("/api/block", blockUsersRouter);
 app.use("/api/profile-visits", profileVisitRouter);
 app.use("/api/payment", paymentRouter);
+app.use("/api/store-gifts", storeGiftRouter);
+app.use("/api/store-gift-send", sendStoreGiftRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -86,3 +90,4 @@ require("./utils/socketEvents")(io);
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+module.exports = { io };

@@ -461,6 +461,14 @@ module.exports = (io) => {
       }
     });
 
+    // Handle store gift send event
+    socket.on("sendGift", (data) => {
+      const { receiverId, giftName, senderName } = data;
+      io.to(receiverId).emit("giftNotification", {
+        message: `${senderName} sent you a gift: ${giftName}`,
+        data: data,
+      });
+    });
     /* =========================
        DISCONNECT
     ========================= */
