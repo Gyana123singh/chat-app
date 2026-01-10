@@ -85,9 +85,15 @@ const io = new Server(server, {
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
 
+// Load gift socket events (no conflict - separate namespace)
+const giftSocketHelpers = require("./utils/giftSocketEvents")(io);
+
+// Make available globally if needed
+global.giftSocket = giftSocketHelpers;
+
 /* ===================== START SERVER ===================== */
 
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-module.exports = { io, server };
+module.exports = { app, io, server };
