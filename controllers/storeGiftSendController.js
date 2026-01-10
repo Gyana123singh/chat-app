@@ -4,8 +4,7 @@ const Gift = require("../models/storeGift");
 const User = require("../models/users");
 const UserGift = require("../models/userStoreGift");
 const Room = require("../models/room");
-const { io } = require("../server"); // Socket.IO instance
-
+const io = global.io; // Now safe to use
 // Send gift to single user
 exports.sendGiftToUser = async (req, res) => {
   const session = await mongoose.startSession();

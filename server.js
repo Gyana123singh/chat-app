@@ -86,14 +86,16 @@ require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
 
 // Load gift socket events (no conflict - separate namespace)
-const giftSocketHelpers = require("./utils/giftSocketEvents")(io);
+require("./utils/giftSocketEvents")(io);
 
-// Make available globally if needed
-global.giftSocket = giftSocketHelpers;
+// ✅ Make io globally available
+global.io = io;
+console.log("🚀 Socket.IO initialized successfully");
 
 /* ===================== START SERVER ===================== */
 
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log(`🔌 Socket.IO server ready on port ${PORT}`);
 });
 module.exports = { app, io, server };
