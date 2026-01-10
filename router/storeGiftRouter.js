@@ -8,7 +8,8 @@ router.get("/categories", giftController.getAllCategories);
 router.get("/by-category/:categoryId", giftController.getGiftsByCategory);
 router.get("/:giftId", giftController.getGiftDetails);
 
+
 // Admin routes
-router.post("/", authMiddleware, giftController.createGift);
+router.post("/create", authMiddleware, giftController.createGift);
 
 module.exports = router;
