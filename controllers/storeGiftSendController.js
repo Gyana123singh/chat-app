@@ -1,7 +1,9 @@
+const mongoose = require("mongoose");
 const GiftTransaction = require("../models/storeGiftTransaction");
 const Gift = require("../models/storeGift");
 const User = require("../models/users");
 const UserGift = require("../models/userStoreGift");
+const Room = require("../models/room");
 const { io } = require("../server"); // Socket.IO instance
 
 // Get friends list for sending gifts
