@@ -23,6 +23,8 @@ const paymentRouter = require("./router/paymentRouter");
 const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 
+const musicRouter = require("./router/musicRouter");
+
 const app = express();
 connectMongose();
 
@@ -65,6 +67,7 @@ app.use("/api/profile-visits", profileVisitRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/store-gifts", storeGiftRouter);
 app.use("/api/store-gift-send", sendStoreGiftRoutes);
+app.use("/api/music", musicRouter);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -84,6 +87,7 @@ const io = new Server(server, {
 
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
+rquire("./utils/roomEvents")(io);
 
 // Load gift socket events (no conflict - separate namespace)
 require("./utils/giftSocketEvents")(io);

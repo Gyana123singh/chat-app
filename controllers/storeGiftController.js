@@ -1,6 +1,6 @@
 const StoreGift = require("../models/storeGift");
 const StoreCategory = require("../models/storeCategory");
-
+const cloudinary = require("../config/cloudinaryConfig");
 // Get all gifts by category
 exports.getGiftsByCategory = async (req, res) => {
   try {
@@ -87,10 +87,10 @@ exports.getGiftDetails = async (req, res) => {
 // Create gift (ADMIN ONLY)
 exports.createGift = async (req, res) => {
   try {
-    const { name, description, icon, price, category, animationUrl, rarity } =
+    const { name, description, price, category, animationUrl, rarity } =
       req.body;
 
-    // Validate required fields
+    // ✅ Validate required fields
     if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
@@ -98,6 +98,17 @@ exports.createGift = async (req, res) => {
       });
     }
 
+    let icon = "";
+
+    // ✅ Upload image to Cloudinary
+    if (req.file) {
+      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
+        folder: "gifts",
+      });
+      icon = uploadResult.secure_url;
+    }
+
+    // ✅ Create gift
     const gift = new StoreGift({
       name,
       description,
@@ -117,6 +128,7 @@ exports.createGift = async (req, res) => {
       data: gift,
     });
   } catch (error) {
+    console.error("Create Gift Error:", error);
     return res.status(500).json({
       success: false,
       message: "Error creating gift",
