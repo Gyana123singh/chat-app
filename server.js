@@ -22,11 +22,12 @@ const profileVisitRouter = require("./router/profileVisitRouter");
 const paymentRouter = require("./router/paymentRouter");
 const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
-const  = require("./utils/musicEvents");
+const musicEvents = require("./utils/musicEvents");
 const musicRouter = require("./router/musicRouter");
 
 const app = express();
-connectMongose();musicEvents
+connectMongose();
+musicEvents;
 
 const PORT = process.env.PORT || 5001;
 
