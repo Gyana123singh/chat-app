@@ -22,11 +22,11 @@ const profileVisitRouter = require("./router/profileVisitRouter");
 const paymentRouter = require("./router/paymentRouter");
 const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
-
+const  = require("./utils/musicEvents");
 const musicRouter = require("./router/musicRouter");
 
 const app = express();
-connectMongose();
+connectMongose();musicEvents
 
 const PORT = process.env.PORT || 5001;
 
@@ -87,7 +87,7 @@ const io = new Server(server, {
 
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
-rquire("./utils/roomEvents")(io);
+musicEvents(io);
 
 // Load gift socket events (no conflict - separate namespace)
 require("./utils/giftSocketEvents")(io);
