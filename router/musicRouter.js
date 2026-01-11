@@ -13,3 +13,5 @@ router.post("/:roomId/resume", musicController.resumeMusic);
 router.get("/:roomId/state", musicController.getMusicState);
 
 router.post("/:roomId/stop", musicController.stopMusic);
+
+module.exports = router;
