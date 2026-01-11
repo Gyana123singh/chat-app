@@ -27,7 +27,6 @@ const musicRouter = require("./router/musicRouter");
 
 const app = express();
 connectMongose();
-musicEvents;
 
 const PORT = process.env.PORT || 5001;
 
