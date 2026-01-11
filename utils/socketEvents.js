@@ -123,6 +123,26 @@ module.exports = (io) => {
     });
 
     /* =========================
+      SEND EMOJI
+    ========================= */
+
+    socket.on("send_emoji", async (data) => {
+      const { roomId, userId, emoji } = data;
+
+      if (!roomId || !userId || !emoji) return;
+
+      // 🔹 Broadcast to everyone in room
+      io.to(roomId).emit("receive_emoji", {
+        userId,
+        emoji,
+        timestamp: Date.now(),
+      });
+
+      // 🔹 OPTIONAL: store emoji (analytics / moderation)
+      // await EmojiReaction.create({ roomId, userId, emoji });
+    });
+
+    /* =========================
        WEBRTC OFFER
     ========================= */
     socket.on("call:offer", ({ to, offer }) => {

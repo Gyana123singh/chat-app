@@ -1,6 +1,6 @@
 const StoreGift = require("../models/storeGift");
 const StoreCategory = require("../models/storeCategory");
-const cloudinary = require("../config/cloudinaryConfig");
+const cloudinary = require("../config/cloudinary");
 // Get all gifts by category
 exports.getGiftsByCategory = async (req, res) => {
   try {
