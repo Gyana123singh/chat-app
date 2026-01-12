@@ -130,7 +130,6 @@ exports.createGift = async (req, res) => {
     const { name, description, price, category, animationUrl, rarity } =
       req.body;
 
-    // ✅ Validate required fields
     if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
@@ -140,15 +139,34 @@ exports.createGift = async (req, res) => {
 
     let icon = "";
 
-    // ✅ Upload image to Cloudinary
     if (req.file) {
+      const allowedTypes = [
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/gif",
+      ];
+
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message: "Only PNG, JPG, JPEG, GIF are allowed",
+        });
+      }
+
       const uploadResult = await cloudinary.uploader.upload(req.file.path, {
         folder: "gifts",
+        resource_type: "image",
+        transformation: [
+          { width: 300, height: 300, crop: "limit" },
+          { quality: "auto" },
+          { fetch_format: "auto" },
+        ],
       });
+
       icon = uploadResult.secure_url;
     }
 
-    // ✅ Create gift
     const gift = new StoreGift({
       name,
       description,
@@ -176,6 +194,7 @@ exports.createGift = async (req, res) => {
     });
   }
 };
+
 exports.deleteGift = async (req, res) => {
   try {
     const { giftId } = req.params;
@@ -200,4 +219,3 @@ exports.deleteGift = async (req, res) => {
     });
   }
 };
-
