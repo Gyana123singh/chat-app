@@ -11,11 +11,6 @@ router.get("/by-category/:categoryId", giftController.getGiftsByCategory);
 router.get("/:giftId", giftController.getGiftDetails);
 
 // Admin routes
-router.post(
-  "/create",
-  multer.single("icon"),
-  authMiddleware,
-  giftController.createGift
-);
+router.post("/create", multer.single("icon"), giftController.createGift);
 
 module.exports = router;
