@@ -108,13 +108,13 @@ exports.getCategory = async (req, res) => {
 // this for admin side to add gift and category
 exports.getAllGifts = async (req, res) => {
   try {
-    const { category = "all", page = 1, limit = 20 } = req.query;
+    const { category, page = 1, limit = 20 } = req.query;
 
-    // ✅ Base query
+    // ✅ FIX 1: correct field name
     let query = { isAvailable: true };
 
-    // ✅ Apply category filter only if not "all"
-    if (category !== "all") {
+    // ✅ FIX 2: category filter
+    if (category) {
       query.category = category;
     }
 
@@ -122,9 +122,9 @@ exports.getAllGifts = async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // ✅ Fetch gifts with category name
+    // ✅ FIX 3: populate category name
     const gifts = await Gift.find(query)
-      .populate("category", "name")
+      .populate("category", "name") // 🔥 IMPORTANT
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNum);
@@ -133,20 +133,18 @@ exports.getAllGifts = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: gifts,
+      gifts,
       pagination: {
         total,
         page: pageNum,
-        limit: limitNum,
         pages: Math.ceil(total / limitNum),
       },
     });
   } catch (error) {
-    console.error("Get Gifts By Category Error:", error);
+    console.error("Get All Gifts Error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch gifts",
-      error: error.message,
     });
   }
 };
