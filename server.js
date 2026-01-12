@@ -22,7 +22,6 @@ const profileVisitRouter = require("./router/profileVisitRouter");
 const paymentRouter = require("./router/paymentRouter");
 const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
-const musicEvents = require("./utils/musicEvents");
 const musicRouter = require("./router/musicRouter");
 
 const app = express();
@@ -87,7 +86,6 @@ const io = new Server(server, {
 
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
-musicEvents(io);
 
 // Load gift socket events (no conflict - separate namespace)
 require("./utils/giftSocketEvents")(io);
