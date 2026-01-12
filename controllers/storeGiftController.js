@@ -127,10 +127,10 @@ exports.getGiftDetails = async (req, res) => {
 // Create gift (ADMIN ONLY)
 exports.createGift = async (req, res) => {
   try {
-    const { categoryName, description, price, category, animationUrl, rarity } =
+    const { name, description, price, category, animationUrl, rarity } =
       req.body;
 
-    if (!categoryName || !price || !category) {
+    if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
         message: "Missing required fields",
@@ -168,7 +168,7 @@ exports.createGift = async (req, res) => {
     }
 
     const gift = new StoreGift({
-      categoryName,
+      name,
       description,
       icon,
       price,
@@ -178,7 +178,7 @@ exports.createGift = async (req, res) => {
     });
 
     await gift.save();
-    await gift.populate("category", "categoryName");
+    await gift.populate("category", "name");
 
     return res.status(201).json({
       success: true,
