@@ -9,6 +9,7 @@ router.post("/addStoreCategory", giftController.addStoreCategory);
 router.get("/getStoreCategory", giftController.getStoreCategory);
 router.get("/by-category/:categoryId", giftController.getGiftsByCategory);
 router.get("/:giftId", giftController.getGiftDetails);
+router.delete("/delete/:giftId", giftController.deleteGift);
 
 // Admin routes
 router.post("/create", multer.single("icon"), giftController.createGift);

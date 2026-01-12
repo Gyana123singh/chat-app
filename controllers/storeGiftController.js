@@ -176,3 +176,27 @@ exports.createGift = async (req, res) => {
     });
   }
 };
+exports.deleteGift = async (req, res) => {
+  try {
+    const { giftId } = req.params;
+    const gift = await StoreGift.findByIdAndDelete(giftId);
+    if (!gift) {
+      return res.status(404).json({
+        success: false,
+        message: "Gift not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Gift deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete Gift Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting gift",
+      error: error.message,
+    });
+  }
+};
