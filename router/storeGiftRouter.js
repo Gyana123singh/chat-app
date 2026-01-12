@@ -5,7 +5,8 @@ const { authMiddleware } = require("../middleware/auth");
 const multer = require("../middleware/multer.middleware");
 
 // Public routes
-router.get("/categories", giftController.getAllCategories);
+router.post("/addStoreCategory", giftController.addStoreCategory);
+router.get("/getStoreCategory", giftController.getStoreCategory);
 router.get("/by-category/:categoryId", giftController.getGiftsByCategory);
 router.get("/:giftId", giftController.getGiftDetails);
 

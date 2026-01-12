@@ -1,6 +1,64 @@
 const StoreGift = require("../models/storeGift");
-const StoreCategory = require("../models/storeCategory");
 const cloudinary = require("../config/cloudinary");
+const StoreCategory = require("../models/storeCategory");
+
+// for backend side gift store management
+
+// this for admin side to add gift and category
+exports.addStoreCategory = async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    // ✅ Validation
+    if (!name || !name.trim()) {
+      return res.status(400).json({
+        message: "Store Category name is required",
+      });
+    }
+
+    // ✅ Check duplicate
+    const exists = await StoreCategory.findOne({ name: name.trim() });
+    if (exists) {
+      return res.status(409).json({
+        message: "Store Category already exists",
+      });
+    }
+
+    // ✅ Create category
+    const category = await StoreCategory.create({
+      name: name.trim(),
+    });
+
+    return res.status(201).json({
+      message: "Store Category added successfully",
+      category,
+    });
+  } catch (error) {
+    console.error("Add Store Category Error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+};
+// Get all Store Category
+
+exports.getStoreCategory = async (req, res) => {
+  try {
+    const categories = await StoreCategory.find().sort({ createdAt: -1 }); // ✅ OLD → NEW (new data at bottom)
+
+    return res.status(200).json({
+      success: true,
+      count: categories.length,
+      categories,
+    });
+  } catch (error) {
+    console.error("Get Category Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 // Get all gifts by category
 exports.getGiftsByCategory = async (req, res) => {
   try {
@@ -34,24 +92,6 @@ exports.getGiftsByCategory = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error fetching gifts",
-      error: error.message,
-    });
-  }
-};
-
-// Get all categories
-exports.getAllCategories = async (req, res) => {
-  try {
-    const categories = await StoreCategory.find();
-
-    return res.status(200).json({
-      success: true,
-      data: categories,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Error fetching categories",
       error: error.message,
     });
   }
