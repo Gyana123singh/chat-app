@@ -30,7 +30,7 @@ exports.addStoreCategory = async (req, res) => {
     });
 
     return res.status(201).json({
-      message: "Store Category added successfully",
+      message: "Store StoreCategory added successfully",
       category,
     });
   } catch (error) {
