@@ -10,7 +10,7 @@ const storeSchema = new mongoose.Schema(
     icon: {
       type: String,
     },
-    name: { type: String },
+    categoryName: { type: String },
     price: {
       type: Number,
 
