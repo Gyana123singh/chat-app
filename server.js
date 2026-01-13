@@ -23,6 +23,7 @@ const paymentRouter = require("./router/paymentRouter");
 const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 const musicRouter = require("./router/musicRouter");
+const privateChatRouter = require("./router/privateChatRouter");
 
 const app = express();
 connectMongose();
@@ -67,6 +68,7 @@ app.use("/api/payment", paymentRouter);
 app.use("/api/store-gifts", storeGiftRouter);
 app.use("/api/store-gift-send", sendStoreGiftRoutes);
 app.use("/api/music", musicRouter);
+app.use("/api/private-chat", privateChatRouter);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -89,6 +91,7 @@ require("./utils/socketEvents")(io);
 
 // Load gift socket events (no conflict - separate namespace)
 require("./utils/giftSocketEvents")(io);
+require("./utils/socketEventPrivateChat")(io);
 
 // ✅ Make io globally available
 global.io = io;
