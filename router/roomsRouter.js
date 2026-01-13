@@ -16,29 +16,29 @@ router.get("get-popular-rooms", roomController.getPopularRooms);
 
 // 🎬 VIDEO ENDPOINTS (NEW)
 router.get(
-  "/:roomId/video/stats",
+  "/:roomId/get-video/stats",
   authMiddleware,
   roomController.getVideoStats
 );
 router.post(
-  "/:roomId/video/frame-stats",
+  "/:roomId/update-frame-video/stats",
   authMiddleware,
   roomController.updateFrameStats
 );
 
 router.post(
-  "/:roomId/video/listener-status",
+  "/:roomId/update-listener-video-status/status",
   authMiddleware,
   roomController.updateListenerVideoStatus
 );
 
 router.post(
-  "/:roomId/video/session",
+  "/:roomId/record-video/session",
   authMiddleware,
   roomController.recordVideoSession
 );
 router.get(
-  "/:roomId/video/quality-metrics",
+  "/:roomId/get-video-quality-metrics",
   authMiddleware,
   roomController.getVideoQualityMetrics
 );

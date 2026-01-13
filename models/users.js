@@ -149,6 +149,23 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Add to user schema in models/users.js
+
+    trophy: {
+      totalContributions: { type: Number, default: 0 },
+      totalCoinsEarned: { type: Number, default: 0 },
+      currentStreak: { type: Number, default: 0 },
+      longestStreak: { type: Number, default: 0 },
+      lastContributionDate: Date,
+      level: { type: Number, default: 1 }, // Bronze, Silver, Gold, Platinum
+      achievements: [
+        {
+          achievementId: String,
+          achievementName: String,
+          unlockedAt: Date,
+        },
+      ],
+    },
   },
   { timestamps: true }
 );
