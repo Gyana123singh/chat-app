@@ -27,7 +27,7 @@ router.get(
 //  */
 
 router.post(
-  "/get-or-crete-conversations/:userId",
+  "/get-or-create-conversations/:userId",
   authMiddleware,
   privateChatController.getOrCreateConversation
 );
