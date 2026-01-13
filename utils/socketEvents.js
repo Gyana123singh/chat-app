@@ -883,6 +883,45 @@ module.exports = (io) => {
       }
     });
 
+    // 🏆 Listen for trophy/leaderboard requests
+    socket.on("trophy:get-leaderboard", async (data) => {
+      try {
+        const { period = "daily", page = 1, limit = 20 } = data;
+
+        const skip = (page - 1) * limit;
+        const Leaderboard = require("../models/leaderboard");
+
+        const leaderboard = await Leaderboard.find()
+          .populate("userId", "username profile.avatar")
+          .sort({ [`${period}.coins`]: -1 })
+          .skip(skip)
+          .limit(limit);
+
+        socket.emit("trophy:leaderboard-data", {
+          success: true,
+          leaderboard,
+          period,
+        });
+      } catch (error) {
+        socket.emit("trophy:error", {
+          success: false,
+          message: error.message,
+        });
+      }
+    });
+
+    // Broadcast leaderboard update to all users when someone gets gift
+    socket.on(
+      "gift:sent-notify",
+      async ({ gifterUsername, recipientCount, totalCoins }) => {
+        io.emit("leaderboard:updated", {
+          message: `${gifterUsername} sent gifts to ${recipientCount} users!`,
+          totalCoins,
+          timestamp: new Date(),
+        });
+      }
+    );
+
     /* =========================
        🔥 GET ROOM USERS & MIC STATUS
     ========================= */

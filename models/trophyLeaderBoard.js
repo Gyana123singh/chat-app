@@ -6,66 +6,154 @@ const leaderboardSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
+      unique: true,
     },
-    username: String,
-    avatar: String,
-    
-    // Daily Stats
+    username: {
+      type: String,
+      default: "Unknown",
+    },
+    avatar: {
+      type: String,
+      default: null,
+    },
+
+    // 📊 Daily Stats
     daily: {
-      coins: { type: Number, default: 0 },
-      giftsReceived: { type: Number, default: 0 },
-      totalValue: { type: Number, default: 0 },
-      lastUpdated: { type: Date, default: Date.now },
+      coins: {
+        type: Number,
+        default: 0,
+      },
+      giftsReceived: {
+        type: Number,
+        default: 0,
+      },
+      totalValue: {
+        type: Number,
+        default: 0,
+      },
+      lastUpdated: {
+        type: Date,
+        default: null,
+      },
     },
-    
-    // Weekly Stats
+
+    // 📊 Weekly Stats
     weekly: {
-      coins: { type: Number, default: 0 },
-      giftsReceived: { type: Number, default: 0 },
-      totalValue: { type: Number, default: 0 },
-      lastUpdated: { type: Date, default: Date.now },
+      coins: {
+        type: Number,
+        default: 0,
+      },
+      giftsReceived: {
+        type: Number,
+        default: 0,
+      },
+      totalValue: {
+        type: Number,
+        default: 0,
+      },
+      lastUpdated: {
+        type: Date,
+        default: null,
+      },
     },
-    
-    // Monthly Stats
+
+    // 📊 Monthly Stats
     monthly: {
-      coins: { type: Number, default: 0 },
-      giftsReceived: { type: Number, default: 0 },
-      totalValue: { type: Number, default: 0 },
-      lastUpdated: { type: Date, default: Date.now },
+      coins: {
+        type: Number,
+        default: 0,
+      },
+      giftsReceived: {
+        type: Number,
+        default: 0,
+      },
+      totalValue: {
+        type: Number,
+        default: 0,
+      },
+      lastUpdated: {
+        type: Date,
+        default: null,
+      },
     },
-    
-    // Overall Stats
+
+    // 📊 All-Time Stats
     allTime: {
-      coins: { type: Number, default: 0 },
-      giftsReceived: { type: Number, default: 0 },
-      totalValue: { type: Number, default: 0 },
+      coins: {
+        type: Number,
+        default: 0,
+      },
+      giftsReceived: {
+        type: Number,
+        default: 0,
+      },
+      totalValue: {
+        type: Number,
+        default: 0,
+      },
     },
-    
-    // Rank tracking
+
+    // 🏆 Rankings
     rank: {
-      daily: { type: Number, default: 0 },
-      weekly: { type: Number, default: 0 },
-      monthly: { type: Number, default: 0 },
-      allTime: { type: Number, default: 0 },
+      daily: {
+        type: Number,
+        default: 0,
+      },
+      weekly: {
+        type: Number,
+        default: 0,
+      },
+      monthly: {
+        type: Number,
+        default: 0,
+      },
+      allTime: {
+        type: Number,
+        default: 0,
+      },
     },
-    
-    // Badge/Achievement system
+
+    // 🎖️ User Level & Streak
+    level: {
+      type: Number,
+      enum: [1, 2, 3, 4],
+      default: 1,
+      // 1 = Bronze (0 - 1999 coins)
+      // 2 = Silver (2000 - 4999 coins)
+      // 3 = Gold (5000 - 9999 coins)
+      // 4 = Platinum (10000+ coins)
+    },
+    currentStreak: {
+      type: Number,
+      default: 0,
+    },
+    longestStreak: {
+      type: Number,
+      default: 0,
+    },
+
+    // 🎯 Badges & Achievements
     badges: [
       {
-        badgeId: String,
-        badgeName: String,
+        name: String,
+        icon: String,
         unlockedAt: Date,
       },
     ],
+
+    // 📝 Metadata
+    lastContributionDate: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
-// Indexes for leaderboard queries
-leaderboardSchema.index({ "daily.coins": -1, "daily.lastUpdated": -1 });
-leaderboardSchema.index({ "weekly.coins": -1, "weekly.lastUpdated": -1 });
-leaderboardSchema.index({ "monthly.coins": -1, "monthly.lastUpdated": -1 });
+// 🔍 Index for efficient queries
+leaderboardSchema.index({ "daily.coins": -1 });
+leaderboardSchema.index({ "weekly.coins": -1 });
+leaderboardSchema.index({ "monthly.coins": -1 });
 leaderboardSchema.index({ "allTime.coins": -1 });
 leaderboardSchema.index({ userId: 1 });
 

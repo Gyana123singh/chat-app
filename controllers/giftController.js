@@ -4,7 +4,7 @@ const Category = require("../models/category");
 const Room = require("../models/room");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
-
+const trophyController = require("../controllers/trophyController");
 // this for admin side to add gift and category
 exports.addGift = async (req, res) => {
   try {
@@ -187,22 +187,17 @@ exports.checkEligibility = async (req, res) => {
 
 // ..........................................................
 // this is for user side to send gift
+
 /**
- * 🔥 SEND GIFT - Main function
+ * 🔥 SEND GIFT - Main function (UPDATED WITH TROPHY INTEGRATION & ERROR HANDLING)
  * Handles: Individual, All in Room, All on Mic
  */
 exports.sendGift = async (req, res) => {
   try {
-    const senderId = req.user.id; // From auth middleware
-    const {
-      roomId,
-      giftId,
-      recipients, // [userId1, userId2, ...] for individual
-      sendType, // "individual", "all_in_room", "all_on_mic"
-      micOnlineUsers, // { userId: { muted, speaking } } from socket
-    } = req.body;
+    const senderId = req.user?.id;
+    const { roomId, giftId, recipients, sendType, micOnlineUsers } = req.body;
 
-    // ✅ Validation
+    // ✅ ALL VALIDATION
     if (!roomId || !giftId || !sendType) {
       return res.status(400).json({
         success: false,
@@ -252,7 +247,7 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ Determine recipients based on sendType
+    // ✅ Determine recipients
     let finalRecipients = [];
 
     if (sendType === "individual") {
@@ -282,7 +277,6 @@ exports.sendGift = async (req, res) => {
           message: "No users on mic",
         });
       }
-      // 🔥 Filter only users who are currently speaking (on mic)
       finalRecipients = micOnlineUsers.filter(
         (userId) => req.body.micStatus && req.body.micStatus[userId]?.speaking
       );
@@ -295,7 +289,7 @@ exports.sendGift = async (req, res) => {
       }
     }
 
-    // ✅ Remove sender from recipients (can't send to self)
+    // ✅ Remove sender from recipients
     finalRecipients = finalRecipients.filter(
       (recipientId) => recipientId.toString() !== senderId.toString()
     );
@@ -347,7 +341,7 @@ exports.sendGift = async (req, res) => {
     const transaction = await GiftTransaction.create({
       roomId,
       senderId,
-      receiverId: finalRecipients[0], // Primary recipient (for display)
+      receiverId: finalRecipients[0],
       giftId,
       giftName: gift.name,
       giftIcon: gift.icon,
@@ -360,6 +354,36 @@ exports.sendGift = async (req, res) => {
       recipientIds: successfulRecipients,
       status: "completed",
     });
+
+    // ✅ FIX: UPDATE SENDER'S TROPHY POINTS WITH PROPER ERROR HANDLING
+    try {
+      const trophyController = require("./trophyController");
+      await trophyController.updateLeaderboardOnGift(
+        senderId, // ✅ SENDER gets trophy points
+        totalCoinsRequired // ✅ Total coins SPENT by sender
+      );
+      console.log(
+        `✅ Trophy updated for sender ${senderId}: +${totalCoinsRequired} points`
+      );
+    } catch (trophyError) {
+      console.error(
+        `⚠️ Trophy update failed for sender ${senderId}:`,
+        trophyError.message
+      );
+      // ⚠️ Log error but don't fail gift transaction
+      // In production, you may want to queue this for retry
+    }
+
+    // ✅ Emit socket event for leaderboard update
+    if (global.io) {
+      global.io.emit("gift:sent-notify", {
+        gifterUsername: sender.username,
+        gifterUserId: senderId,
+        recipientCount: successfulRecipients.length,
+        totalCoins: totalCoinsRequired,
+        timestamp: new Date(),
+      });
+    }
 
     // ✅ Response
     res.status(200).json({

@@ -53,16 +53,6 @@ messageSchema.index({ sender: 1 });
 messageSchema.index({ recipient: 1 });
 messageSchema.index({ isRead: 1 });
 
-// ✅ Middleware to populate sender and recipient
-messageSchema.pre(/^find/, function (next) {
-  if (this.options._recursed) {
-    return next();
-  }
-  this.populate("sender", "username avatar _id");
-  this.populate("recipient", "username avatar _id");
-  next();
-});
-
 // ✅ Instance method to mark as read
 messageSchema.methods.markAsRead = async function () {
   this.isRead = true;

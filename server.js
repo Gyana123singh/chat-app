@@ -24,6 +24,7 @@ const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 const musicRouter = require("./router/musicRouter");
 const privateChatRouter = require("./router/privateChatRouter");
+const trophyRouter = require("./router/trophyRouter");
 
 const app = express();
 connectMongose();
@@ -69,6 +70,7 @@ app.use("/api/store-gifts", storeGiftRouter);
 app.use("/api/store-gift-send", sendStoreGiftRoutes);
 app.use("/api/music", musicRouter);
 app.use("/api/private-chat", privateChatRouter);
+app.use("/api/trophies", trophyRouter);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -100,9 +102,10 @@ global.io = io;
 console.log("🚀 Socket.IO initialized successfully");
 
 /* ===================== START SERVER ===================== */
-
+const { startCronJobs } = require("./utils/cron");
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`🔌 Socket.IO server ready on port ${PORT}`);
+  startCronJobs();
 });
 module.exports = { app, io, server };
