@@ -6,7 +6,6 @@ const leaderboardSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true,
     },
     username: {
       type: String,
@@ -155,6 +154,5 @@ leaderboardSchema.index({ "daily.coins": -1 });
 leaderboardSchema.index({ "weekly.coins": -1 });
 leaderboardSchema.index({ "monthly.coins": -1 });
 leaderboardSchema.index({ "allTime.coins": -1 });
-leaderboardSchema.index({ userId: 1 });
 
 module.exports = mongoose.model("Leaderboard", leaderboardSchema);

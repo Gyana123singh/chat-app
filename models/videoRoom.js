@@ -6,7 +6,6 @@ const videoRoomSchema = new mongoose.Schema(
     roomId: {
       type: String,
       unique: true,
-      index: true,
       required: true,
     },
     video: {
@@ -30,26 +29,30 @@ const videoRoomSchema = new mongoose.Schema(
     frameSync: {
       lastFrameNumber: { type: Number, default: 0 },
       expectedFPS: { type: Number, default: 30 },
-      frameTimestamps: [{
-        frameNumber: Number,
-        capturedAt: Date,
-        sentAt: Date,
-        latency: Number,
-      }],
+      frameTimestamps: [
+        {
+          frameNumber: Number,
+          capturedAt: Date,
+          sentAt: Date,
+          latency: Number,
+        },
+      ],
     },
     hostId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    participants: [{
-      userId: mongoose.Schema.Types.ObjectId,
-      role: { type: String, enum: ["host", "listener"] },
-      isReceivingVideo: { type: Boolean, default: false },
-      lastVideoFrameReceived: { type: Number, default: 0 },
-      videoFPS: { type: Number, default: 0 },
-      videoLatency: { type: Number, default: 0 },
-    }],
+    participants: [
+      {
+        userId: mongoose.Schema.Types.ObjectId,
+        role: { type: String, enum: ["host", "listener"] },
+        isReceivingVideo: { type: Boolean, default: false },
+        lastVideoFrameReceived: { type: Number, default: 0 },
+        videoFPS: { type: Number, default: 0 },
+        videoLatency: { type: Number, default: 0 },
+      },
+    ],
     stats: {
       totalFramesSent: { type: Number, default: 0 },
       totalFramesReceived: { type: Number, default: 0 },

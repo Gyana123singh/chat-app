@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 const transactionSchema = new mongoose.Schema(
   {
     transactionId: { type: String, unique: true },
-    userId: { type: String, ref: "User", index: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     type: {
       type: String,
       enum: ["COIN_RECHARGE", "COIN_SPENT", "COIN_REFUND"],

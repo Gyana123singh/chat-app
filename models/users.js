@@ -10,7 +10,6 @@ const userSchema = new mongoose.Schema(
     diiId: {
       type: String,
       unique: true,
-      index: true,
     },
 
     username: {

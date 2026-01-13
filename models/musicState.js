@@ -4,7 +4,6 @@ const musicStateSchema = new mongoose.Schema(
   {
     roomId: {
       type: String,
-      index: true,
       required: true,
     },
 
