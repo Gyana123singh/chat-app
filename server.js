@@ -86,7 +86,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
-  maxHttpBufferSize: 10 * 1024 * 1024, // ← ADD THIS LINE
+  maxHttpBufferSize: 10 * 1024 * 1024,
   transports: ["websocket", "polling"],
 });
 
@@ -99,11 +99,51 @@ require("./utils/socketEventPrivateChat")(io);
 global.io = io;
 console.log("🚀 Socket.IO initialized successfully");
 
+/* ===================== CRON IMPORT ===================== */
+const cron = require("./utils/cron"); // ✅ FULL MODULE IMPORT (start + stop)
+let cronInstance = null;
+
 /* ===================== START SERVER ===================== */
-const { startCronJobs } = require("./utils/cron");
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`🔌 Socket.IO server ready on port ${PORT}`);
-  startCronJobs();
+
+  // ✅ START CRON JOBS
+  cronInstance = cron;
+  cronInstance.startCronJobs();
+  console.log("🕐 Cron jobs initialized ✅");
 });
+
 module.exports = { app, io, server };
+
+/* ===================== GRACEFUL SHUTDOWN ===================== */
+const gracefulShutdown = (signal) => {
+  console.log(`🛑 Received ${signal}. Shutting down gracefully...`);
+
+  // ✅ STOP CRON JOBS FIRST
+  if (cronInstance && cronInstance.stopCronJobs) {
+    cronInstance.stopCronJobs();
+    console.log("🛑 All cron jobs stopped");
+  }
+
+  // ✅ CLOSE SERVER
+  server.close((err) => {
+    if (err) {
+      console.error("❌ Server close error:", err);
+      process.exit(1);
+    }
+    console.log("✅ Server closed cleanly");
+    process.exit(0);
+  });
+
+  // Force close after 10 seconds if not clean
+  setTimeout(() => {
+    console.error("⚠️ Force closing server after timeout");
+    process.exit(1);
+  }, 10000);
+};
+
+// ✅ LISTEN FOR SHUTDOWN SIGNALS
+process.on("SIGINT", gracefulShutdown); // Ctrl+C
+process.on("SIGTERM", gracefulShutdown); // Docker/PM2/Heroku
+process.on("SIGQUIT", gracefulShutdown); // Kill -3
