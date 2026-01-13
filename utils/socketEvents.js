@@ -1,6 +1,8 @@
 const MusicState = require("../models/musicState");
 const roomManager = require("../utils/musicRoomManager");
 const VideoRoom = require("../models/videoRoom");
+const Leaderboard = require("../models/trophyLeaderBoard");
+const mongoose = require("mongoose");
 
 module.exports = (io) => {
   const onlineUsers = new Map();
@@ -883,44 +885,142 @@ module.exports = (io) => {
       }
     });
 
-    // 🏆 Listen for trophy/leaderboard requests
+    /**
+     * 🏆 REQUEST: Get leaderboard data
+     * Client sends: { period: "daily", page: 1, limit: 20 }
+     */
     socket.on("trophy:get-leaderboard", async (data) => {
       try {
-        const { period = "daily", page = 1, limit = 20 } = data;
+        const { period = "daily", page = 1, limit = 20 } = data || {};
 
-        const skip = (page - 1) * limit;
-        const Leaderboard = require("../models/leaderboard");
+        // ✅ FIX #1: Validate period
+        if (!["daily", "weekly", "monthly", "allTime"].includes(period)) {
+          return socket.emit("trophy:error", {
+            success: false,
+            message: "Invalid period",
+          });
+        }
 
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const sortField = `${period}.coins`;
+
+        // ✅ FIX #2: Standardized model import
         const leaderboard = await Leaderboard.find()
           .populate("userId", "username profile.avatar")
-          .sort({ [`${period}.coins`]: -1 })
+          .sort({ [sortField]: -1 })
           .skip(skip)
-          .limit(limit);
+          .limit(parseInt(limit))
+          .lean();
+
+        // ✅ FIX #3: Format response consistently with HTTP endpoint
+        const formattedLeaderboard = leaderboard.map((entry, index) => ({
+          rank: skip + index + 1,
+          userId: entry.userId?._id,
+          username: entry.userId?.username || "Unknown",
+          avatar: entry.userId?.profile?.avatar || null,
+          coins: entry[period].coins,
+          giftsReceived: entry[period].giftsReceived,
+          totalValue: entry[period].totalValue,
+          level: entry.level || 1,
+        }));
+
+        const totalCount = await Leaderboard.countDocuments();
 
         socket.emit("trophy:leaderboard-data", {
           success: true,
-          leaderboard,
+          leaderboard: formattedLeaderboard,
           period,
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: totalCount,
+            pages: Math.ceil(totalCount / parseInt(limit)),
+          },
         });
       } catch (error) {
+        console.error("❌ trophy:get-leaderboard error:", error.message);
         socket.emit("trophy:error", {
           success: false,
-          message: error.message,
+          message: "Failed to fetch leaderboard",
+          error: error.message,
         });
       }
     });
 
-    // Broadcast leaderboard update to all users when someone gets gift
-    socket.on(
-      "gift:sent-notify",
-      async ({ gifterUsername, recipientCount, totalCoins }) => {
-        io.emit("leaderboard:updated", {
-          message: `${gifterUsername} sent gifts to ${recipientCount} users!`,
-          totalCoins,
-          timestamp: new Date(),
+    /**
+     * 🏆 REQUEST: Get top 10 contributors
+     * Client sends: { period: "daily" }
+     */
+    socket.on("trophy:get-top-contributors", async (data) => {
+      try {
+        const { period = "daily" } = data || {};
+
+        if (!["daily", "weekly", "monthly", "allTime"].includes(period)) {
+          return socket.emit("trophy:error", {
+            success: false,
+            message: "Invalid period",
+          });
+        }
+
+        const top = await Leaderboard.find()
+          .populate("userId", "username profile.avatar")
+          .sort({ [`${period}.coins`]: -1 })
+          .limit(10)
+          .lean();
+
+        const formatted = top.map((entry, index) => ({
+          rank: index + 1,
+          userId: entry.userId?._id,
+          username: entry.userId?.username || "Unknown",
+          avatar: entry.userId?.profile?.avatar || null,
+          coins: entry[period].coins,
+          giftsReceived: entry[period].giftsReceived,
+          level: entry.level || 1,
+        }));
+
+        socket.emit("trophy:top-contributors-data", {
+          success: true,
+          topContributors: formatted,
+          period,
+        });
+      } catch (error) {
+        console.error("❌ trophy:get-top-contributors error:", error.message);
+        socket.emit("trophy:error", {
+          success: false,
+          message: "Failed to fetch top contributors",
+          error: error.message,
         });
       }
-    );
+    });
+
+    /**
+     * 🎁 BROADCAST: Notify all users when gift is sent
+     * This is emitted from sendGift controller via global.io.emit()
+     * All clients listen to this event for real-time leaderboard updates
+     */
+    socket.on("gift:sent-notify", (data) => {
+      // ✅ FIX #4: Proper validation before broadcast
+      if (!data || !data.gifterUsername) {
+        console.warn("Invalid gift:sent-notify data:", data);
+        return;
+      }
+
+      const { gifterUsername, gifterUserId, recipientCount, totalCoins } = data;
+
+      // Broadcast to ALL connected clients
+      io.emit("leaderboard:updated", {
+        success: true,
+        message: `${gifterUsername} sent gifts to ${recipientCount} user(s)!`,
+        gifterUserId,
+        totalCoins,
+        recipientCount,
+        timestamp: new Date(),
+      });
+
+      console.log(
+        `🎁 Gift broadcast: ${gifterUsername} → ${recipientCount} users (${totalCoins} coins)`
+      );
+    });
 
     /* =========================
        🔥 GET ROOM USERS & MIC STATUS

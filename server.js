@@ -92,8 +92,6 @@ const io = new Server(server, {
 
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
-
-// Load gift socket events (no conflict - separate namespace)
 require("./utils/giftSocketEvents")(io);
 require("./utils/socketEventPrivateChat")(io);
 
