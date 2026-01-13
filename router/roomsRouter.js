@@ -14,4 +14,33 @@ router.post("/:roomId/join", authMiddleware, roomController.joinRoom);
 router.post("/:roomId/leave", authMiddleware, roomController.leaveRoom);
 router.get("get-popular-rooms", roomController.getPopularRooms);
 
+// 🎬 VIDEO ENDPOINTS (NEW)
+router.get(
+  "/:roomId/video/stats",
+  authMiddleware,
+  roomController.getVideoStats
+);
+router.post(
+  "/:roomId/video/frame-stats",
+  authMiddleware,
+  roomController.updateFrameStats
+);
+
+router.post(
+  "/:roomId/video/listener-status",
+  authMiddleware,
+  roomController.updateListenerVideoStatus
+);
+
+router.post(
+  "/:roomId/video/session",
+  authMiddleware,
+  roomController.recordVideoSession
+);
+router.get(
+  "/:roomId/video/quality-metrics",
+  authMiddleware,
+  roomController.getVideoQualityMetrics
+);
+
 module.exports = router;

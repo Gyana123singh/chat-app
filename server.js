@@ -84,6 +84,8 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
+  maxHttpBufferSize: 10 * 1024 * 1024, // ← ADD THIS LINE
+  transports: ["websocket", "polling"],
 });
 
 require("./middleware/soket.middleware")(io);

@@ -1,5 +1,6 @@
 const MusicState = require("../models/musicState");
 const roomManager = require("../utils/musicRoomManager");
+const VideoRoom = require("../models/videoRoom");
 
 module.exports = (io) => {
   const onlineUsers = new Map();
@@ -60,6 +61,35 @@ module.exports = (io) => {
       console.log(`📍 ${user.username} joined ${roomName}`);
 
       try {
+        // ✅ FIX #2: SYNC VIDEOROOM ON JOIN
+        if (!(await VideoRoom.findOne({ roomId }))) {
+          await VideoRoom.create({
+            roomId,
+            hostId: socket.data.userId,
+            video: { isVisible: false },
+            audio: { isMixing: false },
+          });
+          console.log(`🎬 VideoRoom created for ${roomId}`);
+        }
+
+        // ✅ FIX #4: ADD PARTICIPANT TO VIDEOROOM
+        await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            $addToSet: {
+              participants: {
+                userId: user.id,
+                role: isHost ? "host" : "listener",
+                isReceivingVideo: false,
+                videoFPS: 0,
+                videoLatency: 0,
+                lastVideoFrameReceived: 0,
+              },
+            },
+          },
+          { new: true }
+        );
+
         const sockets = await io.in(roomName).fetchSockets();
 
         const usersInRoom = sockets
@@ -96,6 +126,16 @@ module.exports = (io) => {
           pausedAt: currentMusicState.pausedAt,
           startedAt: currentMusicState.startedAt,
         });
+
+        // 🎬 Send current video state to newly joined user
+        const videoRoom = await VideoRoom.findOne({ roomId });
+        if (videoRoom) {
+          socket.emit("room:videoState", {
+            video: videoRoom.video,
+            frameSync: videoRoom.frameSync,
+            stats: videoRoom.stats,
+          });
+        }
       } catch (err) {
         console.error("❌ room:join error:", err);
       }
@@ -401,11 +441,12 @@ module.exports = (io) => {
           { upsert: true }
         );
 
-        // Broadcast to all listeners
+        // ✅ STANDARDIZED TIMESTAMP (FIX #7)
         io.to(roomName).emit("music:playing", {
           musicFile,
-          startedAt: newState.startedAt,
+          startedAt: Date.now(),
           currentPosition: 0,
+          timestamp: Date.now(),
         });
 
         console.log(`🎵 Music started in ${roomName}:`, musicFile.name);
@@ -476,7 +517,7 @@ module.exports = (io) => {
 
         io.to(roomName).emit("music:resumed", {
           resumeFrom: newState.pausedAt,
-          startedAt: newState.startedAt,
+          startedAt: Date.now(),
           timestamp: Date.now(),
         });
 
@@ -515,6 +556,13 @@ module.exports = (io) => {
         io.to(roomName).emit("music:stopped", {
           timestamp: Date.now(),
         });
+
+        // ✅ FIX #5: CLEANUP ON MUSIC STOP
+        await VideoRoom.deleteOne({ roomId });
+        hostUsers.delete(roomId);
+        roomUsers.delete(roomId);
+        roomMessages.delete(roomId);
+        typingUsers.delete(roomId);
 
         console.log(`⏹️ Music stopped in ${roomName}`);
       } catch (error) {
@@ -572,6 +620,198 @@ module.exports = (io) => {
         isPlaying: state.isPlaying,
         currentPosition: currentPosition,
       });
+    });
+
+    /* =========================
+       🎬 VIDEO: INITIALIZE
+    ========================= */
+    socket.on("video:init", async ({ roomId, videoMetadata }) => {
+      const { userId, isHost } = socket.data;
+      if (!isHost || !roomId) {
+        socket.emit("video:error", { message: "Only host can control video" });
+        return;
+      }
+
+      try {
+        // ✅ FIX #2: ENSURE VIDEOROOM EXISTS
+        let videoRoom = await VideoRoom.findOne({ roomId });
+        if (!videoRoom) {
+          videoRoom = await VideoRoom.create({
+            roomId,
+            hostId: userId,
+            video: { ...videoMetadata, isVisible: true },
+            audio: { isMixing: false },
+          });
+        } else {
+          videoRoom = await VideoRoom.findOneAndUpdate(
+            { roomId },
+            { $set: { video: { ...videoMetadata, isVisible: true } } },
+            { new: true }
+          );
+        }
+
+        const roomName = `room:${roomId}`;
+        io.to(roomName).emit("video:initialized", {
+          videoMetadata,
+          timestamp: Date.now(),
+        });
+
+        console.log(`🎬 Video initialized in ${roomName}`);
+      } catch (error) {
+        console.error("❌ video:init error:", error);
+        socket.emit("video:error", { message: "Failed to initialize video" });
+      }
+    });
+
+    /* =========================
+       🎬 VIDEO: PLAY
+    ========================= */
+    socket.on("video:play", async ({ roomId }) => {
+      const { isHost } = socket.data;
+      if (!isHost || !roomId) {
+        socket.emit("video:error", { message: "Only host can control video" });
+        return;
+      }
+
+      try {
+        const videoRoom = await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            "video.isPlaying": true,
+            "video.isPaused": false,
+            "video.startedAt": new Date(),
+            "video.lastSyncTime": new Date(),
+          },
+          { new: true }
+        );
+
+        if (!videoRoom) {
+          socket.emit("video:error", { message: "Video room not found" });
+          return;
+        }
+
+        const roomName = `room:${roomId}`;
+        io.to(roomName).emit("video:play", {
+          currentTime: videoRoom.video.currentTime || 0,
+          timestamp: Date.now(),
+        });
+
+        console.log(`▶️ Video playing in room:${roomId}`);
+      } catch (error) {
+        console.error("❌ video:play error:", error);
+        socket.emit("video:error", { message: "Failed to play video" });
+      }
+    });
+
+    /* =========================
+       🎬 VIDEO: PAUSE
+    ========================= */
+    socket.on("video:pause", async ({ roomId, currentTime }) => {
+      const { isHost } = socket.data;
+      if (!isHost || !roomId) {
+        socket.emit("video:error", { message: "Only host can control video" });
+        return;
+      }
+
+      try {
+        const videoRoom = await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            "video.isPlaying": false,
+            "video.isPaused": true,
+            "video.pausedAt": new Date(),
+            "video.currentTime": currentTime || 0,
+            "video.lastSyncTime": new Date(),
+          },
+          { new: true }
+        );
+
+        if (!videoRoom) {
+          socket.emit("video:error", { message: "Video room not found" });
+          return;
+        }
+
+        const roomName = `room:${roomId}`;
+        io.to(roomName).emit("video:pause", {
+          currentTime: currentTime || 0,
+          timestamp: Date.now(),
+        });
+
+        console.log(`⏸️ Video paused in room:${roomId}`);
+      } catch (error) {
+        console.error("❌ video:pause error:", error);
+        socket.emit("video:error", { message: "Failed to pause video" });
+      }
+    });
+
+    /* =========================
+       🎬 VIDEO: FRAME DATA (WITH FIX #3: VALIDATION)
+    ========================= */
+    socket.on("video:frameData", async ({ roomId, frameData, frameNumber }) => {
+      const { isHost } = socket.data;
+      if (!isHost || !roomId) {
+        socket.emit("video:error", {
+          message: "Only host can send frame data",
+        });
+        return;
+      }
+
+      try {
+        // ✅ FIX #3: VALIDATE FRAME SIZE
+        const frameSize = JSON.stringify(frameData).length;
+        const MAX_FRAME_SIZE = 5 * 1024 * 1024; // 5MB per frame
+
+        if (frameSize > MAX_FRAME_SIZE) {
+          socket.emit("video:error", {
+            message: `Frame too large: ${Math.round(
+              frameSize / 1024 / 1024
+            )}MB > 5MB limit`,
+          });
+          console.warn(
+            `❌ Frame rejected - size ${frameSize} bytes exceeds limit`
+          );
+          return;
+        }
+
+        const roomName = `room:${roomId}`;
+        socket.to(roomName).emit("video:frameReceived", {
+          frameData,
+          frameNumber,
+          timestamp: Date.now(),
+        });
+
+        console.log(
+          `📤 Frame ${frameNumber} sent in room:${roomId} (${Math.round(
+            frameSize / 1024
+          )}KB)`
+        );
+      } catch (error) {
+        console.error("❌ video:frameData error:", error);
+        socket.emit("video:error", { message: "Failed to send frame data" });
+      }
+    });
+
+    /* =========================
+       🎬 VIDEO: GET STATE
+    ========================= */
+    socket.on("video:getState", async ({ roomId }) => {
+      try {
+        const videoRoom = await VideoRoom.findOne({ roomId });
+        if (!videoRoom) {
+          socket.emit("video:state", {});
+          return;
+        }
+
+        socket.emit("video:state", {
+          video: videoRoom.video,
+          frameSync: videoRoom.frameSync,
+          stats: videoRoom.stats,
+          participants: videoRoom.participants,
+        });
+      } catch (error) {
+        console.error("❌ video:getState error:", error);
+        socket.emit("video:state", {});
+      }
     });
 
     /* =========================

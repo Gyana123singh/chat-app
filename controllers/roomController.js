@@ -2,6 +2,7 @@
 const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
+const VideoRoom = require("../models/videoRoom");
 
 exports.createRoom = async (req, res) => {
   try {
@@ -33,12 +34,10 @@ exports.createRoom = async (req, res) => {
     const roomId = uuidv4();
 
     const room = await Room.create({
-      roomId, // ✅ UUID
+      roomId,
       mode,
       title: `${mode} Room`,
-
-      host: userId, // ✅ FIX (ObjectId)
-
+      host: userId,
       creator: userId,
       creatorName: user.username || user.email,
       creatorEmail: user.email,
@@ -62,10 +61,28 @@ exports.createRoom = async (req, res) => {
       isActive: true,
     });
 
+    // ✅ CREATE VIDEO ROOM STATE
+    await VideoRoom.create({
+      roomId,
+      hostId: userId,
+      video: { isVisible: false },
+      audio: { isMixing: false },
+      participants: [
+        {
+          userId,
+          role: "host",
+          isReceivingVideo: false,
+          videoFPS: 0,
+          videoLatency: 0,
+          lastVideoFrameReceived: 0,
+        },
+      ],
+    });
+
     return res.status(201).json({
       success: true,
       message: "Room created successfully",
-      roomId: room.roomId, // 🔥 return UUID
+      roomId: room.roomId,
       room,
     });
   } catch (err) {
@@ -77,6 +94,392 @@ exports.createRoom = async (req, res) => {
   }
 };
 
+/* =========================
+   🎬 GET VIDEO STATS
+========================= */
+exports.getVideoStats = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const videoRoom = await VideoRoom.findOne({ roomId });
+
+    if (!videoRoom) {
+      return res.status(404).json({
+        success: false,
+        message: "Video room not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        video: videoRoom.video,
+        audio: videoRoom.audio,
+        frameSync: videoRoom.frameSync,
+        stats: videoRoom.stats,
+        participants: videoRoom.participants,
+      },
+    });
+  } catch (error) {
+    console.error("❌ getVideoStats error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* =========================
+   🎬 UPDATE FRAME STATS
+========================= */
+exports.updateFrameStats = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { frameNumber, frameSize, latency } = req.body;
+
+    if (!roomId || frameNumber === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing roomId or frameNumber",
+      });
+    }
+
+    // ✅ FIX #6: NULL-COALESCING FOR LATENCY
+    const safeLatency = Math.max(0, latency || 0);
+    const safeFrameSize = Math.max(0, frameSize || 0);
+
+    const videoRoom = await VideoRoom.findOneAndUpdate(
+      { roomId },
+      {
+        $inc: {
+          "stats.totalFramesSent": 1,
+          "stats.totalBandwidthUsed": safeFrameSize,
+        },
+        $push: {
+          "frameSync.frameTimestamps": {
+            frameNumber,
+            capturedAt: new Date(),
+            sentAt: new Date(),
+            latency: safeLatency,
+          },
+        },
+        $set: {
+          "frameSync.lastFrameNumber": frameNumber,
+          "video.lastSyncTime": new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!videoRoom) {
+      return res.status(404).json({
+        success: false,
+        message: "Video room not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      stats: videoRoom.stats,
+    });
+  } catch (error) {
+    console.error("❌ updateFrameStats error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+/* =========================
+   🎬 UPDATE LISTENER VIDEO STATUS
+========================= */
+exports.updateListenerVideoStatus = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { isReceivingVideo, lastFrameNumber, fps, latency } = req.body;
+    const userId = req.user.id;
+
+    if (!roomId || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing roomId or userId",
+      });
+    }
+
+    // ✅ FIX #6: NULL-COALESCING FOR METRICS
+    const safeLatency = Math.max(0, latency || 0);
+    const safeFPS = Math.max(0, fps || 0);
+    const safeFrameNumber = Math.max(0, lastFrameNumber || 0);
+
+    const videoRoom = await VideoRoom.findOneAndUpdate(
+      {
+        roomId,
+        "participants.userId": userId,
+      },
+      {
+        $set: {
+          "participants.$.isReceivingVideo": isReceivingVideo || false,
+          "participants.$.lastVideoFrameReceived": safeFrameNumber,
+          "participants.$.videoFPS": safeFPS,
+          "participants.$.videoLatency": safeLatency,
+          "video.lastSyncTime": new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!videoRoom) {
+      return res.status(404).json({
+        success: false,
+        message: "Video room or participant not found",
+      });
+    }
+
+    const participant = videoRoom.participants.find(
+      (p) => p.userId.toString() === userId.toString()
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Listener status updated",
+      participant,
+    });
+  } catch (error) {
+    console.error("❌ updateListenerVideoStatus error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update listener status",
+    });
+  }
+};
+
+/* =========================
+   🎬 RECORD VIDEO SESSION
+========================= */
+exports.recordVideoSession = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const {
+      duration,
+      totalFramesSent,
+      avgFrameSize,
+      totalBandwidth,
+      droppedFrames,
+      hostId,
+      fps,
+      latency,
+    } = req.body;
+
+    if (!roomId || !hostId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing roomId or hostId",
+      });
+    }
+
+    // ✅ FIX #6: NULL-COALESCING FOR SESSION DATA
+    const safeDuration = Math.max(0, duration || 0);
+    const safeFrames = Math.max(0, totalFramesSent || 0);
+    const safeAvgSize = Math.max(0, avgFrameSize || 0);
+    const safeBandwidth = Math.max(0, totalBandwidth || 0);
+    const safeDropped = Math.max(0, droppedFrames || 0);
+    const safeFPS = Math.max(0, fps || 30);
+    const safeLatency = Math.max(0, latency || 100);
+
+    const videoRoom = await VideoRoom.findOneAndUpdate(
+      { roomId, hostId },
+      {
+        $set: {
+          "stats.totalFramesSent": safeFrames,
+          "stats.averageFrameSize": safeAvgSize,
+          "stats.totalBandwidthUsed": safeBandwidth,
+          "stats.droppedFrames": safeDropped,
+          "video.isPlaying": false,
+          "video.isPaused": false,
+          isActive: false,
+        },
+        $currentDate: {
+          "video.lastSyncTime": true,
+        },
+      },
+      { new: true }
+    );
+
+    if (!videoRoom) {
+      return res.status(404).json({
+        success: false,
+        message: "Video session not found",
+      });
+    }
+
+    // Calculate estimated cost (coins per minute)
+    const sessionDurationMinutes = safeDuration / 60000;
+    const estimatedCost = Math.round(sessionDurationMinutes * 10);
+
+    // ✅ FIX #6: CLAMP QUALITY SCORE TO 0-100
+    const qualityScore = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          (safeFPS / 30) * 40 +
+            (safeLatency <= 100 ? 30 : 20) +
+            (safeDropped === 0 ? 30 : 10)
+        )
+      )
+    );
+
+    console.log(
+      `📊 Session ended: ${safeFrames} frames, ${safeBandwidth} KB, Quality: ${qualityScore}/100`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Session recorded successfully",
+      data: {
+        sessionId: videoRoom._id,
+        duration: safeDuration,
+        totalFrames: safeFrames,
+        totalBandwidth: safeBandwidth,
+        estimatedCost,
+        qualityScore,
+      },
+    });
+  } catch (error) {
+    console.error("❌ recordVideoSession error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to record session",
+    });
+  }
+};
+
+/* =========================
+   🎬 GET VIDEO QUALITY METRICS
+========================= */
+exports.getVideoQualityMetrics = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const videoRoom = await VideoRoom.findOne({ roomId }).populate(
+      "hostId",
+      "username profile.avatar"
+    );
+
+    if (!videoRoom) {
+      return res.status(404).json({
+        success: false,
+        message: "Video room not found",
+      });
+    }
+
+    // ✅ FIX #6: SAFE CALCULATION WITH NULL-COALESCING
+    const totalListeners = videoRoom.participants.filter(
+      (p) => p.role === "listener"
+    ).length;
+    const activeListeners = videoRoom.participants.filter(
+      (p) => p.isReceivingVideo === true
+    ).length;
+
+    const participantCount = Math.max(1, videoRoom.participants.length);
+
+    const avgFPS =
+      Math.round(
+        (videoRoom.participants.reduce((sum, p) => sum + (p.videoFPS || 0), 0) /
+          participantCount) *
+          10
+      ) / 10;
+
+    const avgLatency = Math.round(
+      videoRoom.participants.reduce(
+        (sum, p) => sum + (p.videoLatency || 0),
+        0
+      ) / participantCount
+    );
+
+    const sessionDuration = Math.max(
+      1,
+      (videoRoom.video.lastSyncTime?.getTime() || Date.now()) -
+        videoRoom.createdAt.getTime()
+    );
+    const bandwidthPerSecond =
+      Math.round(
+        ((videoRoom.stats.totalBandwidthUsed || 0) / (sessionDuration / 1000)) *
+          100
+      ) / 100;
+
+    // ✅ FIX #6: CLAMP QUALITY SCORE TO 0-100
+    const qualityScore = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          (avgFPS / 30) * 40 +
+            (avgLatency <= 100 ? 30 : 20) +
+            (videoRoom.stats.droppedFrames === 0 ? 30 : 10)
+        )
+      )
+    );
+
+    res.status(200).json({
+      success: true,
+      metrics: {
+        // 📊 Video Stats
+        isPlaying: videoRoom.video.isPlaying || false,
+        currentTime: videoRoom.video.currentTime || 0,
+        isVisible: videoRoom.video.isVisible || false,
+        frameNumber: videoRoom.frameSync.lastFrameNumber || 0,
+
+        // 📈 Quality Metrics
+        avgFPS,
+        avgLatency,
+        expectedFPS: videoRoom.frameSync.expectedFPS || 30,
+        totalListeners,
+        activeListeners,
+        listenerPercentage: totalListeners
+          ? Math.round((activeListeners / totalListeners) * 100)
+          : 0,
+
+        // 💾 Bandwidth
+        totalBandwidthUsed: videoRoom.stats.totalBandwidthUsed || 0,
+        avgFrameSize: videoRoom.stats.averageFrameSize || 0,
+        bandwidthPerSecond,
+
+        // 🎯 Quality Score (0-100)
+        qualityScore,
+
+        // 👥 Participants Status
+        participants: (videoRoom.participants || []).map((p) => ({
+          userId: p.userId,
+          role: p.role,
+          isReceivingVideo: p.isReceivingVideo || false,
+          fps: p.videoFPS || 0,
+          latency: p.videoLatency || 0,
+          lastFrame: p.lastVideoFrameReceived || 0,
+        })),
+
+        // 🖥️ Host Info
+        host: videoRoom.hostId
+          ? {
+              id: videoRoom.hostId._id,
+              username: videoRoom.hostId.username || "Unknown",
+              avatar: videoRoom.hostId.profile?.avatar || null,
+            }
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("❌ getVideoQualityMetrics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch quality metrics",
+    });
+  }
+};
+
+/* =========================
+   GET MY ROOMS
+========================= */
 exports.getMyRooms = async (req, res) => {
   try {
     const rooms = await Room.find({ creator: req.user.id })
@@ -97,6 +500,7 @@ exports.getMyRooms = async (req, res) => {
       rooms: formattedRooms,
     });
   } catch (error) {
+    console.error("❌ getMyRooms error:", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -104,6 +508,9 @@ exports.getMyRooms = async (req, res) => {
   }
 };
 
+/* =========================
+   GET ROOM BY ID
+========================= */
 exports.getRoomById = async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -125,6 +532,7 @@ exports.getRoomById = async (req, res) => {
       room,
     });
   } catch (error) {
+    console.error("❌ getRoomById error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch room",
@@ -132,6 +540,9 @@ exports.getRoomById = async (req, res) => {
   }
 };
 
+/* =========================
+   GET ALL ROOMS
+========================= */
 exports.getAllRooms = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 20 } = req.query;
@@ -169,6 +580,7 @@ exports.getAllRooms = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("❌ getAllRooms error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch rooms",
@@ -177,6 +589,9 @@ exports.getAllRooms = async (req, res) => {
   }
 };
 
+/* =========================
+   UPDATE ROOM
+========================= */
 exports.updateRoom = async (req, res) => {
   try {
     const room = await Room.findById(req.params.id);
@@ -213,6 +628,7 @@ exports.updateRoom = async (req, res) => {
       room,
     });
   } catch (error) {
+    console.error("❌ updateRoom error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update room",
@@ -221,9 +637,14 @@ exports.updateRoom = async (req, res) => {
   }
 };
 
+/* =========================
+   DELETE ROOM
+========================= */
 exports.deleteRoom = async (req, res) => {
   try {
-    const room = await Room.findById(req.params.id);
+    const { roomId } = req.params;
+
+    const room = await Room.findOne({ roomId });
 
     if (!room) {
       return res.status(404).json({
@@ -239,15 +660,16 @@ exports.deleteRoom = async (req, res) => {
       });
     }
 
-    room.isActive = false;
-    room.endedAt = new Date();
-    await room.save();
+    // ✅ FIX #5: CLEANUP VIDEOROOM WHEN ROOM DELETED
+    await VideoRoom.deleteOne({ roomId });
+    await Room.deleteOne({ roomId });
 
     res.status(200).json({
       success: true,
       message: "Room deleted successfully",
     });
   } catch (error) {
+    console.error("❌ deleteRoom error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to delete room",
