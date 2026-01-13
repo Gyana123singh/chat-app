@@ -1,5 +1,6 @@
 const Message = require("../models/privateMessage");
 const Conversation = require("../models/conversation");
+const mongoose = require("mongoose");
 
 // ✅ Middleware to verify authentication (adjust based on your auth system)
 
