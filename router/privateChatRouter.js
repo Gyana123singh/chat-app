@@ -84,3 +84,5 @@ router.get(
   authMiddleware,
   privateChatController.getUnreadMessageCount
 );
+
+module.exports = router;
