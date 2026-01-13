@@ -41,7 +41,7 @@ router.get(
 );
 
 //  * ✅ SEND message via REST API
-router.post("send-messages", authMiddleware, privateChatController.sendMessage);
+router.post("/send-messages", authMiddleware, privateChatController.sendMessage);
 
 //  * ✅ EDIT message
 router.put(
