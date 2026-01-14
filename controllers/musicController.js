@@ -13,16 +13,17 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
     roomManager.initRoom(roomId);
     const state = roomManager.getState(roomId);
 
+    // 🔒 LOCK SYSTEM – first come first play
     if (state.locked || state.isPlaying) {
       return res.status(409).json({
-        error:
-          "Music already playing. Please wait until it finishes or is stopped.",
+        error: "Music already playing. Please wait until it finishes or is stopped.",
       });
     }
 
     const { originalname, filename, size } = req.file;
     const musicUrl = `/stream/${roomId}/${filename}`;
 
+    // ✅ IMPORTANT: pass STRING userId to RoomManager
     const newState = roomManager.playMusic(
       roomId,
       { name: originalname, filename, size },
@@ -40,7 +41,7 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
         locked: true,
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
-        playedBy: new mongoose.Types.ObjectId(userId),
+        playedBy: new mongoose.Types.ObjectId(userId), // ✅ ObjectId ONLY in DB
       },
       { upsert: true, new: true }
     );
@@ -50,7 +51,7 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
       musicUrl: `http://${req.get("host")}${musicUrl}`,
       startedAt: newState.startedAt,
       currentPosition: 0,
-      playedBy: new mongoose.Types.ObjectId(userId),
+      playedBy: userId, // ✅ STRING for sockets
     });
 
     return res.json({
@@ -103,6 +104,7 @@ exports.resumeMusic = async (req, res, io) => {
       { roomId },
       {
         isPlaying: true,
+        locked: true, // 🔒 re-lock on resume
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
       }
@@ -166,7 +168,7 @@ exports.getMusicState = async (req, res) => {
       isPlaying: state.isPlaying,
       locked: state.locked,
       currentPosition: roomManager.getCurrentPosition(roomId),
-      playedBy: dbState?.playedBy || null,
+      playedBy: state.playedBy, // ✅ STRING from RoomManager
     });
   } catch (error) {
     console.error("❌ getMusicState:", error);

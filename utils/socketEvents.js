@@ -2,7 +2,6 @@ const roomManager = require("../utils/musicRoomManager");
 const VideoRoom = require("../models/videoRoom");
 const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
-const mongoose = require("mongoose");
 
 module.exports = (io) => {
   const onlineUsers = new Map();
@@ -10,7 +9,6 @@ module.exports = (io) => {
   const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
-  const hostUsers = new Map(); // roomId -> userId (room host)
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
@@ -34,7 +32,7 @@ module.exports = (io) => {
     /* =========================
        ROOM JOIN
     ========================= */
-    socket.on("room:join", async ({ roomId, user, isHost }) => {
+    socket.on("room:join", async ({ roomId, user }) => {
       if (!roomId || !user) return;
 
       const roomName = `room:${roomId}`;
@@ -42,11 +40,6 @@ module.exports = (io) => {
 
       socket.data.roomId = roomId;
       socket.data.user = user;
-      socket.data.isHost = isHost;
-
-      if (isHost) {
-        hostUsers.set(roomId, user.id);
-      }
 
       // Init music state
       if (!roomManager.roomMusicStates.has(roomId)) {
@@ -67,7 +60,7 @@ module.exports = (io) => {
         if (!videoRoom) {
           videoRoom = await VideoRoom.create({
             roomId,
-            hostId: socket.data.userId,
+            hostId: user.id, // just stored, no restriction
             video: { isVisible: false },
             audio: { isMixing: false },
             participants: [],
@@ -80,7 +73,7 @@ module.exports = (io) => {
             $addToSet: {
               participants: {
                 userId: user.id,
-                role: isHost ? "host" : "listener",
+                role: "listener", // everyone equal
                 isReceivingVideo: false,
                 videoFPS: 0,
                 videoLatency: 0,
@@ -120,6 +113,7 @@ module.exports = (io) => {
           isPlaying: currentMusicState.isPlaying,
           locked: currentMusicState.locked,
           currentPosition,
+          playedBy: currentMusicState.playedBy,
         });
 
         /* ===== VIDEO STATE ===== */
@@ -409,7 +403,7 @@ module.exports = (io) => {
 
           const musicState = roomManager.getState(roomId);
 
-          // ✅ STOP MUSIC ONLY IF OWNER LEFT
+          // 🔥 STOP MUSIC ONLY IF OWNER LEFT
           if (
             roomId &&
             musicState.isPlaying &&
@@ -422,7 +416,6 @@ module.exports = (io) => {
 
             roomManager.stopMusic(roomId);
 
-            // Optional: also clear DB state
             await MusicState.findOneAndUpdate(
               { roomId },
               {
@@ -436,11 +429,6 @@ module.exports = (io) => {
                 playedBy: null,
               }
             );
-          }
-
-          // Remove host if host left
-          if (roomId && hostUsers.get(roomId) === userId) {
-            hostUsers.delete(roomId);
           }
         }
 

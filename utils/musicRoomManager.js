@@ -11,7 +11,7 @@ class RoomManager {
         startedAt: null,
         pausedAt: 0,
         locked: false,
-        playedBy: null,
+        playedBy: null, // 🔥 ALWAYS STRING
       });
     }
   }
@@ -34,7 +34,7 @@ class RoomManager {
     return !state.locked && !state.isPlaying;
   }
 
-  playMusic(roomId, musicFile, playedBy) {
+  playMusic(roomId, musicFile, playedByUserId) {
     const state = this.getState(roomId);
 
     state.musicFile = musicFile;
@@ -42,7 +42,7 @@ class RoomManager {
     state.startedAt = Date.now();
     state.pausedAt = 0;
     state.locked = true;
-    state.playedBy = playedBy;
+    state.playedBy = playedByUserId.toString(); // ✅ force string
 
     this.roomMusicStates.set(roomId, state);
     return state;
@@ -58,9 +58,12 @@ class RoomManager {
 
   resumeMusic(roomId) {
     const state = this.getState(roomId);
+
     state.isPlaying = true;
     state.startedAt = Date.now() - state.pausedAt;
     state.pausedAt = 0;
+    state.locked = true; // 🔒 re-lock on resume
+
     this.roomMusicStates.set(roomId, state);
     return state;
   }
