@@ -14,6 +14,8 @@ const musicStateSchema = new mongoose.Schema(
       artist: String,
       fileSize: Number,
     },
+    localFilePath: String, // Original local path (for cleanup)
+    musicUrl: String, // ✅ ADDED - THIS WAS MISSING
 
     // Playback state
     isPlaying: {

@@ -148,6 +148,17 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Add to user schema
+    level: {
+      personal: {
+        level: { type: Number, default: 1 },
+        exp: { type: Number, default: 0 },
+      },
+      room: {
+        level: { type: Number, default: 1 },
+        exp: { type: Number, default: 0 },
+      },
+    },
     // Add to user schema in models/users.js
 
     trophy: {

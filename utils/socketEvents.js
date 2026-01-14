@@ -199,14 +199,15 @@ module.exports = (io) => {
     });
 
     /* =========================
-      SEND EMOJI
-    ========================= */
+     SEND EMOJI
+   ========================= */
     socket.on("send_emoji", async (data) => {
       const { roomId, userId, emoji } = data;
 
       if (!roomId || !userId || !emoji) return;
 
-      io.to(roomId).emit("receive_emoji", {
+      io.to("room:" + roomId).emit("receive_emoji", {
+        // ✅ FIXED ROOM NAME
         userId,
         emoji,
         timestamp: Date.now(),
