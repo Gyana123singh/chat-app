@@ -129,6 +129,83 @@ module.exports = (io) => {
     });
 
     /* =========================
+   VIDEO CONTROLS (ALL USERS)
+========================= */
+
+    socket.on("video:play", async ({ roomId, userId }) => {
+      try {
+        const videoRoom = await VideoRoom.findOne({ roomId });
+        if (!videoRoom) return;
+
+        await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            "video.isPlaying": true,
+            "video.isPaused": false,
+            "video.startedAt": new Date(),
+            "video.isVisible": true,
+          }
+        );
+
+        io.to(`room:${roomId}`).emit("video:started", { startedBy: userId });
+      } catch (err) {
+        console.error("❌ video:play error:", err);
+      }
+    });
+
+    socket.on("video:pause", async ({ roomId }) => {
+      try {
+        await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            "video.isPaused": true,
+            "video.isPlaying": false,
+            "video.pausedAt": new Date(),
+          }
+        );
+
+        io.to(`room:${roomId}`).emit("video:paused");
+      } catch (err) {
+        console.error("❌ video:pause error:", err);
+      }
+    });
+
+    socket.on("video:resume", async ({ roomId }) => {
+      try {
+        await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            "video.isPaused": false,
+            "video.isPlaying": true,
+          }
+        );
+
+        io.to(`room:${roomId}`).emit("video:resumed");
+      } catch (err) {
+        console.error("❌ video:resume error:", err);
+      }
+    });
+
+    socket.on("video:stop", async ({ roomId }) => {
+      try {
+        await VideoRoom.findOneAndUpdate(
+          { roomId },
+          {
+            "video.isPlaying": false,
+            "video.isPaused": false,
+            "video.currentTime": 0,
+            "video.isVisible": false,
+            "video.fileName": null,
+          }
+        );
+
+        io.to(`room:${roomId}`).emit("video:stopped");
+      } catch (err) {
+        console.error("❌ video:stop error:", err);
+      }
+    });
+
+    /* =========================
        MIC CONTROLS
     ========================= */
     socket.on("mic:mute", () => {

@@ -148,6 +148,58 @@ app.get("/stream/:roomId/:filename", (req, res) => {
   }
 });
 
+
+
+// ✅ VIDEO ROUTES - NOW io IS READY
+const videoRouter = require("./router/videoRouter")(io);
+app.use("/api/video", videoRouter);
+
+/* ===================== VIDEO STREAM ROUTE ===================== */
+app.get("/video-stream/:roomId/:filename", (req, res) => {
+  const filePath = path.join(
+    __dirname,
+    "..",
+    "uploads",
+    "videos",
+    req.params.roomId,
+    req.params.filename
+  );
+
+  if (!fs.existsSync(filePath)) {
+    console.log("❌ Video file not found:", filePath);
+    return res.status(404).end();
+  }
+
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+
+  if (range) {
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+    const chunkSize = end - start + 1;
+    const file = fs.createReadStream(filePath, { start, end });
+
+    res.writeHead(206, {
+      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunkSize,
+      "Content-Type": "video/mp4",
+    });
+
+    file.pipe(res);
+  } else {
+    res.writeHead(200, {
+      "Content-Length": fileSize,
+      "Content-Type": "video/mp4",
+    });
+
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
+
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
 require("./utils/giftSocketEvents")(io);
