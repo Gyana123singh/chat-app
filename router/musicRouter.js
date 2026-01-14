@@ -1,53 +1,43 @@
 const express = require("express");
-const router = express.Router();
 const multer = require("multer");
-const musicController = require("../controllers/musicController");
 const path = require("path");
-
-// ✅ File upload storage setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const roomDir = path.join(__dirname, "..", "uploads", req.params.roomId);
-    cb(null, roomDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("audio/")) cb(null, true);
-    else cb(new Error("Only audio files allowed"), false);
-  },
-});
+const fs = require("fs-extra");
+const musicController = require("../controllers/musicController");
 
 module.exports = (io) => {
-  // ✅ WRAP IN FUNCTION TO ACCEPT io
+  const router = express.Router();
 
-  router.post(
-    "/:roomId/play",
-    (req, res) => musicController.playMusic(req, res, io) // ✅ PASS io
+  const storage = multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const { roomId } = req.params;
+      const dir = path.join(__dirname, "", roomId);
+      await fs.ensureDir(dir);
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, Date.now() + "-" + file.originalname);
+    },
+  });
+
+  const upload = multer({ storage });
+
+  router.post("/upload/:roomId", upload.single("music"), (req, res) =>
+    musicController.uploadAndPlayMusic(req, res, io)
   );
 
-  router.post(
-    "/:roomId/pause",
-    (req, res) => musicController.pauseMusic(req, res, io) // ✅ PASS io
+  router.post("/pause/:roomId", (req, res) =>
+    musicController.pauseMusic(req, res, io)
   );
 
-  router.post(
-    "/:roomId/resume",
-    (req, res) => musicController.resumeMusic(req, res, io) // ✅ PASS io
+  router.post("/resume/:roomId", (req, res) =>
+    musicController.resumeMusic(req, res, io)
   );
 
-  router.post(
-    "/:roomId/stop",
-    (req, res) => musicController.stopMusic(req, res, io) // ✅ PASS io
+  router.post("/stop/:roomId", (req, res) =>
+    musicController.stopMusic(req, res, io)
   );
 
-  router.get("/:roomId/state", musicController.getMusicState);
+  router.get("/state/:roomId", musicController.getMusicState);
 
-  return router; // ✅ RETURN ROUTER
+  return router;
 };

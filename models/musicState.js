@@ -2,61 +2,25 @@ const mongoose = require("mongoose");
 
 const musicStateSchema = new mongoose.Schema(
   {
-    roomId: {
-      type: String,
-      required: true,
-    },
+    roomId: { type: String, required: true, unique: true },
 
-    // Current music metadata
     musicFile: {
       name: String,
-      duration: Number, // milliseconds
-      artist: String,
       fileSize: Number,
     },
-    localFilePath: String, // Original local path (for cleanup)
-    musicUrl: String, // ✅ ADDED - THIS WAS MISSING
 
-    // Playback state
-    isPlaying: {
-      type: Boolean,
-      default: false,
-    },
+    localFilePath: String,
+    musicUrl: String,
 
-    // Timestamp when music started (for sync)
-    startedAt: {
-      type: Date,
-      default: null,
-    },
+    isPlaying: { type: Boolean, default: false },
+    locked: { type: Boolean, default: false },
 
-    // Paused position (if paused)
-    pausedAt: {
-      type: Number, // milliseconds
-      default: 0,
-    },
+    startedAt: { type: Date, default: null },
+    pausedAt: { type: Number, default: 0 },
 
-    // Track all playback events
-    playbackHistory: [
-      {
-        action: {
-          type: String,
-          enum: ["play", "pause", "resume", "stop", "seek"],
-        },
-        timestamp: Date,
-        position: Number, // for seek events
-      },
-    ],
-
-    // Host who's playing
-    hostId: {
+    playedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-    },
-
-    createdAt: {
-      type: Date,
-      default: Date.now,
-      expires: 86400, // Auto-delete after 24 hours
     },
   },
   { timestamps: true }

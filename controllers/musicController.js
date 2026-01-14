@@ -1,57 +1,64 @@
 const MusicState = require("../models/musicState");
 const roomManager = require("../utils/musicRoomManager");
 const fs = require("fs-extra");
-const path = require("path");
 
 exports.uploadAndPlayMusic = async (req, res, io) => {
   try {
     const { roomId } = req.params;
-    const userId = req.body.userId;
+    const { userId } = req.body;
 
-    // ✅ Get uploaded file info
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    roomManager.initRoom(roomId);
+    const state = roomManager.getState(roomId);
+
+    if (state.locked || state.isPlaying) {
+      return res.status(409).json({
+        error:
+          "Music already playing. Please wait until it finishes or is stopped.",
+      });
     }
 
     const { originalname, filename, size } = req.file;
-    const musicUrl = `/stream/${roomId}/${filename}`; // Server stream URL
+    const musicUrl = `/stream/${roomId}/${filename}`;
 
-    // ✅ Update RoomManager
-    const newState = roomManager.playMusic(roomId, {
-      name: originalname,
-      filename,
-      size,
-      duration: req.body.duration || 0,
-    });
+    const newState = roomManager.playMusic(
+      roomId,
+      { name: originalname, filename, size },
+      userId
+    );
 
-    // ✅ Save to database
     await MusicState.findOneAndUpdate(
       { roomId },
       {
-        musicFile: { name: originalname, filename, size },
+        roomId,
+        musicFile: { name: originalname, fileSize: size },
         musicUrl,
         localFilePath: req.file.path,
         isPlaying: true,
+        locked: true,
         startedAt: new Date(newState.startedAt),
-        hostId: userId,
+        pausedAt: 0,
+        playedBy: userId,
       },
-      { upsert: true }
+      { upsert: true, new: true }
     );
 
-    // ✅ BROADCAST TO ALL USERS
-    io.to(`room:${roomId}`).emit("music:playing", {
-      musicFile: { name: originalname, filename, size },
-      musicUrl: `http://${req.get("host")}${musicUrl}`, // Full URL
-      startedAt: Date.now(),
+    io.to(`room:${roomId}`).emit("music:ready", {
+      musicFile: { name: originalname },
+      musicUrl: `http://${req.get("host")}${musicUrl}`,
+      startedAt: newState.startedAt,
       currentPosition: 0,
+      playedBy: userId,
     });
 
-    res.json({
+    return res.json({
       success: true,
-      state: newState,
+      message: "Music started successfully",
       musicUrl: `http://${req.get("host")}${musicUrl}`,
     });
   } catch (error) {
+    console.error("❌ uploadAndPlayMusic:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -61,23 +68,22 @@ exports.pauseMusic = async (req, res, io) => {
     const { roomId } = req.params;
     const { pausedAt } = req.body;
 
-    const newState = roomManager.pauseMusic(roomId, pausedAt);
+    const state = roomManager.getState(roomId);
+    if (!state.isPlaying)
+      return res.status(400).json({ error: "Music is not playing" });
+
+    roomManager.pauseMusic(roomId, pausedAt);
 
     await MusicState.findOneAndUpdate(
       { roomId },
-      {
-        isPlaying: false,
-        pausedAt: Date.now(),
-      }
+      { isPlaying: false, pausedAt }
     );
 
-    io.to(`room:${roomId}`).emit("music:paused", {
-      pausedAt,
-      timestamp: Date.now(),
-    });
+    io.to(`room:${roomId}`).emit("music:paused", { pausedAt });
 
-    res.json({ success: true, state: newState });
+    res.json({ success: true });
   } catch (error) {
+    console.error("❌ pauseMusic:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -86,6 +92,10 @@ exports.resumeMusic = async (req, res, io) => {
   try {
     const { roomId } = req.params;
 
+    const state = roomManager.getState(roomId);
+    if (state.isPlaying)
+      return res.status(400).json({ error: "Music already playing" });
+
     const newState = roomManager.resumeMusic(roomId);
 
     await MusicState.findOneAndUpdate(
@@ -93,17 +103,17 @@ exports.resumeMusic = async (req, res, io) => {
       {
         isPlaying: true,
         startedAt: new Date(newState.startedAt),
-        pausedAt: null,
+        pausedAt: 0,
       }
     );
 
     io.to(`room:${roomId}`).emit("music:resumed", {
-      resumeFrom: newState.pausedAt || 0,
-      startedAt: Date.now(),
+      startedAt: newState.startedAt,
     });
 
-    res.json({ success: true, state: newState });
+    res.json({ success: true });
   } catch (error) {
+    console.error("❌ resumeMusic:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -114,10 +124,8 @@ exports.stopMusic = async (req, res, io) => {
 
     roomManager.stopMusic(roomId);
 
-    const musicState = await MusicState.findOne({ roomId });
-    if (musicState?.localFilePath) {
-      await fs.remove(musicState.localFilePath); // Cleanup
-    }
+    const state = await MusicState.findOne({ roomId });
+    if (state?.localFilePath) await fs.remove(state.localFilePath);
 
     await MusicState.findOneAndUpdate(
       { roomId },
@@ -125,12 +133,19 @@ exports.stopMusic = async (req, res, io) => {
         musicFile: null,
         musicUrl: null,
         isPlaying: false,
+        locked: false,
+        pausedAt: 0,
+        startedAt: null,
+        localFilePath: null,
+        playedBy: null,
       }
     );
 
-    io.to(`room:${roomId}`).emit("music:stopped", { timestamp: Date.now() });
-    res.json({ success: true });
+    io.to(`room:${roomId}`).emit("music:stopped");
+
+    res.json({ success: true, message: "Music stopped. Room unlocked." });
   } catch (error) {
+    console.error("❌ stopMusic:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -138,16 +153,22 @@ exports.stopMusic = async (req, res, io) => {
 exports.getMusicState = async (req, res) => {
   try {
     const { roomId } = req.params;
+
+    roomManager.initRoom(roomId);
+
     const state = roomManager.getState(roomId);
     const dbState = await MusicState.findOne({ roomId });
 
     res.json({
       musicFile: state.musicFile,
-      musicUrl: dbState?.musicUrl,
+      musicUrl: dbState?.musicUrl || null,
       isPlaying: state.isPlaying,
+      locked: state.locked,
       currentPosition: roomManager.getCurrentPosition(roomId),
+      playedBy: dbState?.playedBy || null,
     });
   } catch (error) {
+    console.error("❌ getMusicState:", error);
     res.status(500).json({ error: error.message });
   }
 };

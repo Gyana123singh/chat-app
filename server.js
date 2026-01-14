@@ -90,11 +90,11 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
-// ✅ CREATE UPLOADS FOLDER
-const uploadDir = path.join(__dirname, "uploads");
+// ✅ CREATE UPLOADS ROOT FOLDER
+const uploadDir = path.join(__dirname, "..", "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
-  console.log("📁 Created uploads directory");
+  console.log("📁 Created uploads directory:", uploadDir);
 }
 
 // ✅ MUSIC ROUTES - NOW io IS READY
@@ -102,14 +102,20 @@ const musicRouter = require("./router/musicRouter")(io);
 app.use("/api/music", musicRouter);
 
 // ✅ AUDIO STREAMING ROUTE (CRITICAL FOR MUSIC)
-app.get("/stream/:roomId/:filename", (req, res) => {
-  const filePath = path.join(uploadDir, req.params.roomId, req.params.filename);
+/* ===================== AUDIO STREAM ROUTE ===================== */
 
-  console.log(`🎵 Streaming: ${filePath}`);
+app.get("/stream/:roomId/:filename", (req, res) => {
+  const filePath = path.join(
+    __dirname,
+    "..",
+    "uploads",
+    req.params.roomId,
+    req.params.filename
+  );
 
   if (!fs.existsSync(filePath)) {
-    console.log(`❌ File not found: ${filePath}`);
-    return res.status(404).json({ error: "File not found" });
+    console.log("❌ File not found:", filePath);
+    return res.status(404).end();
   }
 
   const stat = fs.statSync(filePath);
@@ -117,31 +123,27 @@ app.get("/stream/:roomId/:filename", (req, res) => {
   const range = req.headers.range;
 
   if (range) {
-    // ✅ SUPPORT SEEKING (Range requests)
     const parts = range.replace(/bytes=/, "").split("-");
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    const chunksize = end - start + 1;
 
+    const chunkSize = end - start + 1;
     const file = fs.createReadStream(filePath, { start, end });
-    const head = {
+
+    res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${fileSize}`,
       "Accept-Ranges": "bytes",
-      "Content-Length": chunksize,
+      "Content-Length": chunkSize,
       "Content-Type": "audio/mpeg",
-      "Cache-Control": "no-cache",
-    };
+    });
 
-    res.writeHead(206, head);
     file.pipe(res);
   } else {
-    // Full file stream
-    const head = {
+    res.writeHead(200, {
       "Content-Length": fileSize,
       "Content-Type": "audio/mpeg",
-      "Cache-Control": "no-cache",
-    };
-    res.writeHead(200, head);
+    });
+
     fs.createReadStream(filePath).pipe(res);
   }
 });
