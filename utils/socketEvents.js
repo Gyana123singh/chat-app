@@ -2,6 +2,7 @@ const roomManager = require("../utils/musicRoomManager");
 const VideoRoom = require("../models/videoRoom");
 const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
+const mongoose = require("mongoose");
 
 module.exports = (io) => {
   const onlineUsers = new Map();

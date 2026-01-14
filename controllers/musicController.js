@@ -9,14 +9,17 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
     const { userId } = req.body;
 
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
     roomManager.initRoom(roomId);
     const state = roomManager.getState(roomId);
 
     // 🔒 LOCK SYSTEM – first come first play
     if (state.locked || state.isPlaying) {
       return res.status(409).json({
-        error: "Music already playing. Please wait until it finishes or is stopped.",
+        error:
+          "Music already playing. Please wait until it finishes or is stopped.",
       });
     }
 
@@ -78,7 +81,7 @@ exports.pauseMusic = async (req, res, io) => {
 
     await MusicState.findOneAndUpdate(
       { roomId },
-      { isPlaying: false, pausedAt }
+      { isPlaying: false, pausedAt, locked: true }
     );
 
     io.to(`room:${roomId}`).emit("music:paused", { pausedAt });
