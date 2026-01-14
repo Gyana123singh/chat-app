@@ -1,6 +1,7 @@
 const MusicState = require("../models/musicState");
 const roomManager = require("../utils/musicRoomManager");
 const fs = require("fs-extra");
+const mongoose = require("mongoose");
 
 exports.uploadAndPlayMusic = async (req, res, io) => {
   try {
@@ -39,7 +40,7 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
         locked: true,
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
-        playedBy: userId,
+        playedBy: new mongoose.Types.ObjectId(userId),
       },
       { upsert: true, new: true }
     );
@@ -49,7 +50,7 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
       musicUrl: `http://${req.get("host")}${musicUrl}`,
       startedAt: newState.startedAt,
       currentPosition: 0,
-      playedBy: userId,
+      playedBy: new mongoose.Types.ObjectId(userId),
     });
 
     return res.json({

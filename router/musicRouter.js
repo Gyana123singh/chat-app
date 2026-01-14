@@ -9,10 +9,17 @@ module.exports = (io) => {
 
   const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
-      const { roomId } = req.params;
-      const dir = path.join(__dirname, "", roomId);
-      await fs.ensureDir(dir);
-      cb(null, dir);
+      try {
+        const { roomId } = req.params;
+
+        // 🔥 ALWAYS point to root /uploads
+        const dir = path.join(__dirname, "..", "..", "uploads", roomId);
+
+        await fs.ensureDir(dir);
+        cb(null, dir);
+      } catch (err) {
+        cb(err);
+      }
     },
     filename: (req, file, cb) => {
       cb(null, Date.now() + "-" + file.originalname);

@@ -1,3 +1,4 @@
+// models/privateMessage.js
 const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema(
@@ -6,6 +7,7 @@ const messageSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Conversation",
       required: true,
+      index: true,
     },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
@@ -19,13 +21,14 @@ const messageSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      required: [true, "Message text is required"],
       trim: true,
-      maxlength: [1000, "Message cannot exceed 1000 characters"],
+      maxlength: 1000,
+      required: true,
     },
     isRead: {
       type: Boolean,
       default: false,
+      index: true,
     },
     readAt: {
       type: Date,
@@ -40,20 +43,15 @@ const messageSchema = new mongoose.Schema(
       default: null,
     },
     attachment: {
-      type: String, // URL to attachment if any
+      type: String,
       default: null,
     },
   },
   { timestamps: true }
 );
 
-// ✅ Indexes for efficient querying
-messageSchema.index({ conversationId: 1, createdAt: -1 });
-messageSchema.index({ sender: 1 });
-messageSchema.index({ recipient: 1 });
-messageSchema.index({ isRead: 1 });
+messageSchema.index({ conversationId: 1, createdAt: 1 });
 
-// ✅ Instance method to mark as read
 messageSchema.methods.markAsRead = async function () {
   this.isRead = true;
   this.readAt = new Date();
@@ -61,7 +59,6 @@ messageSchema.methods.markAsRead = async function () {
   return this;
 };
 
-// ✅ Instance method to edit message
 messageSchema.methods.editText = async function (newText) {
   this.text = newText;
   this.edited = true;
