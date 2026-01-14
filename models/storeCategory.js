@@ -4,7 +4,7 @@ const storeCategorySchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
+
       unique: true,
       trim: true,
     },
@@ -13,7 +13,6 @@ const storeCategorySchema = new mongoose.Schema(
     type: {
       type: String,
       enum: ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI", "NORMAL"],
-      required: true,
     },
 
     isActive: {
