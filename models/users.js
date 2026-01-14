@@ -60,6 +60,10 @@ const userSchema = new mongoose.Schema(
         enum: ["English", "Hindi", "Tamil", "Telugu", "Urdu"],
         default: "English",
       },
+      frame: { type: String, default: null },
+      ring: { type: String, default: null },
+      bubble: { type: String, default: null },
+      entranceEffect: { type: String, default: null },
       theme: {
         type: String,
         enum: ["light", "dark"],

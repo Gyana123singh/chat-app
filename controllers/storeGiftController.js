@@ -1,50 +1,56 @@
 const StoreGift = require("../models/storeGift");
-const cloudinary = require("../config/cloudinary");
 const StoreCategory = require("../models/storeCategory");
+const cloudinary = require("../config/cloudinary");
 
-// for backend side gift store management
-
-// this for admin side to add gift and category
+/* ===============================
+   ADD STORE CATEGORY (ADMIN)
+================================ */
 exports.addStoreCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, type } = req.body;
 
-    // ✅ Validation
-    if (!name || !name.trim()) {
+    if (!name || !type) {
       return res.status(400).json({
-        message: "Store Category name is required",
+        success: false,
+        message: "Category name and type are required",
       });
     }
 
-    // ✅ Check duplicate
     const exists = await StoreCategory.findOne({ name: name.trim() });
     if (exists) {
       return res.status(409).json({
-        message: "Store Category already exists",
+        success: false,
+        message: "Store category already exists",
       });
     }
 
-    // ✅ Create category
     const category = await StoreCategory.create({
       name: name.trim(),
+      type,
     });
 
     return res.status(201).json({
-      message: "Store StoreCategory added successfully",
-      category,
+      success: true,
+      message: "Store category created",
+      data: category,
     });
   } catch (error) {
     console.error("Add Store Category Error:", error);
     return res.status(500).json({
+      success: false,
       message: "Internal server error",
     });
   }
 };
-// Get all Store Category
 
+/* ===============================
+   GET ALL CATEGORIES
+================================ */
 exports.getStoreCategory = async (req, res) => {
   try {
-    const categories = await StoreCategory.find().sort({ createdAt: -1 }); // ✅ OLD → NEW (new data at bottom)
+    const categories = await StoreCategory.find({ isActive: true }).sort({
+      createdAt: 1,
+    });
 
     return res.status(200).json({
       success: true,
@@ -59,7 +65,10 @@ exports.getStoreCategory = async (req, res) => {
     });
   }
 };
-// Get all gifts by category
+
+/* ===============================
+   GET GIFTS BY CATEGORY
+================================ */
 exports.getGiftsByCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
@@ -72,7 +81,7 @@ exports.getGiftsByCategory = async (req, res) => {
     }
 
     const gifts = await StoreGift.find(query)
-      .populate("category", "name")
+      .populate("category", "name type")
       .skip(parseInt(skip))
       .limit(parseInt(limit))
       .sort({ createdAt: -1 });
@@ -89,20 +98,25 @@ exports.getGiftsByCategory = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Get Gifts Error:", error);
     return res.status(500).json({
       success: false,
       message: "Error fetching gifts",
-      error: error.message,
     });
   }
 };
 
-// Get single gift details
+/* ===============================
+   GET SINGLE GIFT DETAILS
+================================ */
 exports.getGiftDetails = async (req, res) => {
   try {
     const { giftId } = req.params;
 
-    const gift = await StoreGift.findById(giftId).populate("category", "name");
+    const gift = await StoreGift.findById(giftId).populate(
+      "category",
+      "name type"
+    );
 
     if (!gift) {
       return res.status(404).json({
@@ -116,89 +130,23 @@ exports.getGiftDetails = async (req, res) => {
       data: gift,
     });
   } catch (error) {
+    console.error("Get Gift Details Error:", error);
     return res.status(500).json({
       success: false,
       message: "Error fetching gift details",
-      error: error.message,
     });
   }
 };
 
-// Create gift (ADMIN ONLY)
-exports.createGift = async (req, res) => {
-  try {
-    const { name, description, price, category, animationUrl, rarity } =
-      req.body;
-
-    if (!name || !price || !category) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields",
-      });
-    }
-
-    let icon = "";
-
-    if (req.file) {
-      const allowedTypes = [
-        "image/png",
-        "image/jpeg",
-        "image/jpg",
-        "image/gif",
-      ];
-
-      if (!allowedTypes.includes(req.file.mimetype)) {
-        return res.status(400).json({
-          success: false,
-          message: "Only PNG, JPG, JPEG, GIF are allowed",
-        });
-      }
-
-      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
-        folder: "gifts",
-        resource_type: "image",
-        transformation: [
-          { width: 300, height: 300, crop: "limit" },
-          { quality: "auto" },
-          { fetch_format: "auto" },
-        ],
-      });
-
-      icon = uploadResult.secure_url;
-    }
-
-    const gift = new StoreGift({
-      name,
-      description,
-      icon,
-      price,
-      category,
-      animationUrl,
-      rarity,
-    });
-
-    await gift.save();
-    await gift.populate("category", "name");
-
-    return res.status(201).json({
-      success: true,
-      message: "Gift created successfully",
-      data: gift,
-    });
-  } catch (error) {
-    console.error("Create Gift Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error creating gift",
-      error: error.message,
-    });
-  }
-};
-
+/* ===============================
+   DELETE GIFT (ADMIN)
+================================ */
 exports.deleteGift = async (req, res) => {
   try {
     const { giftId } = req.params;
+
     const gift = await StoreGift.findByIdAndDelete(giftId);
+
     if (!gift) {
       return res.status(404).json({
         success: false,
@@ -215,7 +163,93 @@ exports.deleteGift = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error deleting gift",
-      error: error.message,
+    });
+  }
+};
+
+/* ===============================
+   CREATE GIFT (ADMIN)
+================================ */
+exports.createGift = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      price,
+      category,
+      animationUrl,
+      rarity,
+      effectType,
+    } = req.body;
+
+    if (!name || !price || !category) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, price and category are required",
+      });
+    }
+
+    const cat = await StoreCategory.findById(category);
+    if (!cat) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    let icon = "";
+
+    if (req.file) {
+      const allowedTypes = [
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/gif",
+      ];
+
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message: "Only PNG, JPG, JPEG, GIF allowed",
+        });
+      }
+
+      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
+        folder: "store_gifts",
+        resource_type: "image",
+        transformation: [
+          { width: 300, height: 300, crop: "limit" },
+          { quality: "auto" },
+          { fetch_format: "auto" },
+        ],
+      });
+
+      icon = uploadResult.secure_url;
+    }
+
+    const gift = await StoreGift.create({
+      name,
+      description,
+      icon,
+      price,
+      category,
+      animationUrl,
+      rarity,
+      effectType: effectType || cat.type, // 🔥 AUTO MAP FROM CATEGORY
+    });
+
+    await gift.populate("category", "name type");
+
+    return res.status(201).json({
+      success: true,
+      message: "Gift created successfully",
+      data: gift,
+    });
+  } catch (error) {
+    console.error("Create Gift Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error creating gift",
     });
   }
 };

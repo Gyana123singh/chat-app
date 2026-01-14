@@ -6,155 +6,134 @@ const UserGift = require("../models/userStoreGift");
 const Room = require("../models/room");
 const io = global.io; // Now safe to use
 // Send gift to single user
+// ===============================
+// 🎁 SEND GIFT TO SINGLE USER
+// ===============================
 exports.sendGiftToUser = async (req, res) => {
   const session = await mongoose.startSession();
-
   try {
-    const { userId } = req.user;
-    const { giftId, receiverId, quantity = 1 } = req.body;
+    const senderId = req.user.userId;
+    const { giftId, receiverId, quantity = 1, roomId } = req.body;
 
-    // Validate inputs
-    if (!giftId || !receiverId) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing giftId or receiverId",
-      });
-    }
-
-    if (quantity < 1) {
-      return res.status(400).json({
-        success: false,
-        message: "Quantity must be at least 1",
-      });
-    }
-
-    // Get gift details
     const gift = await Gift.findById(giftId);
-    if (!gift) {
-      return res.status(404).json({
-        success: false,
-        message: "Gift not found",
-      });
-    }
-
-    // Check if receiver exists
+    const sender = await User.findById(senderId);
     const receiver = await User.findById(receiverId);
-    if (!receiver) {
-      return res.status(404).json({
-        success: false,
-        message: "Receiver not found",
-      });
+
+    if (!gift || !sender || !receiver) {
+      return res.status(404).json({ success: false, message: "Invalid data" });
     }
 
-    // Get sender
-    const sender = await User.findById(userId);
-    if (!sender) {
-      return res.status(404).json({
-        success: false,
-        message: "Sender not found",
-      });
-    }
-
-    // Calculate total cost
     const totalCost = gift.price * quantity;
 
-    // Check coins
     if (sender.coins < totalCost) {
       return res.status(400).json({
         success: false,
-        message: `Insufficient coins. Required: ${totalCost}, Available: ${sender.coins}`,
+        message: "Insufficient coins",
       });
     }
 
-    // Start transaction
     session.startTransaction();
 
-    try {
-      // Deduct coins from sender
-      sender.coins -= totalCost;
-      await sender.save({ session });
+    // Deduct coins
+    sender.coins -= totalCost;
+    await sender.save({ session });
 
-      // Update receiver stats
-      receiver.stats.giftsReceived += quantity;
-      await receiver.save({ session });
+    // Apply WAFA style effects
+    const effectUpdate = {};
+    if (gift.effectType === "FRAME") effectUpdate["profile.frame"] = gift.icon;
+    if (gift.effectType === "RING") effectUpdate["profile.ring"] = gift.icon;
+    if (gift.effectType === "BUBBLE")
+      effectUpdate["profile.bubble"] = gift.icon;
+    if (gift.effectType === "ENTRANCE")
+      effectUpdate["profile.entranceEffect"] = gift.animationUrl;
+    if (gift.effectType === "THEME")
+      effectUpdate["profile.theme"] = gift.name.toLowerCase();
 
-      // Create gift transaction record
-      const transaction = new GiftTransaction({
-        senderId: userId,
-        receiverIds: [receiverId],
-        giftId: giftId,
-        giftName: gift.name,
-        giftIcon: gift.icon,
-        giftPrice: gift.price,
-        giftCategory: gift.category,
-        giftRarity: gift.rarity,
-        sendType: "individual",
-        quantitySent: quantity,
-        totalCoinsDeducted: totalCost,
-        recipientCount: 1,
-        status: "completed",
-        completedAt: new Date(),
-      });
-
-      await transaction.save({ session });
-
-      // Create user gift record
-      const userGift = new UserGift({
-        userId: receiverId,
-        giftId: giftId,
-        giftName: gift.name,
-        giftIcon: gift.icon,
-        giftPrice: gift.price,
-        quantity: quantity,
-        receivedFrom: userId,
-      });
-
-      await userGift.save({ session });
-
-      await session.commitTransaction();
-
-      // 🎁 EMIT SOCKET EVENT - Direct notification to receiver
-      io.emit("store:giftSend", {
-        receiverId: receiverId.toString(),
-        giftData: {
-          name: gift.name,
-          icon: gift.icon,
-          price: gift.price,
-          rarity: gift.rarity,
-          quantity: quantity,
-        },
-        totalCoinsDeducted: totalCost,
-        senderInfo: {
-          userId: sender._id,
-          username: sender.username,
-          avatar: sender.profile.avatar,
-        },
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: "Gift sent successfully",
-        data: {
-          transactionId: transaction._id,
-          senderCoinsRemaining: sender.coins,
-          receiverGiftsCount: receiver.stats.giftsReceived,
-          giftInfo: {
-            name: gift.name,
-            icon: gift.icon,
-            quantity: quantity,
-          },
-        },
-      });
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
+    if (Object.keys(effectUpdate).length > 0) {
+      await User.findByIdAndUpdate(
+        receiverId,
+        { $set: effectUpdate },
+        { session }
+      );
     }
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Error sending gift",
-      error: error.message,
+
+    receiver.stats.giftsReceived += quantity;
+    await receiver.save({ session });
+
+    // Save transaction
+    const transaction = await GiftTransaction.create(
+      [
+        {
+          senderId,
+          receiverIds: [receiverId],
+          roomId: roomId || null,
+          giftId,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          sendType: "individual",
+          quantitySent: quantity,
+          totalCoinsDeducted: totalCost,
+          recipientCount: 1,
+          status: "completed",
+          completedAt: new Date(),
+        },
+      ],
+      { session }
+    );
+
+    await UserGift.create(
+      [
+        {
+          userId: receiverId,
+          giftId,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          quantity,
+          receivedFrom: senderId,
+        },
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+
+    // ================= SOCKET EVENTS =================
+    // Direct animation to receiver
+    io.to(receiverId.toString()).emit("gift:received", {
+      giftId,
+      giftName: gift.name,
+      icon: gift.icon,
+      animationUrl: gift.animationUrl,
+      effectType: gift.effectType,
+      sender: {
+        id: sender._id,
+        username: sender.username,
+        avatar: sender.profile.avatar,
+      },
     });
+
+    // Room broadcast (WAFA Entrance animation)
+    if (roomId && gift.effectType === "ENTRANCE") {
+      io.to(`room:${roomId}`).emit("room:entranceEffect", {
+        userId: receiverId,
+        username: receiver.username,
+        avatar: receiver.profile.avatar,
+        animationUrl: gift.animationUrl,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Gift sent successfully (WAFA style)",
+      senderCoinsRemaining: sender.coins,
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    return res.status(500).json({ success: false, error: error.message });
   } finally {
     session.endSession();
   }
@@ -320,196 +299,92 @@ exports.sendGiftToMultipleUsers = async (req, res) => {
 // Send gift to all in room
 exports.sendGiftToRoom = async (req, res) => {
   const session = await mongoose.startSession();
-
   try {
-    const { userId } = req.user;
+    const senderId = req.user.userId;
     const { giftId, roomId, sendType = "all_in_room", quantity = 1 } = req.body;
 
-    if (!giftId || !roomId) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing giftId or roomId",
-      });
-    }
-
-    if (!["all_in_room", "all_on_mic"].includes(sendType)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid sendType",
-      });
-    }
-
-    // Get gift
     const gift = await Gift.findById(giftId);
-    if (!gift) {
-      return res.status(404).json({
-        success: false,
-        message: "Gift not found",
-      });
-    }
-
-    // Get room
+    const sender = await User.findById(senderId);
     const room = await Room.findById(roomId).populate("participants.user");
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
+
+    if (!gift || !sender || !room) {
+      return res.status(404).json({ success: false, message: "Invalid data" });
     }
 
-    // Get sender
-    const sender = await User.findById(userId);
-    if (!sender) {
-      return res.status(404).json({
-        success: false,
-        message: "Sender not found",
-      });
-    }
-
-    // Filter recipients based on sendType
     let receiverIds = [];
 
     if (sendType === "all_in_room") {
       receiverIds = room.participants
-        .filter((p) => p.user._id.toString() !== userId)
+        .filter((p) => p.user._id.toString() !== senderId)
         .map((p) => p.user._id);
-    } else if (sendType === "all_on_mic") {
+    } else {
       receiverIds = room.participants
-        .filter((p) => p.role === "host" && p.user._id.toString() !== userId)
+        .filter((p) => p.role === "host" && p.user._id.toString() !== senderId)
         .map((p) => p.user._id);
     }
 
-    if (receiverIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "No recipients found in room",
-      });
-    }
-
-    // Calculate cost
     const totalCost = gift.price * quantity * receiverIds.length;
 
     if (sender.coins < totalCost) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient coins. Required: ${totalCost}, Available: ${sender.coins}`,
-      });
+      return res.status(400).json({ success: false, message: "Low coins" });
     }
 
-    // Start transaction
     session.startTransaction();
 
-    try {
-      // Deduct coins
-      sender.coins -= totalCost;
-      await sender.save({ session });
+    sender.coins -= totalCost;
+    await sender.save({ session });
 
-      // Update receivers
-      const receivers = await User.find({ _id: { $in: receiverIds } }).session(
-        session
-      );
+    await User.updateMany(
+      { _id: { $in: receiverIds } },
+      { $inc: { "stats.giftsReceived": quantity } },
+      { session }
+    );
 
-      for (let receiver of receivers) {
-        receiver.stats.giftsReceived += quantity;
-        await receiver.save({ session });
-      }
-
-      // Create transaction
-      const transaction = new GiftTransaction({
-        senderId: userId,
-        receiverIds: receiverIds,
-        roomId: roomId,
-        giftId: giftId,
-        giftName: gift.name,
-        giftIcon: gift.icon,
-        giftPrice: gift.price,
-        giftCategory: gift.category,
-        giftRarity: gift.rarity,
-        sendType: sendType,
-        quantitySent: quantity,
-        totalCoinsDeducted: totalCost,
-        recipientCount: receiverIds.length,
-        status: "completed",
-        completedAt: new Date(),
-      });
-
-      await transaction.save({ session });
-
-      // Create user gifts
-      const userGifts = receiverIds.map((receiverId) => ({
-        userId: receiverId,
-        giftId: giftId,
-        giftName: gift.name,
-        giftIcon: gift.icon,
-        giftPrice: gift.price,
-        quantity: quantity,
-        receivedFrom: userId,
-      }));
-
-      await UserGift.insertMany(userGifts, { session });
-
-      await session.commitTransaction();
-
-      // 🎁 EMIT SOCKET EVENTS
-      // 1. Send to each receiver directly
-      receiverIds.forEach((receiverId) => {
-        io.emit("store:giftSend", {
-          receiverId: receiverId.toString(),
-          giftData: {
-            name: gift.name,
-            icon: gift.icon,
-            price: gift.price,
-            rarity: gift.rarity,
-            quantity: quantity,
-          },
-          totalCoinsDeducted: gift.price * quantity,
-          senderInfo: {
-            userId: sender._id,
-            username: sender.username,
-            avatar: sender.profile.avatar,
-          },
-        });
-      });
-
-      // 2. Broadcast animation to room
-      io.to(`room:${roomId}`).emit("gift:roomAnimation", {
-        senderId: userId,
-        senderUsername: sender.username,
-        senderAvatar: sender.profile.avatar,
-        giftName: gift.name,
-        giftIcon: gift.icon,
-        giftPrice: gift.price,
-        recipientCount: receiverIds.length,
-        totalCoinsTransferred: totalCost,
-        sendType: sendType,
-        timestamp: new Date().toISOString(),
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: "Gift sent to room successfully",
-        data: {
-          transactionId: transaction._id,
-          senderCoinsRemaining: sender.coins,
-          totalReceivers: receiverIds.length,
-          giftInfo: {
-            name: gift.name,
-            icon: gift.icon,
-            quantity: quantity,
-            sendType: sendType,
-          },
+    await GiftTransaction.create(
+      [
+        {
+          senderId,
+          receiverIds,
+          roomId,
+          giftId,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          sendType,
+          quantitySent: quantity,
+          totalCoinsDeducted: totalCost,
+          recipientCount: receiverIds.length,
+          status: "completed",
+          completedAt: new Date(),
         },
-      });
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    }
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Error sending gift to room",
-      error: error.message,
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+
+    // 🔥 WAFA Room Animation
+    io.to(`room:${roomId}`).emit("room:giftAnimation", {
+      senderId,
+      senderUsername: sender.username,
+      giftName: gift.name,
+      giftIcon: gift.icon,
+      animationUrl: gift.animationUrl,
+      effectType: gift.effectType,
+      recipients: receiverIds.length,
+      totalCoins: totalCost,
     });
+
+    return res.json({
+      success: true,
+      message: "Room gift sent (WAFA style)",
+      senderCoinsRemaining: sender.coins,
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    return res.status(500).json({ success: false, error: error.message });
   } finally {
     session.endSession();
   }

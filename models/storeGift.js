@@ -1,43 +1,59 @@
-// models/Gift.js
 const mongoose = require("mongoose");
 
-const storeSchema = new mongoose.Schema(
+const storeGiftSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
     description: {
       type: String,
       default: "",
     },
+
     icon: {
       type: String,
+      required: true,
     },
-    categoryName: { type: String },
+
+    animationUrl: {
+      type: String, // lottie json / mp4 / gif
+      default: null,
+    },
+
     price: {
       type: Number,
-
+      required: true,
       min: 1,
     },
-    // ✅ FIX HERE
+
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "StoreCategory",
       required: true,
     },
-    animationUrl: {
-      type: String,
-      default: null,
-    },
+
     rarity: {
       type: String,
       enum: ["common", "rare", "epic", "legendary"],
       default: "common",
     },
+
     isAvailable: {
       type: Boolean,
       default: true,
     },
-    createdAt: { type: Date, default: Date.now },
+
+    // 🔥 THIS TELLS FRONTEND WHAT TO DO
+    effectType: {
+      type: String,
+      enum: ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI", "NONE"],
+      default: "NONE",
+    },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("StoreGift", storeSchema);
+module.exports = mongoose.model("StoreGift", storeGiftSchema);
