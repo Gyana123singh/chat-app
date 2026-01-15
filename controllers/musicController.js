@@ -14,13 +14,6 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
       return res.status(400).json({ error: "Invalid userId" });
 
     roomManager.initRoom(roomId);
-    const state = roomManager.getState(roomId);
-
-    if (state.isPlaying) {
-      return res.status(409).json({
-        error: "Music already playing. Please stop current music first.",
-      });
-    }
 
     const { originalname, filename, size } = req.file;
     const musicUrl = `/stream/${roomId}/${filename}`;
