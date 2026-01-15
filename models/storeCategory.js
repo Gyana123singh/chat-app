@@ -2,10 +2,9 @@ const mongoose = require("mongoose");
 
 const storeCategorySchema = new mongoose.Schema(
   {
-    // 🔥 THIS IS CRITICAL
     type: {
       type: String,
-      enum: ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI", "NORMAL"],
+      enum: ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI", "NONE"],
     },
 
     isActive: {
