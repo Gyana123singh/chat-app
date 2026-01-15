@@ -9,7 +9,7 @@ exports.addStoreCategory = async (req, res) => {
   try {
     const { name, type } = req.body;
 
-    if (!name || !type) {
+    if (!type) {
       return res.status(400).json({
         success: false,
         message: "Category name and type are required",
