@@ -114,7 +114,6 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 app.set("io", io); // <----- ADD THIS LINE
-
 // ✅ CREATE UPLOADS ROOT FOLDER
 const uploadDir = path.join(__dirname, "..", "uploads");
 if (!fs.existsSync(uploadDir)) {
