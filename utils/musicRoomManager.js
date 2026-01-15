@@ -10,8 +10,7 @@ class RoomManager {
         isPlaying: false,
         startedAt: null,
         pausedAt: 0,
-        locked: false,
-        playedBy: null, // 🔥 ALWAYS STRING
+        playedBy: null, // ALWAYS STRING
       });
     }
   }
@@ -23,15 +22,9 @@ class RoomManager {
         isPlaying: false,
         startedAt: null,
         pausedAt: 0,
-        locked: false,
         playedBy: null,
       }
     );
-  }
-
-  canPlay(roomId) {
-    const state = this.getState(roomId);
-    return !state.locked && !state.isPlaying;
   }
 
   playMusic(roomId, musicFile, playedByUserId) {
@@ -41,8 +34,7 @@ class RoomManager {
     state.isPlaying = true;
     state.startedAt = Date.now();
     state.pausedAt = 0;
-    state.locked = true;
-    state.playedBy = playedByUserId.toString(); // ✅ force string
+    state.playedBy = playedByUserId.toString();
 
     this.roomMusicStates.set(roomId, state);
     return state;
@@ -50,8 +42,10 @@ class RoomManager {
 
   pauseMusic(roomId, position) {
     const state = this.getState(roomId);
+
     state.isPlaying = false;
     state.pausedAt = position;
+
     this.roomMusicStates.set(roomId, state);
     return state;
   }
@@ -62,7 +56,6 @@ class RoomManager {
     state.isPlaying = true;
     state.startedAt = Date.now() - state.pausedAt;
     state.pausedAt = 0;
-    state.locked = true; // 🔒 re-lock on resume
 
     this.roomMusicStates.set(roomId, state);
     return state;
@@ -74,7 +67,6 @@ class RoomManager {
       isPlaying: false,
       startedAt: null,
       pausedAt: 0,
-      locked: false,
       playedBy: null,
     });
   }

@@ -9,11 +9,10 @@ const musicStateSchema = new mongoose.Schema(
       fileSize: Number,
     },
 
-    localFilePath: String,
-    musicUrl: String,
+    localFilePath: { type: String, default: null },
+    musicUrl: { type: String, default: null },
 
     isPlaying: { type: Boolean, default: false },
-    locked: { type: Boolean, default: false },
 
     startedAt: { type: Date, default: null },
     pausedAt: { type: Number, default: 0 },
@@ -21,6 +20,7 @@ const musicStateSchema = new mongoose.Schema(
     playedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
     },
   },
   { timestamps: true }

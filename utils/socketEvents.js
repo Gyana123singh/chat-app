@@ -112,7 +112,6 @@ module.exports = (io) => {
         socket.emit("room:musicState", {
           musicFile: currentMusicState.musicFile,
           isPlaying: currentMusicState.isPlaying,
-          locked: currentMusicState.locked,
           currentPosition,
           playedBy: currentMusicState.playedBy,
         });
@@ -500,7 +499,6 @@ module.exports = (io) => {
                 musicFile: null,
                 musicUrl: null,
                 isPlaying: false,
-                locked: false,
                 pausedAt: 0,
                 startedAt: null,
                 localFilePath: null,

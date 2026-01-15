@@ -5,8 +5,8 @@ const passport = require("passport");
 const session = require("express-session");
 const http = require("http");
 const { Server } = require("socket.io");
-const fs = require("fs-extra"); // ✅ NEW
-const path = require("path"); // ✅ NEW
+const fs = require("fs-extra");
+const path = require("path");
 
 dotenv.config();
 require("./config/passport");
@@ -27,8 +27,33 @@ const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 const privateChatRouter = require("./router/privateChatRouter");
 const trophyRouter = require("./router/trophyRouter");
 
+const MusicState = require("./models/musicState");
+
 const app = express();
 connectMongose();
+
+/* ===================== 🔥 RESET MUSIC STATE ON SERVER START ===================== */
+(async () => {
+  try {
+    await MusicState.updateMany(
+      {},
+      {
+        isPlaying: false,
+        pausedAt: 0,
+        startedAt: null,
+        musicFile: null,
+        musicUrl: null,
+        localFilePath: null,
+        playedBy: null,
+      }
+    );
+
+    console.log("🧹 All music states reset on server start");
+  } catch (err) {
+    console.error("❌ Failed to reset music states:", err);
+  }
+})();
+/* =============================================================================== */
 
 const PORT = process.env.PORT || 5001;
 
@@ -41,8 +66,7 @@ app.use(
   })
 );
 
-/* 🔥 REQUIRED */
-app.use(express.json({ limit: "100mb" })); // ✅ Increased for audio files
+app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
 app.use(
@@ -76,7 +100,7 @@ app.get("/", (req, res) => {
   res.send("API is running...");
 });
 
-/* ===================== SOCKET + MUSIC ROUTES (AFTER HTTP SERVER) ===================== */
+/* ===================== SOCKET + MUSIC ROUTES ===================== */
 
 const server = http.createServer(app);
 
@@ -86,7 +110,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
-  maxHttpBufferSize: 100 * 1024 * 1024, // ✅ 100MB for audio
+  maxHttpBufferSize: 100 * 1024 * 1024,
   transports: ["websocket", "polling"],
 });
 
@@ -97,11 +121,10 @@ if (!fs.existsSync(uploadDir)) {
   console.log("📁 Created uploads directory:", uploadDir);
 }
 
-// ✅ MUSIC ROUTES - NOW io IS READY
+// ✅ MUSIC ROUTES
 const musicRouter = require("./router/musicRouter")(io);
 app.use("/api/music", musicRouter);
 
-// ✅ AUDIO STREAMING ROUTE (CRITICAL FOR MUSIC)
 /* ===================== AUDIO STREAM ROUTE ===================== */
 
 app.get("/stream/:roomId/:filename", (req, res) => {
@@ -148,13 +171,13 @@ app.get("/stream/:roomId/:filename", (req, res) => {
   }
 });
 
+/* ===================== VIDEO ROUTES ===================== */
 
-
-// ✅ VIDEO ROUTES - NOW io IS READY
 const videoRouter = require("./router/videoRouter")(io);
 app.use("/api/video", videoRouter);
 
 /* ===================== VIDEO STREAM ROUTE ===================== */
+
 app.get("/video-stream/:roomId/:filename", (req, res) => {
   const filePath = path.join(
     __dirname,
@@ -205,21 +228,21 @@ require("./utils/socketEvents")(io);
 require("./utils/giftSocketEvents")(io);
 require("./utils/socketEventPrivateChat")(io);
 
-// ✅ Make io globally available
 global.io = io;
 console.log("🚀 Socket.IO + Music Streaming initialized successfully");
-  
-/* ===================== CRON IMPORT ===================== */
+
+/* ===================== CRON ===================== */
+
 const cron = require("./utils/cron");
 let cronInstance = null;
 
 /* ===================== START SERVER ===================== */
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 Socket.IO server ready on port ${PORT}`);
   console.log(`🎵 Music streaming ready: http://localhost:${PORT}/stream/...`);
 
-  // ✅ START CRON JOBS
   cronInstance = cron;
   cronInstance.startCronJobs();
   console.log("🕐 Cron jobs initialized ✅");
@@ -228,16 +251,15 @@ server.listen(PORT, () => {
 module.exports = { app, io, server };
 
 /* ===================== GRACEFUL SHUTDOWN ===================== */
+
 const gracefulShutdown = (signal) => {
   console.log(`🛑 Received ${signal}. Shutting down gracefully...`);
 
-  // ✅ STOP CRON JOBS FIRST
   if (cronInstance && cronInstance.stopCronJobs) {
     cronInstance.stopCronJobs();
     console.log("🛑 All cron jobs stopped");
   }
 
-  // ✅ CLOSE SERVER
   server.close((err) => {
     if (err) {
       console.error("❌ Server close error:", err);
@@ -247,14 +269,12 @@ const gracefulShutdown = (signal) => {
     process.exit(0);
   });
 
-  // Force close after 10 seconds if not clean
   setTimeout(() => {
     console.error("⚠️ Force closing server after timeout");
     process.exit(1);
   }, 10000);
 };
 
-// ✅ LISTEN FOR SHUTDOWN SIGNALS
-process.on("SIGINT", gracefulShutdown); // Ctrl+C
-process.on("SIGTERM", gracefulShutdown); // Docker/PM2/Heroku
-process.on("SIGQUIT", gracefulShutdown); // Kill -3
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGQUIT", gracefulShutdown);

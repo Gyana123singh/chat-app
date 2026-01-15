@@ -9,24 +9,20 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
     const { userId } = req.body;
 
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required" });
-    }
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+
     roomManager.initRoom(roomId);
     const state = roomManager.getState(roomId);
 
-    // 🔒 LOCK SYSTEM – first come first play
-    if (state.locked || state.isPlaying) {
+    if (state.isPlaying) {
       return res.status(409).json({
-        error:
-          "Music already playing. Please wait until it finishes or is stopped.",
+        error: "Music already playing. Please stop current music first.",
       });
     }
 
     const { originalname, filename, size } = req.file;
     const musicUrl = `/stream/${roomId}/${filename}`;
 
-    // ✅ IMPORTANT: pass STRING userId to RoomManager
     const newState = roomManager.playMusic(
       roomId,
       { name: originalname, filename, size },
@@ -41,26 +37,27 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
         musicUrl,
         localFilePath: req.file.path,
         isPlaying: true,
-        locked: true,
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
-        playedBy: new mongoose.Types.ObjectId(userId), // ✅ ObjectId ONLY in DB
+        playedBy: new mongoose.Types.ObjectId(userId),
       },
       { upsert: true, new: true }
     );
 
     io.to(`room:${roomId}`).emit("music:ready", {
       musicFile: { name: originalname },
-      musicUrl: `http://${req.get("host")}${musicUrl}`,
+      musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
+
       startedAt: newState.startedAt,
       currentPosition: 0,
-      playedBy: userId, // ✅ STRING for sockets
+      playedBy: userId,
     });
 
     return res.json({
       success: true,
-      message: "Music started successfully",
-      musicUrl: `http://${req.get("host")}${musicUrl}`,
+      message: "Music uploaded & ready",
+      filename,
+      musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
     });
   } catch (error) {
     console.error("❌ uploadAndPlayMusic:", error);
@@ -81,7 +78,7 @@ exports.pauseMusic = async (req, res, io) => {
 
     await MusicState.findOneAndUpdate(
       { roomId },
-      { isPlaying: false, pausedAt, locked: true }
+      { isPlaying: false, pausedAt }
     );
 
     io.to(`room:${roomId}`).emit("music:paused", { pausedAt });
@@ -107,7 +104,6 @@ exports.resumeMusic = async (req, res, io) => {
       { roomId },
       {
         isPlaying: true,
-        locked: true, // 🔒 re-lock on resume
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
       }
@@ -139,7 +135,6 @@ exports.stopMusic = async (req, res, io) => {
         musicFile: null,
         musicUrl: null,
         isPlaying: false,
-        locked: false,
         pausedAt: 0,
         startedAt: null,
         localFilePath: null,
@@ -149,7 +144,7 @@ exports.stopMusic = async (req, res, io) => {
 
     io.to(`room:${roomId}`).emit("music:stopped");
 
-    res.json({ success: true, message: "Music stopped. Room unlocked." });
+    res.json({ success: true, message: "Music stopped." });
   } catch (error) {
     console.error("❌ stopMusic:", error);
     res.status(500).json({ error: error.message });
@@ -169,9 +164,8 @@ exports.getMusicState = async (req, res) => {
       musicFile: state.musicFile,
       musicUrl: dbState?.musicUrl || null,
       isPlaying: state.isPlaying,
-      locked: state.locked,
       currentPosition: roomManager.getCurrentPosition(roomId),
-      playedBy: state.playedBy, // ✅ STRING from RoomManager
+      playedBy: state.playedBy,
     });
   } catch (error) {
     console.error("❌ getMusicState:", error);
