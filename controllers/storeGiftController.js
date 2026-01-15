@@ -16,8 +16,6 @@ exports.addStoreCategory = async (req, res) => {
       });
     }
 
-    
-
     const category = await StoreCategory.create({
       type,
     });
@@ -39,11 +37,14 @@ exports.addStoreCategory = async (req, res) => {
 /* ===============================
    GET ALL CATEGORIES
 ================================ */
+/* ===============================
+   GET ALL CATEGORIES (TABS)
+================================ */
 exports.getStoreCategory = async (req, res) => {
   try {
-    const categories = await StoreCategory.find({ isActive: true }).sort({
-      createdAt: 1,
-    });
+    const categories = await StoreCategory.find({ isActive: true })
+      .select("type -_id")
+      .sort({ createdAt: 1 });
 
     return res.status(200).json({
       success: true,
@@ -60,26 +61,37 @@ exports.getStoreCategory = async (req, res) => {
 };
 
 /* ===============================
-   GET GIFTS BY CATEGORY
+   GET GIFTS BY TYPE (WAFA STYLE)
 ================================ */
-exports.getGiftsByCategory = async (req, res) => {
+exports.getGiftsByType = async (req, res) => {
   try {
-    const { categoryId } = req.params;
+    const { type } = req.params;
     const { skip = 0, limit = 20 } = req.query;
 
-    let query = { isAvailable: true };
+    let filter = { isAvailable: true };
 
-    if (categoryId && categoryId !== "all") {
-      query.category = categoryId;
+    // if not ALL, filter by category.type
+    if (type && type !== "ALL") {
+      const category = await StoreCategory.findOne({ type, isActive: true });
+
+      if (!category) {
+        return res.status(200).json({
+          success: true,
+          data: [],
+          pagination: { total: 0, skip: 0, limit: 0 },
+        });
+      }
+
+      filter.category = category._id;
     }
 
-    const gifts = await StoreGift.find(query)
-      .populate("category", "name type")
+    const gifts = await StoreGift.find(filter)
+      .populate("category", "type")
       .skip(parseInt(skip))
       .limit(parseInt(limit))
       .sort({ createdAt: -1 });
 
-    const total = await StoreGift.countDocuments(query);
+    const total = await StoreGift.countDocuments(filter);
 
     return res.status(200).json({
       success: true,
@@ -91,7 +103,7 @@ exports.getGiftsByCategory = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get Gifts Error:", error);
+    console.error("Get Gifts By Type Error:", error);
     return res.status(500).json({
       success: false,
       message: "Error fetching gifts",
