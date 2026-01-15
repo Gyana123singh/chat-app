@@ -113,6 +113,7 @@ const io = new Server(server, {
   maxHttpBufferSize: 100 * 1024 * 1024,
   transports: ["websocket", "polling"],
 });
+app.set("io", io); // <----- ADD THIS LINE
 
 // ✅ CREATE UPLOADS ROOT FOLDER
 const uploadDir = path.join(__dirname, "..", "uploads");

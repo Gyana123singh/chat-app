@@ -93,9 +93,12 @@ exports.getRoomMusicList = async (req, res) => {
   }
 };
 
-exports.deleteRoomMusicList = async (req, res, io) => {
+exports.deleteRoomMusicList = async (req, res) => {
   try {
     const { roomId, musicId } = req.params;
+    const io = req.app.get("io"); // ✅ SAFE socket access
+
+    console.log("🎵 DELETE REQUEST:", { roomId, musicId });
 
     if (!mongoose.Types.ObjectId.isValid(musicId)) {
       return res.status(400).json({ error: "Invalid musicId" });
@@ -111,16 +114,23 @@ exports.deleteRoomMusicList = async (req, res, io) => {
        DELETE FILE FROM STORAGE
     ============================ */
     const filePath = path.join(
-      __dirname,
-      "..",
-      "..",
+      process.cwd(), // 🔥 ALWAYS ROOT
       "uploads",
       roomId,
       music.fileName
     );
 
-    if (fs.existsSync(filePath)) {
-      await fs.remove(filePath);
+    console.log("🗑️ Deleting file:", filePath);
+
+    try {
+      if (await fs.pathExists(filePath)) {
+        await fs.remove(filePath);
+        console.log("✅ File deleted");
+      } else {
+        console.log("⚠️ File not found on disk");
+      }
+    } catch (fileErr) {
+      console.error("❌ FILE DELETE ERROR:", fileErr);
     }
 
     /* ============================
@@ -152,7 +162,7 @@ exports.deleteRoomMusicList = async (req, res, io) => {
         }
       );
 
-      io.to(`room:${roomId}`).emit("music:stopped", {
+      io?.to(`room:${roomId}`).emit("music:stopped", {
         reason: "deleted",
       });
     }
@@ -160,7 +170,7 @@ exports.deleteRoomMusicList = async (req, res, io) => {
     /* ============================
        NOTIFY ROOM
     ============================ */
-    io.to(`room:${roomId}`).emit("music:list:deleted", {
+    io?.to(`room:${roomId}`).emit("music:list:deleted", {
       musicId,
     });
 
@@ -169,8 +179,8 @@ exports.deleteRoomMusicList = async (req, res, io) => {
       message: "Music deleted successfully",
     });
   } catch (error) {
-    console.error("❌ deleteRoomMusic:", error);
-    return res.status(500).json({ error: error.message });
+    console.error("❌ deleteRoomMusicList FATAL ERROR:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
