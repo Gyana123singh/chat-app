@@ -84,6 +84,86 @@ exports.getRoomMusicList = async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 };
+exports.deleteRoomMusicList = async (req, res, io) => {
+  try {
+    const { roomId, musicId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(musicId)) {
+      return res.status(400).json({ error: "Invalid musicId" });
+    }
+
+    const music = await RoomMusic.findOne({ _id: musicId, roomId });
+
+    if (!music) {
+      return res.status(404).json({ error: "Music not found" });
+    }
+
+    /* ============================
+       DELETE FILE FROM STORAGE
+    ============================ */
+    const filePath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "uploads",
+      roomId,
+      music.fileName
+    );
+
+    if (fs.existsSync(filePath)) {
+      await fs.remove(filePath);
+    }
+
+    /* ============================
+       DELETE FROM DB
+    ============================ */
+    await RoomMusic.deleteOne({ _id: musicId });
+
+    /* ============================
+       STOP IF CURRENTLY PLAYING
+    ============================ */
+    const state = roomManager.getState(roomId);
+
+    if (
+      state?.musicFile?.filename === music.fileName ||
+      state?.musicFile?.name === music.originalName
+    ) {
+      roomManager.stopMusic(roomId);
+
+      await MusicState.findOneAndUpdate(
+        { roomId },
+        {
+          musicFile: null,
+          musicUrl: null,
+          isPlaying: false,
+          pausedAt: 0,
+          startedAt: null,
+          localFilePath: null,
+          playedBy: null,
+        }
+      );
+
+      io.to(`room:${roomId}`).emit("music:stopped", {
+        reason: "deleted",
+      });
+    }
+
+    /* ============================
+       NOTIFY ROOM
+    ============================ */
+    io.to(`room:${roomId}`).emit("music:list:deleted", {
+      musicId,
+    });
+
+    return res.json({
+      success: true,
+      message: "Music deleted successfully",
+    });
+  } catch (error) {
+    console.error("❌ deleteRoomMusic:", error);
+    return res.status(500).json({ error: error.message });
+  }
+};
 
 exports.pauseMusic = async (req, res, io) => {
   try {

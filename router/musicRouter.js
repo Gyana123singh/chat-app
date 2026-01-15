@@ -32,6 +32,9 @@ module.exports = (io) => {
     musicController.uploadAndPlayMusic(req, res, io)
   );
   router.get("/list/:roomId", musicController.getRoomMusicList);
+  router.delete("/delete/:roomId/:musicId", (req, res) =>
+    musicController.deleteRoomMusicList(req, res, io)
+  );
 
   router.post("/pause/:roomId", (req, res) =>
     musicController.pauseMusic(req, res, io)
