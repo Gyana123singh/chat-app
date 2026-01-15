@@ -13,7 +13,9 @@ module.exports = (io) => {
         const { roomId } = req.params;
 
         // 🔥 ALWAYS point to root /uploads
-        const dir = path.join(__dirname, "..", "..", "uploads", roomId);
+        // const dir = path.join(__dirname, "..", "..", "uploads", roomId);
+        // ✅ FIXED – Render safe, no conflict with video
+        const dir = path.resolve(process.cwd(), "uploads", roomId);
 
         await fs.ensureDir(dir);
         cb(null, dir);

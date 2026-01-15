@@ -10,7 +10,7 @@ module.exports = (io) => {
   const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
       const { roomId } = req.params;
-      const dir = path.join(__dirname, "..", "..", "uploads", "videos", roomId);
+     const dir = path.resolve(process.cwd(), "uploads", "videos", roomId);
       await fs.ensureDir(dir);
       cb(null, dir);
     },

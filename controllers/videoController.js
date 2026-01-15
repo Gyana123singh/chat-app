@@ -169,10 +169,8 @@ exports.stopVideo = async (req, res, io) => {
     const videoRoom = await VideoRoom.findOne({ roomId });
 
     if (videoRoom?.video?.fileName) {
-      const filePath = path.join(
-        __dirname,
-        "..",
-        "..",
+      const filePath = path.resolve(
+        process.cwd(),
         "uploads",
         "videos",
         roomId,

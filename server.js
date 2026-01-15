@@ -114,8 +114,9 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 app.set("io", io); // <----- ADD THIS LINE
-// ✅ CREATE UPLOADS ROOT FOLDER
-const uploadDir = path.join(__dirname, "..", "uploads");
+
+// ===================== CREATE UPLOADS ROOT FOLDER =====================
+const uploadDir = path.resolve(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
   console.log("📁 Created uploads directory:", uploadDir);
@@ -128,9 +129,8 @@ app.use("/api/music", musicRouter);
 /* ===================== AUDIO STREAM ROUTE ===================== */
 
 app.get("/stream/:roomId/:filename", (req, res) => {
-  const filePath = path.join(
-    __dirname,
-    "..",
+  const filePath = path.resolve(
+    process.cwd(),
     "uploads",
     req.params.roomId,
     req.params.filename
@@ -179,9 +179,8 @@ app.use("/api/video", videoRouter);
 /* ===================== VIDEO STREAM ROUTE ===================== */
 
 app.get("/video-stream/:roomId/:filename", (req, res) => {
-  const filePath = path.join(
-    __dirname,
-    "..",
+  const filePath = path.resolve(
+    process.cwd(),
     "uploads",
     "videos",
     req.params.roomId,
