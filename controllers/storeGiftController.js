@@ -16,13 +16,7 @@ exports.addStoreCategory = async (req, res) => {
       });
     }
 
-    const exists = await StoreCategory.findOne({ type: type.trim() });
-    if (exists) {
-      return res.status(409).json({
-        success: false,
-        message: "Store category already exists",
-      });
-    }
+    
 
     const category = await StoreCategory.create({
       type,
