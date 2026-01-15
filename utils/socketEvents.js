@@ -205,6 +205,52 @@ module.exports = (io) => {
     });
 
     /* =========================
+   VIDEO STREAM SIGNALING (NEW)
+========================= */
+
+    // Host starts video streaming
+    socket.on("video:stream:start", ({ roomId }) => {
+      if (!roomId) return;
+
+      console.log("🎬 Video stream start request:", roomId);
+
+      // Notify all users in room to prepare WebRTC
+      socket.to(`room:${roomId}`).emit("video:stream:ready", {
+        from: socket.data.userId,
+      });
+    });
+
+    // WebRTC Offer
+    socket.on("video:webrtc:offer", ({ roomId, offer }) => {
+      if (!roomId || !offer) return;
+
+      socket.to(`room:${roomId}`).emit("video:webrtc:offer", {
+        from: socket.data.userId,
+        offer,
+      });
+    });
+
+    // WebRTC Answer
+    socket.on("video:webrtc:answer", ({ roomId, answer }) => {
+      if (!roomId || !answer) return;
+
+      socket.to(`room:${roomId}`).emit("video:webrtc:answer", {
+        from: socket.data.userId,
+        answer,
+      });
+    });
+
+    // ICE Candidate
+    socket.on("video:webrtc:ice", ({ roomId, candidate }) => {
+      if (!roomId || !candidate) return;
+
+      socket.to(`room:${roomId}`).emit("video:webrtc:ice", {
+        from: socket.data.userId,
+        candidate,
+      });
+    });
+
+    /* =========================
        MIC CONTROLS
     ========================= */
     socket.on("mic:mute", () => {
