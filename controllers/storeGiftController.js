@@ -61,37 +61,26 @@ exports.getStoreCategory = async (req, res) => {
 };
 
 /* ===============================
-   GET GIFTS BY TYPE (WAFA STYLE)
+   GET GIFTS BY CATEGORY
 ================================ */
-exports.getGiftsByType = async (req, res) => {
+exports.getGiftsByCategory = async (req, res) => {
   try {
-    const { type } = req.params;
+    const { categoryId } = req.params;
     const { skip = 0, limit = 20 } = req.query;
 
-    let filter = { isAvailable: true };
+    let query = { isAvailable: true };
 
-    // if not ALL, filter by category.type
-    if (type && type !== "ALL") {
-      const category = await StoreCategory.findOne({ type, isActive: true });
-
-      if (!category) {
-        return res.status(200).json({
-          success: true,
-          data: [],
-          pagination: { total: 0, skip: 0, limit: 0 },
-        });
-      }
-
-      filter.category = category._id;
+    if (categoryId && categoryId !== "all") {
+      query.category = categoryId;
     }
 
-    const gifts = await StoreGift.find(filter)
+    const gifts = await StoreGift.find(query)
       .populate("category", "type")
       .skip(parseInt(skip))
       .limit(parseInt(limit))
       .sort({ createdAt: -1 });
 
-    const total = await StoreGift.countDocuments(filter);
+    const total = await StoreGift.countDocuments(query);
 
     return res.status(200).json({
       success: true,
@@ -103,7 +92,7 @@ exports.getGiftsByType = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get Gifts By Type Error:", error);
+    console.error("Get Gifts Error:", error);
     return res.status(500).json({
       success: false,
       message: "Error fetching gifts",
