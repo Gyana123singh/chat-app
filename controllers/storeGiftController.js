@@ -7,7 +7,7 @@ const cloudinary = require("../config/cloudinary");
 ================================ */
 exports.addStoreCategory = async (req, res) => {
   try {
-    const { name, type } = req.body;
+    const { type } = req.body;
 
     if (!type) {
       return res.status(400).json({
@@ -16,7 +16,7 @@ exports.addStoreCategory = async (req, res) => {
       });
     }
 
-    const exists = await StoreCategory.findOne({ name: name.trim() });
+    const exists = await StoreCategory.findOne({ type: type.trim() });
     if (exists) {
       return res.status(409).json({
         success: false,
@@ -25,7 +25,6 @@ exports.addStoreCategory = async (req, res) => {
     }
 
     const category = await StoreCategory.create({
-      name: name.trim(),
       type,
     });
 
