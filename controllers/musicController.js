@@ -72,8 +72,16 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
 exports.getRoomMusicList = async (req, res) => {
   try {
     const { roomId } = req.params;
+    const userId = req.headers["userid"] || req.query.userId;
 
-    const list = await RoomMusic.find({ roomId }).sort({ createdAt: -1 });
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    const list = await RoomMusic.find({
+      roomId,
+      uploadedBy: userId, // 🔥 PRIVATE PER USER
+    }).sort({ createdAt: -1 });
 
     return res.json({
       success: true,
@@ -84,6 +92,7 @@ exports.getRoomMusicList = async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
 exports.deleteRoomMusicList = async (req, res, io) => {
   try {
     const { roomId, musicId } = req.params;
