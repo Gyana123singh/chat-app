@@ -4,7 +4,6 @@ const storeGiftSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
       trim: true,
     },
 
