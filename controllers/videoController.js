@@ -24,13 +24,13 @@ exports.uploadAndPlayVideo = async (req, res, io) => {
         video: { isVisible: false },
         audio: { isMixing: false },
         participants: [],
-        videos: [], // 👈 important
+        videos: [],
       });
     }
 
     const { originalname, filename, size, mimetype } = req.file;
 
-    // ✅ 1. PUSH INTO VIDEO LIST (DB)
+    // ✅ PUSH INTO VIDEO LIST + SET CURRENT VIDEO
     await VideoRoom.findOneAndUpdate(
       { roomId },
       {
@@ -63,6 +63,7 @@ exports.uploadAndPlayVideo = async (req, res, io) => {
 
     const videoUrl = `/video-stream/${roomId}/${filename}`;
 
+    // 🔥 PLAY VIDEO EVENT
     io.to(`room:${roomId}`).emit("video:started", {
       videoUrl: `http://${req.get("host")}${videoUrl}`,
       fileName: originalname,
@@ -70,9 +71,12 @@ exports.uploadAndPlayVideo = async (req, res, io) => {
       startedAt: Date.now(),
     });
 
+    // 🔥🔥 THIS IS WHAT YOU WERE MISSING – BROADCAST LIST UPDATE
+    io.to(`room:${roomId}`).emit("video:list:updated");
+
     return res.json({
       success: true,
-      message: "Video uploaded & added to list & started",
+      message: "Video uploaded, added to list & started",
       videoUrl: `http://${req.get("host")}${videoUrl}`,
     });
   } catch (error) {
