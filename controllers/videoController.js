@@ -20,34 +20,48 @@ exports.uploadAndPlayVideo = async (req, res, io) => {
     if (!videoRoom) {
       videoRoom = await VideoRoom.create({
         roomId,
-        hostId: userId, // first uploader becomes host
+        hostId: userId,
         video: { isVisible: false },
         audio: { isMixing: false },
         participants: [],
+        videos: [], // 👈 important
       });
     }
 
     const { originalname, filename, size, mimetype } = req.file;
-    const videoUrl = `/video-stream/${roomId}/${filename}`;
 
+    // ✅ 1. PUSH INTO VIDEO LIST (DB)
     await VideoRoom.findOneAndUpdate(
       { roomId },
       {
-        video: {
-          isPlaying: true,
-          isPaused: false,
-          currentTime: 0,
-          duration: 0,
-          fileName: filename,
-          fileSize: size,
-          mimeType: mimetype,
-          isVisible: true,
-          startedAt: new Date(),
-          pausedAt: null,
+        $push: {
+          videos: {
+            fileName: filename,
+            originalName: originalname,
+            fileSize: size,
+            mimeType: mimetype,
+            uploadedAt: new Date(),
+          },
+        },
+        $set: {
+          video: {
+            isPlaying: true,
+            isPaused: false,
+            currentTime: 0,
+            duration: 0,
+            fileName: filename,
+            fileSize: size,
+            mimeType: mimetype,
+            isVisible: true,
+            startedAt: new Date(),
+            pausedAt: null,
+          },
         },
       },
       { new: true }
     );
+
+    const videoUrl = `/video-stream/${roomId}/${filename}`;
 
     io.to(`room:${roomId}`).emit("video:started", {
       videoUrl: `http://${req.get("host")}${videoUrl}`,
@@ -58,11 +72,47 @@ exports.uploadAndPlayVideo = async (req, res, io) => {
 
     return res.json({
       success: true,
-      message: "Video uploaded & started",
+      message: "Video uploaded & added to list & started",
       videoUrl: `http://${req.get("host")}${videoUrl}`,
     });
   } catch (error) {
     console.error("❌ uploadAndPlayVideo:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getVideoList = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    if (!roomId) {
+      return res.status(400).json({ error: "roomId is required" });
+    }
+
+    const videoRoom = await VideoRoom.findOne({ roomId }).select("videos");
+
+    if (!videoRoom || !videoRoom.videos || videoRoom.videos.length === 0) {
+      return res.json({
+        success: true,
+        videos: [],
+      });
+    }
+
+    const videos = videoRoom.videos.map((v) => ({
+      fileName: v.fileName,
+      originalName: v.originalName,
+      fileSize: v.fileSize,
+      mimeType: v.mimeType,
+      url: `/video-stream/${roomId}/${v.fileName}`,
+      uploadedAt: v.uploadedAt,
+    }));
+
+    return res.json({
+      success: true,
+      videos,
+    });
+  } catch (error) {
+    console.error("❌ getVideoList error:", error);
     res.status(500).json({ error: error.message });
   }
 };

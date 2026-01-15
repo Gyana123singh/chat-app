@@ -8,6 +8,8 @@ const videoRoomSchema = new mongoose.Schema(
       unique: true,
       required: true,
     },
+
+    // ✅ CURRENT PLAYING VIDEO STATE (DO NOT TOUCH LOGIC)
     video: {
       isPlaying: { type: Boolean, default: false },
       isPaused: { type: Boolean, default: false },
@@ -21,11 +23,24 @@ const videoRoomSchema = new mongoose.Schema(
       pausedAt: { type: Date, default: null },
       lastSyncTime: { type: Date, default: Date.now },
     },
+
+    // 🆕 VIDEO LIST (THIS IS IMPORTANT)
+    videos: [
+      {
+        fileName: String,
+        originalName: String,
+        fileSize: Number,
+        mimeType: String,
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
+
     audio: {
       videoAudioVolume: { type: Number, default: 1.0, min: 0, max: 1 },
       hostMicVolume: { type: Number, default: 1.0, min: 0, max: 1 },
       isMixing: { type: Boolean, default: false },
     },
+
     frameSync: {
       lastFrameNumber: { type: Number, default: 0 },
       expectedFPS: { type: Number, default: 30 },
@@ -38,11 +53,13 @@ const videoRoomSchema = new mongoose.Schema(
         },
       ],
     },
+
     hostId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+
     participants: [
       {
         userId: mongoose.Schema.Types.ObjectId,
@@ -53,6 +70,7 @@ const videoRoomSchema = new mongoose.Schema(
         videoLatency: { type: Number, default: 0 },
       },
     ],
+
     stats: {
       totalFramesSent: { type: Number, default: 0 },
       totalFramesReceived: { type: Number, default: 0 },
@@ -60,6 +78,7 @@ const videoRoomSchema = new mongoose.Schema(
       droppedFrames: { type: Number, default: 0 },
       totalBandwidthUsed: { type: Number, default: 0 },
     },
+
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

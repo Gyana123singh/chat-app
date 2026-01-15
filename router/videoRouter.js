@@ -35,6 +35,8 @@ module.exports = (io) => {
     videoController.uploadAndPlayVideo(req, res, io)
   );
 
+  router.get("/list/:roomId", videoController.getVideoList);
+
   router.post("/pause/:roomId", (req, res) =>
     videoController.pauseVideo(req, res, io)
   );
