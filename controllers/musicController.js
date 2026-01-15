@@ -2,14 +2,16 @@ const MusicState = require("../models/musicState");
 const roomManager = require("../utils/musicRoomManager");
 const fs = require("fs-extra");
 const mongoose = require("mongoose");
-
+const RoomMusic = require("../models/musicRoom");
 exports.uploadAndPlayMusic = async (req, res, io) => {
   try {
     const { roomId } = req.params;
-    const { userId } = req.body;
+    const userId = req.body.userId || req.query.userId || req.headers["userid"];
 
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     if (!userId) return res.status(400).json({ error: "userId is required" });
+    if (!mongoose.Types.ObjectId.isValid(userId))
+      return res.status(400).json({ error: "Invalid userId" });
 
     roomManager.initRoom(roomId);
     const state = roomManager.getState(roomId);
@@ -44,10 +46,19 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
       { upsert: true, new: true }
     );
 
+    // 🔥 THIS CREATES THE LIST ITEM
+    await RoomMusic.create({
+      roomId,
+      fileName: filename,
+      originalName: originalname,
+      fileSize: size,
+      musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
+      uploadedBy: new mongoose.Types.ObjectId(userId),
+    });
+
     io.to(`room:${roomId}`).emit("music:ready", {
       musicFile: { name: originalname },
       musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
-
       startedAt: newState.startedAt,
       currentPosition: 0,
       playedBy: userId,
@@ -62,6 +73,22 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
   } catch (error) {
     console.error("❌ uploadAndPlayMusic:", error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getRoomMusicList = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const list = await RoomMusic.find({ roomId }).sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      data: list,
+    });
+  } catch (error) {
+    console.error("❌ getRoomMusicList:", error);
+    return res.status(500).json({ error: error.message });
   }
 };
 
