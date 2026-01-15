@@ -2,13 +2,6 @@ const mongoose = require("mongoose");
 
 const storeCategorySchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-
-      unique: true,
-      trim: true,
-    },
-
     // 🔥 THIS IS CRITICAL
     type: {
       type: String,
