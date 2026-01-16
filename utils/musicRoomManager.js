@@ -3,16 +3,15 @@ class RoomManager {
     this.roomMusicStates = new Map();
   }
 
+  // 🔥 Always ensure fresh state (fixes rejoin + reupload bug)
   initRoom(roomId) {
-    if (!this.roomMusicStates.has(roomId)) {
-      this.roomMusicStates.set(roomId, {
-        musicFile: null,
-        isPlaying: false,
-        startedAt: null,
-        pausedAt: 0,
-        playedBy: null, // ALWAYS STRING
-      });
-    }
+    this.roomMusicStates.set(roomId, {
+      musicFile: null,
+      isPlaying: false,
+      startedAt: null,
+      pausedAt: 0,
+      playedBy: null, // ALWAYS STRING
+    });
   }
 
   getState(roomId) {
@@ -28,13 +27,13 @@ class RoomManager {
   }
 
   playMusic(roomId, musicFile, playedByUserId) {
-    const state = this.getState(roomId);
-
-    state.musicFile = musicFile;
-    state.isPlaying = true;
-    state.startedAt = Date.now();
-    state.pausedAt = 0;
-    state.playedBy = playedByUserId.toString();
+    const state = {
+      musicFile,
+      isPlaying: true,
+      startedAt: Date.now(),
+      pausedAt: 0,
+      playedBy: playedByUserId.toString(),
+    };
 
     this.roomMusicStates.set(roomId, state);
     return state;
@@ -61,14 +60,9 @@ class RoomManager {
     return state;
   }
 
+  // 🔥 HARD RESET (important fix)
   stopMusic(roomId) {
-    this.roomMusicStates.set(roomId, {
-      musicFile: null,
-      isPlaying: false,
-      startedAt: null,
-      pausedAt: 0,
-      playedBy: null,
-    });
+    this.roomMusicStates.delete(roomId);
   }
 
   getCurrentPosition(roomId) {
