@@ -85,13 +85,7 @@ exports.uploadMusic = async (req, res, io) => {
       "host"
     )}/stream/${roomId}/${filename}`;
 
-    // STORE IN MEMORY (NO AUTOPLAY)
-    const state = roomManager.getState(roomId);
-    state.musicFile = { name: originalname, filename, size };
-    state.playedBy = userId.toString();
-    roomManager.roomMusicStates.set(roomId, state);
-
-    // STORE CURRENT STATE
+    // ✅ DO NOT TOUCH roomManager state here
     await MusicState.findOneAndUpdate(
       { roomId },
       {
@@ -107,7 +101,6 @@ exports.uploadMusic = async (req, res, io) => {
       { upsert: true }
     );
 
-    // 🔥 STORE IN LIST COLLECTION (THIS WAS MISSING)
     await RoomMusic.create({
       roomId,
       fileName: filename,
@@ -117,13 +110,12 @@ exports.uploadMusic = async (req, res, io) => {
       uploadedBy: userId,
     });
 
-    // NOTIFY ROOM (NO AUTOPLAY)
     io.to(`room:${roomId}`).emit("music:uploaded", {
-      musicFile: state.musicFile,
+      musicFile: { name: originalname, filename, size },
       musicUrl,
     });
 
-    res.json({ success: true, message: "Music uploaded (waiting for play)" });
+    res.json({ success: true });
   } catch (err) {
     console.error("❌ uploadMusic:", err);
     res.status(500).json({ error: err.message });
@@ -135,12 +127,25 @@ exports.playMusic = async (req, res, io) => {
     const { roomId } = req.params;
     const { userId } = req.body;
 
-    const state = roomManager.getState(roomId);
-    if (!state.musicFile) {
+    if (!userId) {
+      return res.status(400).json({ error: "userId required" });
+    }
+
+    roomManager.initRoom(roomId);
+
+    const dbState = await MusicState.findOne({ roomId });
+    if (!dbState?.musicFile) {
       return res.status(400).json({ error: "No music uploaded" });
     }
 
-    const newState = roomManager.playMusic(roomId, state.musicFile, userId);
+    const newState = roomManager.playMusic(
+      roomId,
+      {
+        name: dbState.musicFile.name,
+        filename: dbState.localFilePath.split("/").pop(),
+      },
+      userId
+    );
 
     await MusicState.findOneAndUpdate(
       { roomId },
@@ -148,12 +153,13 @@ exports.playMusic = async (req, res, io) => {
         isPlaying: true,
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
+        playedBy: userId,
       }
     );
 
     io.to(`room:${roomId}`).emit("music:play", {
       musicFile: newState.musicFile,
-      musicUrl: (await MusicState.findOne({ roomId })).musicUrl,
+      musicUrl: dbState.musicUrl,
       startedAt: newState.startedAt,
       playedBy: userId,
     });
