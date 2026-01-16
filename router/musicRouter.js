@@ -33,14 +33,14 @@ module.exports = (io) => {
   router.post("/upload/:roomId", upload.single("music"), (req, res) =>
     musicController.uploadMusic(req, res, io)
   );
+  // ▶️ PLAY MUSIC (USER ACTION REQUIRED)
+  router.post("/play/:roomId", (req, res) =>
+    musicController.playMusic(req, res, io)
+  );
   router.get("/list/:roomId", musicController.getRoomMusicList);
   router.delete(
     "/delete/:roomId/:musicId",
     musicController.deleteRoomMusicList
-  );
-  // ▶️ PLAY MUSIC (USER ACTION REQUIRED)
-  router.post("/play/:roomId", (req, res) =>
-    musicController.playMusic(req, res, io)
   );
 
   router.post("/pause/:roomId", (req, res) =>
