@@ -106,15 +106,31 @@ module.exports = (io) => {
         socket.emit("room:messages", messages);
 
         /* ===== MUSIC STATE ===== */
+
         const currentMusicState = roomManager.getState(roomId);
         const currentPosition = roomManager.getCurrentPosition(roomId);
+        const dbState = await MusicState.findOne({ roomId });
 
-        socket.emit("room:musicState", {
+        const musicPayload = {
           musicFile: currentMusicState.musicFile,
           isPlaying: currentMusicState.isPlaying,
           currentPosition,
           playedBy: currentMusicState.playedBy,
-        });
+          musicUrl: dbState?.musicUrl || null, // 🔥 FIX 1: send musicUrl
+        };
+
+        socket.emit("room:musicState", musicPayload);
+
+        // 🔥 FIX 2: if music is already playing, force ready event for this user
+        if (currentMusicState.isPlaying && dbState?.musicUrl) {
+          socket.emit("music:ready", {
+            musicFile: currentMusicState.musicFile,
+            musicUrl: dbState.musicUrl,
+            startedAt: currentMusicState.startedAt,
+            currentPosition,
+            playedBy: currentMusicState.playedBy,
+          });
+        }
 
         /* ===== VIDEO STATE ===== */
         socket.emit("room:videoState", {
