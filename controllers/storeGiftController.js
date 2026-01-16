@@ -1,6 +1,7 @@
 const StoreGift = require("../models/storeGift");
 const StoreCategory = require("../models/storeCategory");
 const cloudinary = require("../config/cloudinary");
+const mongoose = require("mongoose");
 
 /* ===============================
    ADD STORE CATEGORY (ADMIN)
