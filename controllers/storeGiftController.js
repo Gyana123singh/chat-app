@@ -95,22 +95,17 @@ exports.getStoreCategory = async (req, res) => {
 // GET /api/store-gifts/category/:category
 exports.getGiftsByCategory = async (req, res) => {
   try {
-    const { category } = req.params;
-
-    const gifts = await StoreGift.find({
-      category: category,
-      isAvailable: true,
-    });
+    const gifts = await StoreGift.find();
 
     return res.status(200).json({
       success: true,
       data: gifts,
     });
   } catch (error) {
-    console.error("❌ Fetch By Category Error:", error);
+    console.error("❌ Fetch Category Error:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching gifts by category",
+      message: "Error fetching gifts category",
     });
   }
 };
