@@ -5,10 +5,7 @@ const storeCategorySchema = new mongoose.Schema(
     type: {
       type: String,
     },
-    title: {
-      type: String, // optional display name
-      default: "",
-    },
+
     isActive: {
       type: Boolean,
       default: true,
