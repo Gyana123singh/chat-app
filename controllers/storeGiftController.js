@@ -222,31 +222,7 @@ exports.createGift = async (req, res) => {
     let icon = "";
 
     if (req.file) {
-      const allowedTypes = [
-        "image/png",
-        "image/jpeg",
-        "image/jpg",
-        "image/gif",
-      ];
-
-      if (!allowedTypes.includes(req.file.mimetype)) {
-        return res.status(400).json({
-          success: false,
-          message: "Only PNG, JPG, JPEG, GIF allowed",
-        });
-      }
-
-      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
-        folder: "store_gifts",
-        resource_type: "image",
-        transformation: [
-          { width: 300, height: 300, crop: "limit" },
-          { quality: "auto" },
-          { fetch_format: "auto" },
-        ],
-      });
-
-      icon = uploadResult.secure_url;
+      icon = req.file.path; // ✅ Cloudinary URL directly
     }
 
     const gift = await StoreGift.create({
@@ -257,7 +233,7 @@ exports.createGift = async (req, res) => {
       category,
       animationUrl,
       rarity,
-      effectType: effectType || cat.type, // 🔥 AUTO MAP FROM CATEGORY
+      effectType: effectType || cat.type || "NONE",
     });
 
     await gift.populate("category", "name type");
@@ -268,10 +244,12 @@ exports.createGift = async (req, res) => {
       data: gift,
     });
   } catch (error) {
-    console.error("Create Gift Error:", error);
+    console.error("❌ Create Gift Error Full:", error);
+    console.error("❌ Error Message:", error.message);
+
     return res.status(500).json({
       success: false,
-      message: "Error creating gift",
+      message: error.message || "Error creating gift",
     });
   }
 };
