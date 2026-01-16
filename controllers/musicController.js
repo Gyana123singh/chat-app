@@ -85,12 +85,13 @@ exports.uploadMusic = async (req, res, io) => {
       "host"
     )}/stream/${roomId}/${filename}`;
 
-    // ✅ STORE ONLY — DO NOT PLAY
+    // STORE IN MEMORY (NO AUTOPLAY)
     const state = roomManager.getState(roomId);
     state.musicFile = { name: originalname, filename, size };
     state.playedBy = userId.toString();
     roomManager.roomMusicStates.set(roomId, state);
 
+    // STORE CURRENT STATE
     await MusicState.findOneAndUpdate(
       { roomId },
       {
@@ -98,7 +99,7 @@ exports.uploadMusic = async (req, res, io) => {
         musicFile: { name: originalname, fileSize: size },
         musicUrl,
         localFilePath: req.file.path,
-        isPlaying: false, // 🔥 NOT PLAYING
+        isPlaying: false,
         startedAt: null,
         pausedAt: 0,
         playedBy: userId,
@@ -106,7 +107,17 @@ exports.uploadMusic = async (req, res, io) => {
       { upsert: true }
     );
 
-    // ✅ NOTIFY ROOM (NO AUTOPLAY)
+    // 🔥 STORE IN LIST COLLECTION (THIS WAS MISSING)
+    await RoomMusic.create({
+      roomId,
+      fileName: filename,
+      originalName: originalname,
+      fileSize: size,
+      musicUrl,
+      uploadedBy: userId,
+    });
+
+    // NOTIFY ROOM (NO AUTOPLAY)
     io.to(`room:${roomId}`).emit("music:uploaded", {
       musicFile: state.musicFile,
       musicUrl,
