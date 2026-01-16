@@ -65,13 +65,13 @@ exports.getStoreCategory = async (req, res) => {
 ================================ */
 exports.getGiftsByCategory = async (req, res) => {
   try {
-    const { categoryId } = req.params; // this is TYPE: ENTRANCE, FRAME, etc
+    const { categoryId } = req.params; // ENTRANCE, FRAME, etc
     const { skip = 0, limit = 20 } = req.query;
 
     const pipeline = [
       {
         $lookup: {
-          from: "storecategories", // ⚠️ must be exact MongoDB collection name
+          from: "storegiftcategories", // 🔥 CHANGE THIS TO YOUR REAL COLLECTION NAME
           localField: "category",
           foreignField: "_id",
           as: "category",
@@ -85,10 +85,10 @@ exports.getGiftsByCategory = async (req, res) => {
       },
     ];
 
-    if (categoryId && categoryId !== "ALL") {
+    if (categoryId !== "ALL") {
       pipeline.push({
         $match: {
-          "category.type": categoryId, // MATCH BY TYPE
+          "category.type": categoryId,
         },
       });
     }
@@ -101,32 +101,20 @@ exports.getGiftsByCategory = async (req, res) => {
 
     const gifts = await StoreGift.aggregate(pipeline);
 
-    // get total count
-    const countPipeline = pipeline.filter(
-      (stage) => !stage.$skip && !stage.$limit
-    );
-
-    const totalResult = await StoreGift.aggregate([
-      ...countPipeline,
-      { $count: "total" },
-    ]);
-
-    const total = totalResult[0]?.total || 0;
-
     return res.status(200).json({
       success: true,
       data: gifts,
       pagination: {
-        total,
+        total: gifts.length,
         skip: parseInt(skip),
         limit: parseInt(limit),
       },
     });
   } catch (error) {
-    console.error("❌ Get Gifts Error:", error);
+    console.error("❌ Filter Error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Error fetching gifts",
+      message: error.message,
     });
   }
 };
