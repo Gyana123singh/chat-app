@@ -197,15 +197,10 @@ exports.deleteGift = async (req, res) => {
 ================================ */
 exports.createGift = async (req, res) => {
   try {
-    const {
-      name,
-      description,
-      price,
-      category,
-      animationUrl,
-      rarity,
-      effectType,
-    } = req.body;
+    const { name, price, category } = req.body;
+
+    console.log("BODY:", req.body);
+    console.log("FILE:", req.file);
 
     if (!name || !price || !category) {
       return res.status(400).json({
@@ -225,28 +220,9 @@ exports.createGift = async (req, res) => {
     let icon = "";
 
     if (req.file) {
-      const allowedTypes = [
-        "image/png",
-        "image/jpeg",
-        "image/jpg",
-        "image/gif",
-      ];
-
-      if (!allowedTypes.includes(req.file.mimetype)) {
-        return res.status(400).json({
-          success: false,
-          message: "Only PNG, JPG, JPEG, GIF allowed",
-        });
-      }
-
       const uploadResult = await cloudinary.uploader.upload(req.file.path, {
         folder: "store_gifts",
         resource_type: "image",
-        transformation: [
-          { width: 300, height: 300, crop: "limit" },
-          { quality: "auto" },
-          { fetch_format: "auto" },
-        ],
       });
 
       icon = uploadResult.secure_url;
@@ -254,16 +230,13 @@ exports.createGift = async (req, res) => {
 
     const gift = await StoreGift.create({
       name,
-      description,
-      icon,
       price,
       category,
-      animationUrl,
-      rarity,
-      effectType: effectType || cat.type, // 🔥 AUTO MAP FROM CATEGORY
+      icon,
+      effectType: cat.type, // 🔥 auto map
     });
 
-    await gift.populate("category", "name type");
+    await gift.populate("category", "type");
 
     return res.status(201).json({
       success: true,
@@ -271,10 +244,10 @@ exports.createGift = async (req, res) => {
       data: gift,
     });
   } catch (error) {
-    console.error("Create Gift Error:", error);
+    console.error("❌ Create Gift Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Error creating gift",
+      message: error.message || "Error creating gift",
     });
   }
 };
