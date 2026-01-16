@@ -14,7 +14,6 @@ const storeGiftSchema = new mongoose.Schema(
 
     icon: {
       type: String,
-      required: true,
     },
 
     animationUrl: {
@@ -30,7 +29,6 @@ const storeGiftSchema = new mongoose.Schema(
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "StoreCategory",
-      required: true,
     },
 
     rarity: {
