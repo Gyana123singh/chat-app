@@ -123,53 +123,51 @@ exports.uploadMusic = async (req, res, io) => {
 };
 
 exports.playMusic = async (req, res, io) => {
-  try {
-    const { roomId } = req.params;
-    const { userId } = req.body;
+  const { roomId } = req.params;
+  const { userId } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ error: "userId required" });
-    }
-
-    roomManager.initRoom(roomId);
-
-    const dbState = await MusicState.findOne({ roomId });
-    if (!dbState?.musicFile) {
-      return res.status(400).json({ error: "No music uploaded" });
-    }
-
-    const newState = roomManager.playMusic(
-      roomId,
-      {
-        name: dbState.musicFile.name,
-        filename: dbState.localFilePath.split("/").pop(),
-      },
-      userId
-    );
-
-    await MusicState.findOneAndUpdate(
-      { roomId },
-      {
-        isPlaying: true,
-        startedAt: new Date(newState.startedAt),
-        pausedAt: 0,
-        playedBy: userId,
-      }
-    );
-
-    io.to(`room:${roomId}`).emit("music:play", {
-      musicFile: newState.musicFile,
-      musicUrl: dbState.musicUrl,
-      startedAt: newState.startedAt,
-      playedBy: userId,
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("❌ playMusic:", err);
-    res.status(500).json({ error: err.message });
+  if (!userId) {
+    return res.status(400).json({ error: "userId required" });
   }
+
+  roomManager.initRoom(roomId);
+
+  const dbState = await MusicState.findOne({ roomId });
+  if (!dbState || !dbState.musicUrl) {
+    return res.status(400).json({ error: "No music uploaded" });
+  }
+
+  // ✅ THIS IS THE CRITICAL LINE
+  const newState = roomManager.playMusic(
+    roomId,
+    {
+      name: dbState.musicFile.name,
+      filename: path.basename(dbState.localFilePath),
+    },
+    userId
+  );
+
+  await MusicState.findOneAndUpdate(
+    { roomId },
+    {
+      isPlaying: true,
+      startedAt: new Date(newState.startedAt),
+      pausedAt: 0,
+      playedBy: userId,
+    }
+  );
+
+  io.to(`room:${roomId}`).emit("music:play", {
+    musicFile: newState.musicFile, // ✅ REQUIRED
+    musicUrl: dbState.musicUrl,
+    startedAt: newState.startedAt,
+    playedBy: userId,
+  });
+
+  res.json({ success: true });
 };
+
+
 
 exports.getRoomMusicList = async (req, res) => {
   try {
