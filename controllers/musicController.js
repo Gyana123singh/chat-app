@@ -135,35 +135,46 @@ exports.playMusic = async (req, res, io) => {
     const { roomId } = req.params;
     const { userId } = req.body;
 
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
     const state = roomManager.getState(roomId);
     if (!state.musicFile) {
       return res.status(400).json({ error: "No music uploaded" });
     }
 
-    const newState = roomManager.playMusic(roomId, state.musicFile, userId);
+    const newState = roomManager.playMusic(
+      roomId,
+      state.musicFile,
+      userId
+    );
 
-    await MusicState.findOneAndUpdate(
+    const dbState = await MusicState.findOneAndUpdate(
       { roomId },
       {
         isPlaying: true,
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
-      }
+        playedBy: userId,
+      },
+      { new: true }
     );
 
     io.to(`room:${roomId}`).emit("music:play", {
       musicFile: newState.musicFile,
-      musicUrl: (await MusicState.findOne({ roomId })).musicUrl,
+      musicUrl: dbState.musicUrl,
       startedAt: newState.startedAt,
       playedBy: userId,
     });
 
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
     console.error("❌ playMusic:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 };
+
 
 exports.getRoomMusicList = async (req, res) => {
   try {
