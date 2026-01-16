@@ -68,44 +68,24 @@ exports.getGiftsByCategory = async (req, res) => {
     const { categoryId } = req.params; // ENTRANCE, FRAME, etc
     const { skip = 0, limit = 20 } = req.query;
 
-    const pipeline = [
-      {
-        $lookup: {
-          from: "storegiftcategories", // 🔥 CHANGE THIS TO YOUR REAL COLLECTION NAME
-          localField: "category",
-          foreignField: "_id",
-          as: "category",
-        },
-      },
-      { $unwind: "$category" },
-      {
-        $match: {
-          isAvailable: true,
-        },
-      },
-    ];
+    let query = { isAvailable: true };
 
     if (categoryId !== "ALL") {
-      pipeline.push({
-        $match: {
-          "category.type": categoryId,
-        },
-      });
+      query.effectType = categoryId; // 🔥 DIRECT FILTER
     }
 
-    pipeline.push(
-      { $sort: { createdAt: -1 } },
-      { $skip: parseInt(skip) },
-      { $limit: parseInt(limit) }
-    );
+    const gifts = await StoreGift.find(query)
+      .sort({ createdAt: -1 })
+      .skip(parseInt(skip))
+      .limit(parseInt(limit));
 
-    const gifts = await StoreGift.aggregate(pipeline);
+    const total = await StoreGift.countDocuments(query);
 
     return res.status(200).json({
       success: true,
       data: gifts,
       pagination: {
-        total: gifts.length,
+        total,
         skip: parseInt(skip),
         limit: parseInt(limit),
       },
