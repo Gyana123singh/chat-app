@@ -65,19 +65,20 @@ exports.getStoreCategory = async (req, res) => {
 ================================ */
 exports.getGiftsByCategory = async (req, res) => {
   try {
-    const { categoryId } = req.params; // ENTRANCE, FRAME, etc
+    const { categoryId } = req.params;
     const { skip = 0, limit = 20 } = req.query;
 
     let query = { isAvailable: true };
 
-    if (categoryId !== "ALL") {
-      query.effectType = categoryId; // 🔥 DIRECT FILTER
+    if (categoryId && categoryId !== "all") {
+      query.category = categoryId;
     }
 
     const gifts = await StoreGift.find(query)
-      .sort({ createdAt: -1 })
+      .populate("category", "type")
       .skip(parseInt(skip))
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .sort({ createdAt: -1 });
 
     const total = await StoreGift.countDocuments(query);
 
@@ -91,10 +92,10 @@ exports.getGiftsByCategory = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Filter Error:", error);
+    console.error("Get Gifts Error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Error fetching gifts",
     });
   }
 };
@@ -165,10 +166,15 @@ exports.deleteGift = async (req, res) => {
 ================================ */
 exports.createGift = async (req, res) => {
   try {
-    const { name, price, category } = req.body;
-
-    console.log("BODY:", req.body);
-    console.log("FILE:", req.file);
+    const {
+      name,
+      description,
+      price,
+      category,
+      animationUrl,
+      rarity,
+      effectType,
+    } = req.body;
 
     if (!name || !price || !category) {
       return res.status(400).json({
@@ -188,9 +194,28 @@ exports.createGift = async (req, res) => {
     let icon = "";
 
     if (req.file) {
+      const allowedTypes = [
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/gif",
+      ];
+
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message: "Only PNG, JPG, JPEG, GIF allowed",
+        });
+      }
+
       const uploadResult = await cloudinary.uploader.upload(req.file.path, {
         folder: "store_gifts",
         resource_type: "image",
+        transformation: [
+          { width: 300, height: 300, crop: "limit" },
+          { quality: "auto" },
+          { fetch_format: "auto" },
+        ],
       });
 
       icon = uploadResult.secure_url;
@@ -198,13 +223,16 @@ exports.createGift = async (req, res) => {
 
     const gift = await StoreGift.create({
       name,
+      description,
+      icon,
       price,
       category,
-      icon,
-      effectType: cat.type, // 🔥 auto map
+      animationUrl,
+      rarity,
+      effectType: effectType || cat.type, // 🔥 AUTO MAP FROM CATEGORY
     });
 
-    await gift.populate("category", "type");
+    await gift.populate("category", "name type");
 
     return res.status(201).json({
       success: true,
@@ -212,10 +240,10 @@ exports.createGift = async (req, res) => {
       data: gift,
     });
   } catch (error) {
-    console.error("❌ Create Gift Error:", error);
+    console.error("Create Gift Error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Error creating gift",
+      message: "Error creating gift",
     });
   }
 };
