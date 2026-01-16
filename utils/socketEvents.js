@@ -106,6 +106,7 @@ module.exports = (io) => {
         socket.emit("room:messages", messages);
 
         /* ===== MUSIC STATE ===== */
+        /* ===== MUSIC STATE ===== */
 
         const currentMusicState = roomManager.getState(roomId);
         const currentPosition = roomManager.getCurrentPosition(roomId);
@@ -116,21 +117,11 @@ module.exports = (io) => {
           isPlaying: currentMusicState.isPlaying,
           currentPosition,
           playedBy: currentMusicState.playedBy,
-          musicUrl: dbState?.musicUrl || null, // 🔥 FIX 1: send musicUrl
+          musicUrl: dbState?.musicUrl || null,
         };
 
+        // ✅ ONLY SEND STATE (NO AUTOPLAY)
         socket.emit("room:musicState", musicPayload);
-
-        // 🔥 FIX 2: if music is already playing, force ready event for this user
-        if (currentMusicState.isPlaying && dbState?.musicUrl) {
-          socket.emit("music:ready", {
-            musicFile: currentMusicState.musicFile,
-            musicUrl: dbState.musicUrl,
-            startedAt: currentMusicState.startedAt,
-            currentPosition,
-            playedBy: currentMusicState.playedBy,
-          });
-        }
 
         /* ===== VIDEO STATE ===== */
         socket.emit("room:videoState", {

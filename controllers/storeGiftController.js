@@ -108,13 +108,15 @@ exports.getAllGifts = async (req, res) => {
   }
 };
 
-/* ===============================
-   GET GIFTS BY CATEGORY
-================================ */
-// GET /api/store-gifts/category/:category
+// GET /api/store-gifts/get-gift-by-category/:category
 exports.getGiftsByCategory = async (req, res) => {
   try {
-    const gifts = await StoreGift.find();
+    const { category } = req.params;
+
+    const gifts = await StoreGift.find({
+      category: { $regex: `^${category}$`, $options: "i" }, // case-insensitive
+      isAvailable: true,
+    });
 
     return res.status(200).json({
       success: true,

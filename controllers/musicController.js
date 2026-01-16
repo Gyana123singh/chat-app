@@ -4,26 +4,92 @@ const fs = require("fs-extra");
 const path = require("path");
 const mongoose = require("mongoose");
 const RoomMusic = require("../models/musicRoom");
-exports.uploadAndPlayMusic = async (req, res, io) => {
+// exports.uploadAndPlayMusic = async (req, res, io) => {
+//   try {
+//     const { roomId } = req.params;
+//     const userId = req.body.userId || req.query.userId || req.headers["userid"];
+
+//     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+//     if (!userId) return res.status(400).json({ error: "userId is required" });
+//     if (!mongoose.Types.ObjectId.isValid(userId))
+//       return res.status(400).json({ error: "Invalid userId" });
+
+//     roomManager.initRoom(roomId);
+
+//     const { originalname, filename, size } = req.file;
+//     const musicUrl = `/stream/${roomId}/${filename}`;
+
+//     const newState = roomManager.playMusic(
+//       roomId,
+//       { name: originalname, filename, size },
+//       userId
+//     );
+
+//     await MusicState.findOneAndUpdate(
+//       { roomId },
+//       {
+//         roomId,
+//         musicFile: { name: originalname, fileSize: size },
+//         musicUrl,
+//         localFilePath: req.file.path,
+//         isPlaying: true,
+//         startedAt: new Date(newState.startedAt),
+//         pausedAt: 0,
+//         playedBy: new mongoose.Types.ObjectId(userId),
+//       },
+//       { upsert: true, new: true }
+//     );
+
+//     // 🔥 THIS CREATES THE LIST ITEM
+//     await RoomMusic.create({
+//       roomId,
+//       fileName: filename,
+//       originalName: originalname,
+//       fileSize: size,
+//       musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
+//       uploadedBy: new mongoose.Types.ObjectId(userId),
+//     });
+
+//     io.to(`room:${roomId}`).emit("music:ready", {
+//       musicFile: { name: originalname },
+//       musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
+//       startedAt: newState.startedAt,
+//       currentPosition: 0,
+//       playedBy: userId,
+//     });
+
+//     return res.json({
+//       success: true,
+//       message: "Music uploaded & ready",
+//       filename,
+//       musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
+//     });
+//   } catch (error) {
+//     console.error("❌ uploadAndPlayMusic:", error);
+//     res.status(500).json({ error: error.message });
+//   }
+// };
+
+exports.uploadMusic = async (req, res, io) => {
   try {
     const { roomId } = req.params;
-    const userId = req.body.userId || req.query.userId || req.headers["userid"];
+    const userId = req.body.userId || req.headers["userid"];
 
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-    if (!userId) return res.status(400).json({ error: "userId is required" });
-    if (!mongoose.Types.ObjectId.isValid(userId))
-      return res.status(400).json({ error: "Invalid userId" });
+    if (!userId) return res.status(400).json({ error: "userId required" });
 
     roomManager.initRoom(roomId);
 
     const { originalname, filename, size } = req.file;
-    const musicUrl = `/stream/${roomId}/${filename}`;
+    const musicUrl = `${req.protocol}://${req.get(
+      "host"
+    )}/stream/${roomId}/${filename}`;
 
-    const newState = roomManager.playMusic(
-      roomId,
-      { name: originalname, filename, size },
-      userId
-    );
+    // ✅ STORE ONLY — DO NOT PLAY
+    const state = roomManager.getState(roomId);
+    state.musicFile = { name: originalname, filename, size };
+    state.playedBy = userId.toString();
+    roomManager.roomMusicStates.set(roomId, state);
 
     await MusicState.findOneAndUpdate(
       { roomId },
@@ -32,41 +98,59 @@ exports.uploadAndPlayMusic = async (req, res, io) => {
         musicFile: { name: originalname, fileSize: size },
         musicUrl,
         localFilePath: req.file.path,
+        isPlaying: false, // 🔥 NOT PLAYING
+        startedAt: null,
+        pausedAt: 0,
+        playedBy: userId,
+      },
+      { upsert: true }
+    );
+
+    // ✅ NOTIFY ROOM (NO AUTOPLAY)
+    io.to(`room:${roomId}`).emit("music:uploaded", {
+      musicFile: state.musicFile,
+      musicUrl,
+    });
+
+    res.json({ success: true, message: "Music uploaded (waiting for play)" });
+  } catch (err) {
+    console.error("❌ uploadMusic:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.playMusic = async (req, res, io) => {
+  try {
+    const { roomId } = req.params;
+    const { userId } = req.body;
+
+    const state = roomManager.getState(roomId);
+    if (!state.musicFile) {
+      return res.status(400).json({ error: "No music uploaded" });
+    }
+
+    const newState = roomManager.playMusic(roomId, state.musicFile, userId);
+
+    await MusicState.findOneAndUpdate(
+      { roomId },
+      {
         isPlaying: true,
         startedAt: new Date(newState.startedAt),
         pausedAt: 0,
-        playedBy: new mongoose.Types.ObjectId(userId),
-      },
-      { upsert: true, new: true }
+      }
     );
 
-    // 🔥 THIS CREATES THE LIST ITEM
-    await RoomMusic.create({
-      roomId,
-      fileName: filename,
-      originalName: originalname,
-      fileSize: size,
-      musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
-      uploadedBy: new mongoose.Types.ObjectId(userId),
-    });
-
-    io.to(`room:${roomId}`).emit("music:ready", {
-      musicFile: { name: originalname },
-      musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
+    io.to(`room:${roomId}`).emit("music:play", {
+      musicFile: newState.musicFile,
+      musicUrl: (await MusicState.findOne({ roomId })).musicUrl,
       startedAt: newState.startedAt,
-      currentPosition: 0,
       playedBy: userId,
     });
 
-    return res.json({
-      success: true,
-      message: "Music uploaded & ready",
-      filename,
-      musicUrl: `${req.protocol}://${req.get("host")}${musicUrl}`,
-    });
-  } catch (error) {
-    console.error("❌ uploadAndPlayMusic:", error);
-    res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ playMusic:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 

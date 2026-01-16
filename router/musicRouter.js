@@ -31,12 +31,16 @@ module.exports = (io) => {
   const upload = multer({ storage });
 
   router.post("/upload/:roomId", upload.single("music"), (req, res) =>
-    musicController.uploadAndPlayMusic(req, res, io)
+    musicController.uploadMusic(req, res, io)
   );
   router.get("/list/:roomId", musicController.getRoomMusicList);
   router.delete(
     "/delete/:roomId/:musicId",
     musicController.deleteRoomMusicList
+  );
+  // ▶️ PLAY MUSIC (USER ACTION REQUIRED)
+  router.post("/play/:roomId", (req, res) =>
+    musicController.playMusic(req, res, io)
   );
 
   router.post("/pause/:roomId", (req, res) =>
