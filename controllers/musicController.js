@@ -135,9 +135,6 @@ exports.playMusic = async (req, res, io) => {
     const { roomId } = req.params;
     const { userId } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required" });
-    }
 
     const state = roomManager.getState(roomId);
     if (!state.musicFile) {
