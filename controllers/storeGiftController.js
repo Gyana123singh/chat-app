@@ -196,15 +196,7 @@ exports.deleteGift = async (req, res) => {
 
 exports.createGift = async (req, res) => {
   try {
-    const {
-      name,
-      description,
-      price,
-      category,
-      animationUrl,
-      rarity,
-      effectType,
-    } = req.body;
+    const { name, price, category } = req.body;
 
     // ✅ STRONG VALIDATION
     if (!name || !price || !category) {
@@ -237,13 +229,9 @@ exports.createGift = async (req, res) => {
 
     const gift = await StoreGift.create({
       name,
-      description,
       icon,
       price,
       category,
-      animationUrl,
-      rarity,
-      effectType: effectType || cat.type || "NONE",
     });
 
     await gift.populate("category", "type title");
