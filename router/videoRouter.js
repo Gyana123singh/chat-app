@@ -10,7 +10,7 @@ module.exports = (io) => {
   const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
       const { roomId } = req.params;
-     const dir = path.resolve(process.cwd(), "uploads", "videos", roomId);
+      const dir = path.resolve(process.cwd(), "uploads", "videos", roomId);
       await fs.ensureDir(dir);
       cb(null, dir);
     },
@@ -32,7 +32,10 @@ module.exports = (io) => {
 
   // ✅ ALL USERS CAN UPLOAD
   router.post("/upload/:roomId", upload.single("video"), (req, res) =>
-    videoController.uploadAndPlayVideo(req, res, io)
+    videoController.uploadVideo(req, res, io)
+  );
+  router.post("/play/:roomId", (req, res) =>
+    videoController.playVideo(req, res, io)
   );
 
   router.get("/list/:roomId", videoController.getVideoList);
