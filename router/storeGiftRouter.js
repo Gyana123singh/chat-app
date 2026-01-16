@@ -7,6 +7,7 @@ const multer = require("../middleware/multer.middleware");
 // Public routes
 router.post("/addStoreCategory", giftController.addStoreCategory);
 router.get("/getStoreCategory", giftController.getStoreCategory);
+router.get("/get-all-gifts", giftController.getAllGifts); // ✅ ADD THIS
 router.get("/get-gift-by-category", giftController.getGiftsByCategory);
 router.get("/:giftId", giftController.getGiftDetails);
 router.delete("/delete/:giftId", giftController.deleteGift);

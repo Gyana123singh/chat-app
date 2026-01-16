@@ -89,6 +89,25 @@ exports.getStoreCategory = async (req, res) => {
   }
 };
 
+exports.getAllGifts = async (req, res) => {
+  try {
+    const gifts = await StoreGift.find({ isAvailable: true }).sort({
+      createdAt: -1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: gifts,
+    });
+  } catch (error) {
+    console.error("❌ Fetch All Gifts Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching gifts",
+    });
+  }
+};
+
 /* ===============================
    GET GIFTS BY CATEGORY
 ================================ */
