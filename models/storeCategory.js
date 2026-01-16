@@ -6,7 +6,10 @@ const storeCategorySchema = new mongoose.Schema(
       type: String,
       enum: ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI", "NONE"],
     },
-
+    title: {
+      type: String, // optional display name
+      default: "",
+    },
     isActive: {
       type: Boolean,
       default: true,

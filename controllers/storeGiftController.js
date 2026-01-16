@@ -5,6 +5,8 @@ const cloudinary = require("../config/cloudinary");
 /* ===============================
    ADD STORE CATEGORY (ADMIN)
 ================================ */
+// controllers/storeGiftController.js
+// controllers/storeGiftController.js
 exports.addStoreCategory = async (req, res) => {
   try {
     const { type } = req.body;
@@ -12,24 +14,50 @@ exports.addStoreCategory = async (req, res) => {
     if (!type) {
       return res.status(400).json({
         success: false,
-        message: "Category name and type are required",
+        message: "Category type is required",
+      });
+    }
+
+    const allowedTypes = [
+      "ENTRANCE",
+      "FRAME",
+      "RING",
+      "BUBBLE",
+      "THEME",
+      "EMOJI",
+      "NONE",
+    ];
+
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid category type",
+      });
+    }
+
+    const exists = await StoreCategory.findOne({ type });
+
+    if (exists) {
+      return res.status(400).json({
+        success: false,
+        message: "Category already exists",
       });
     }
 
     const category = await StoreCategory.create({
       type,
+      title: type, // display same as type
     });
 
     return res.status(201).json({
       success: true,
-      message: "Store category created",
       data: category,
     });
   } catch (error) {
-    console.error("Add Store Category Error:", error);
+    console.error("❌ Add Category Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error",
+      message: error.message || "Server error",
     });
   }
 };
