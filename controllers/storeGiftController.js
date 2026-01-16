@@ -65,22 +65,53 @@ exports.getStoreCategory = async (req, res) => {
 ================================ */
 exports.getGiftsByCategory = async (req, res) => {
   try {
-    const { categoryId } = req.params;
+    const { categoryId } = req.params; // this is TYPE: ENTRANCE, FRAME, etc
     const { skip = 0, limit = 20 } = req.query;
 
-    let query = { isAvailable: true };
+    const pipeline = [
+      {
+        $lookup: {
+          from: "storecategories", // ⚠️ must be exact MongoDB collection name
+          localField: "category",
+          foreignField: "_id",
+          as: "category",
+        },
+      },
+      { $unwind: "$category" },
+      {
+        $match: {
+          isAvailable: true,
+        },
+      },
+    ];
 
-    if (categoryId && categoryId !== "all") {
-      query.category = categoryId;
+    if (categoryId && categoryId !== "ALL") {
+      pipeline.push({
+        $match: {
+          "category.type": categoryId, // MATCH BY TYPE
+        },
+      });
     }
 
-    const gifts = await StoreGift.find(query)
-      .populate("category", "type")
-      .skip(parseInt(skip))
-      .limit(parseInt(limit))
-      .sort({ createdAt: -1 });
+    pipeline.push(
+      { $sort: { createdAt: -1 } },
+      { $skip: parseInt(skip) },
+      { $limit: parseInt(limit) }
+    );
 
-    const total = await StoreGift.countDocuments(query);
+    const gifts = await StoreGift.aggregate(pipeline);
+
+    // get total count
+    const countPipeline = pipeline.filter(
+      (stage) => !stage.$skip && !stage.$limit
+    );
+
+    const totalResult = await StoreGift.aggregate([
+      ...countPipeline,
+      { $count: "total" },
+    ]);
+
+    const total = totalResult[0]?.total || 0;
 
     return res.status(200).json({
       success: true,
@@ -92,10 +123,10 @@ exports.getGiftsByCategory = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get Gifts Error:", error);
+    console.error("❌ Get Gifts Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Error fetching gifts",
+      message: error.message || "Error fetching gifts",
     });
   }
 };
