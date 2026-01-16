@@ -192,6 +192,7 @@ exports.deleteGift = async (req, res) => {
 /* ===============================
    CREATE GIFT (ADMIN)
 ================================ */
+
 exports.createGift = async (req, res) => {
   try {
     const {
@@ -204,10 +205,19 @@ exports.createGift = async (req, res) => {
       effectType,
     } = req.body;
 
+    // ✅ STRONG VALIDATION
     if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
         message: "Name, price and category are required",
+      });
+    }
+
+    // ✅ OBJECT ID CHECK (THIS FIXES YOUR ERROR)
+    if (!mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid category ID",
       });
     }
 
@@ -220,9 +230,8 @@ exports.createGift = async (req, res) => {
     }
 
     let icon = "";
-
     if (req.file) {
-      icon = req.file.path; // ✅ Cloudinary URL directly
+      icon = req.file.path;
     }
 
     const gift = await StoreGift.create({
@@ -236,7 +245,7 @@ exports.createGift = async (req, res) => {
       effectType: effectType || cat.type || "NONE",
     });
 
-    await gift.populate("category", "name type");
+    await gift.populate("category", "type title");
 
     return res.status(201).json({
       success: true,
@@ -244,9 +253,7 @@ exports.createGift = async (req, res) => {
       data: gift,
     });
   } catch (error) {
-    console.error("❌ Create Gift Error Full:", error);
-    console.error("❌ Error Message:", error.message);
-
+    console.error("❌ Create Gift Error:", error);
     return res.status(500).json({
       success: false,
       message: error.message || "Error creating gift",
