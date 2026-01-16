@@ -41,9 +41,9 @@ module.exports = (io) => {
 
       socket.data.roomId = roomId;
       socket.data.user = user;
-
-      // Init music state
-      if (!roomManager.roomMusicStates.has(roomId)) {
+      // 🔥 Init music state safely (no overwrite if already playing)
+      const currentState = roomManager.getState(roomId);
+      if (!currentState || !currentState.isPlaying) {
         roomManager.initRoom(roomId);
       }
 

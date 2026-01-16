@@ -27,8 +27,7 @@ const storeGiftSchema = new mongoose.Schema(
     },
 
     category: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "StoreCategory",
+      type: String,
     },
 
     rarity: {

@@ -92,39 +92,25 @@ exports.getStoreCategory = async (req, res) => {
 /* ===============================
    GET GIFTS BY CATEGORY
 ================================ */
+// GET /api/store-gifts/category/:category
 exports.getGiftsByCategory = async (req, res) => {
   try {
-    const { categoryId } = req.params;
-    const { skip = 0, limit = 20 } = req.query;
+    const { category } = req.params;
 
-    let query = { isAvailable: true };
-
-    if (categoryId && categoryId !== "all") {
-      query.category = categoryId;
-    }
-
-    const gifts = await StoreGift.find(query)
-      .populate("category", "type")
-      .skip(parseInt(skip))
-      .limit(parseInt(limit))
-      .sort({ createdAt: -1 });
-
-    const total = await StoreGift.countDocuments(query);
+    const gifts = await StoreGift.find({
+      category: category,
+      isAvailable: true,
+    });
 
     return res.status(200).json({
       success: true,
       data: gifts,
-      pagination: {
-        total,
-        skip: parseInt(skip),
-        limit: parseInt(limit),
-      },
     });
   } catch (error) {
-    console.error("Get Gifts Error:", error);
-    return res.status(500).json({
+    console.error("❌ Fetch By Category Error:", error);
+    res.status(500).json({
       success: false,
-      message: "Error fetching gifts",
+      message: "Error fetching gifts by category",
     });
   }
 };
@@ -198,27 +184,11 @@ exports.createGift = async (req, res) => {
   try {
     const { name, price, category } = req.body;
 
-    // ✅ STRONG VALIDATION
+    // Validation
     if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
         message: "Name, price and category are required",
-      });
-    }
-
-    // ✅ OBJECT ID CHECK (THIS FIXES YOUR ERROR)
-    if (!mongoose.Types.ObjectId.isValid(category)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid category ID",
-      });
-    }
-
-    const cat = await StoreCategory.findById(category);
-    if (!cat) {
-      return res.status(404).json({
-        success: false,
-        message: "Category not found",
       });
     }
 
@@ -229,12 +199,10 @@ exports.createGift = async (req, res) => {
 
     const gift = await StoreGift.create({
       name,
-      icon,
       price,
-      category,
+      category, // string now
+      icon,
     });
-
-    await gift.populate("category", "type title");
 
     return res.status(201).json({
       success: true,
