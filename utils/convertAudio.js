@@ -1,6 +1,9 @@
 const ffmpeg = require("fluent-ffmpeg");
 const path = require("path");
 
+// ✅ ADD HERE
+ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || "ffmpeg");
+
 function convertToMp3(inputPath) {
   return new Promise((resolve, reject) => {
     const outputPath = inputPath.replace(path.extname(inputPath), ".mp3");
