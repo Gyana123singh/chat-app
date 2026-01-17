@@ -151,7 +151,7 @@ exports.playMusic = async (req, res, io) => {
     { roomId },
     {
       isPlaying: true,
-      startedAt: new Date(newState.startedAt),
+      startedAt: newState.startedAt, // ✅ FIX (was Date)
       pausedAt: 0,
       playedBy: userId,
     }
@@ -160,14 +160,13 @@ exports.playMusic = async (req, res, io) => {
   io.to(`room:${roomId}`).emit("music:play", {
     musicFile: newState.musicFile, // ✅ REQUIRED
     musicUrl: dbState.musicUrl,
-    startedAt: newState.startedAt,
+    startedAt: newState.startedAt, // ✅ FIX
+    currentPosition: 0, // ✅ FIX
     playedBy: userId,
   });
 
   res.json({ success: true });
 };
-
-
 
 exports.getRoomMusicList = async (req, res) => {
   try {
@@ -323,13 +322,13 @@ exports.resumeMusic = async (req, res, io) => {
       { roomId },
       {
         isPlaying: true,
-        startedAt: new Date(newState.startedAt),
+        startedAt: newState.startedAt, // ✅ FIX
         pausedAt: 0,
       }
     );
 
     io.to(`room:${roomId}`).emit("music:resumed", {
-      startedAt: newState.startedAt,
+      startedAt: newState.startedAt, // ✅ FIX
     });
 
     res.json({ success: true });

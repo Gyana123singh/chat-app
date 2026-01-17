@@ -106,7 +106,6 @@ module.exports = (io) => {
         socket.emit("room:messages", messages);
 
         /* ===== MUSIC STATE ===== */
-        /* ===== MUSIC STATE ===== */
 
         const currentMusicState = roomManager.getState(roomId);
         const currentPosition = roomManager.getCurrentPosition(roomId);
@@ -115,6 +114,7 @@ module.exports = (io) => {
         const musicPayload = {
           musicFile: currentMusicState.musicFile,
           isPlaying: currentMusicState.isPlaying,
+          startedAt: currentMusicState.startedAt, // ✅ FIX (IMPORTANT)
           currentPosition,
           playedBy: currentMusicState.playedBy,
           musicUrl: dbState?.musicUrl || null,
