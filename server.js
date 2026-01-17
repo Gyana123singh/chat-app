@@ -32,7 +32,7 @@ const MusicState = require("./models/musicState");
 const app = express();
 connectMongose();
 
-/* ===================== 🔥 RESET MUSIC STATE ON SERVER START ===================== */
+/* ===================== RESET MUSIC STATE ===================== */
 (async () => {
   try {
     await MusicState.updateMany(
@@ -47,21 +47,18 @@ connectMongose();
         playedBy: null,
       }
     );
-
-    console.log("🧹 All music states reset on server start");
+    console.log("🧹 Music states reset");
   } catch (err) {
-    console.error("❌ Failed to reset music states:", err);
+    console.error("❌ Music reset failed:", err);
   }
 })();
-/* =============================================================================== */
 
 const PORT = process.env.PORT || 5001;
 
 /* ===================== MIDDLEWARE ===================== */
-
 app.use(
   cors({
-    origin: true,
+    origin: "*",
     credentials: true,
   })
 );
@@ -71,7 +68,7 @@ app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
 app.use(
   session({
-    secret: "secret123",
+    secret: process.env.SESSION_SECRET || "secret123",
     resave: false,
     saveUninitialized: true,
   })
@@ -79,8 +76,7 @@ app.use(
 
 app.use(passport.initialize());
 
-/* ===================== ROUTES (BEFORE io) ===================== */
-
+/* ===================== ROUTES ===================== */
 app.use("/auth", authRoutes);
 app.use("/api", adminRoutes);
 app.use("/api/users", usersRouter);
@@ -100,8 +96,7 @@ app.get("/", (req, res) => {
   res.send("API is running...");
 });
 
-/* ===================== SOCKET + MUSIC ROUTES ===================== */
-
+/* ===================== SOCKET ===================== */
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -110,24 +105,21 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true,
   },
-  maxHttpBufferSize: 100 * 1024 * 1024,
   transports: ["websocket", "polling"],
+  maxHttpBufferSize: 100 * 1024 * 1024,
 });
-app.set("io", io); // <----- ADD THIS LINE
 
-// ===================== CREATE UPLOADS ROOT FOLDER =====================
+app.set("io", io);
+
+/* ===================== UPLOAD ROOT ===================== */
 const uploadDir = path.resolve(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log("📁 Created uploads directory:", uploadDir);
-}
+fs.ensureDirSync(uploadDir);
 
-// ✅ MUSIC ROUTES
+/* ===================== MUSIC ROUTES ===================== */
 const musicRouter = require("./router/musicRouter")(io);
 app.use("/api/music", musicRouter);
 
-/* ===================== AUDIO STREAM ROUTE ===================== */
-
+/* ===================== AUDIO STREAM ===================== */
 app.get("/stream/:roomId/:filename", (req, res) => {
   const filePath = path.resolve(
     process.cwd(),
@@ -136,10 +128,7 @@ app.get("/stream/:roomId/:filename", (req, res) => {
     req.params.filename
   );
 
-  if (!fs.existsSync(filePath)) {
-    console.log("❌ File not found:", filePath);
-    return res.status(404).end();
-  }
+  if (!fs.existsSync(filePath)) return res.sendStatus(404);
 
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
@@ -150,33 +139,26 @@ app.get("/stream/:roomId/:filename", (req, res) => {
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-    const chunkSize = end - start + 1;
-    const file = fs.createReadStream(filePath, { start, end });
-
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${fileSize}`,
       "Accept-Ranges": "bytes",
-      "Content-Length": chunkSize,
+      "Content-Length": end - start + 1,
       "Content-Type": "audio/mpeg",
     });
 
-    file.pipe(res);
+    fs.createReadStream(filePath, { start, end }).pipe(res);
   } else {
     res.writeHead(200, {
       "Content-Length": fileSize,
       "Content-Type": "audio/mpeg",
     });
-
     fs.createReadStream(filePath).pipe(res);
   }
 });
 
-/* ===================== VIDEO ROUTES ===================== */
-
+/* ===================== VIDEO ===================== */
 const videoRouter = require("./router/videoRouter")(io);
 app.use("/api/video", videoRouter);
-
-
 
 app.get("/video-stream/:roomId/:filename", (req, res) => {
   const filePath = path.resolve(
@@ -187,10 +169,7 @@ app.get("/video-stream/:roomId/:filename", (req, res) => {
     req.params.filename
   );
 
-  if (!fs.existsSync(filePath)) {
-    console.log("❌ Video file not found:", filePath);
-    return res.status(404).end();
-  }
+  if (!fs.existsSync(filePath)) return res.sendStatus(404);
 
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
@@ -201,79 +180,53 @@ app.get("/video-stream/:roomId/:filename", (req, res) => {
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-    const chunkSize = end - start + 1;
-    const file = fs.createReadStream(filePath, { start, end });
-
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${fileSize}`,
       "Accept-Ranges": "bytes",
-      "Content-Length": chunkSize,
+      "Content-Length": end - start + 1,
       "Content-Type": "video/mp4",
     });
 
-    file.pipe(res);
+    fs.createReadStream(filePath, { start, end }).pipe(res);
   } else {
     res.writeHead(200, {
       "Content-Length": fileSize,
       "Content-Type": "video/mp4",
     });
-
     fs.createReadStream(filePath).pipe(res);
   }
 });
 
+/* ===================== SOCKET EVENTS ===================== */
 require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
 require("./utils/giftSocketEvents")(io);
 require("./utils/socketEventPrivateChat")(io);
 
 global.io = io;
-console.log("🚀 Socket.IO + Music Streaming initialized successfully");
+
+console.log("🚀 Socket.IO + Music Streaming ready");
 
 /* ===================== CRON ===================== */
-
 const cron = require("./utils/cron");
 let cronInstance = null;
 
-/* ===================== START SERVER ===================== */
-
+/* ===================== START ===================== */
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔌 Socket.IO server ready on port ${PORT}`);
-  console.log(`🎵 Music streaming ready: http://localhost:${PORT}/stream/...`);
-
   cronInstance = cron;
   cronInstance.startCronJobs();
-  console.log("🕐 Cron jobs initialized ✅");
 });
 
-module.exports = { app, io, server };
-
-/* ===================== GRACEFUL SHUTDOWN ===================== */
-
-const gracefulShutdown = (signal) => {
-  console.log(`🛑 Received ${signal}. Shutting down gracefully...`);
-
-  if (cronInstance && cronInstance.stopCronJobs) {
-    cronInstance.stopCronJobs();
-    console.log("🛑 All cron jobs stopped");
-  }
-
-  server.close((err) => {
-    if (err) {
-      console.error("❌ Server close error:", err);
-      process.exit(1);
-    }
-    console.log("✅ Server closed cleanly");
-    process.exit(0);
-  });
-
-  setTimeout(() => {
-    console.error("⚠️ Force closing server after timeout");
-    process.exit(1);
-  }, 10000);
+/* ===================== SHUTDOWN ===================== */
+const gracefulShutdown = () => {
+  console.log("🛑 Server shutting down...");
+  if (cronInstance?.stopCronJobs) cronInstance.stopCronJobs();
+  server.close(() => process.exit(0));
 };
 
 process.on("SIGINT", gracefulShutdown);
 process.on("SIGTERM", gracefulShutdown);
 process.on("SIGQUIT", gracefulShutdown);
+
+module.exports = { app, io, server };
