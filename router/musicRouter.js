@@ -9,45 +9,38 @@ module.exports = (io) => {
 
   const storage = multer.diskStorage({
     destination: async (req, file, cb) => {
-      const { roomId } = req.params;
-      const dir = path.resolve(process.cwd(), "uploads", roomId);
-      await fs.ensureDir(dir);
-      cb(null, dir);
-    },
+      try {
+        const { roomId } = req.params;
 
+        // 🔥 ALWAYS point to root /uploads
+        // const dir = path.join(__dirname, "..", "..", "uploads", roomId);
+        // ✅ FIXED – Render safe, no conflict with video
+        const dir = path.resolve(process.cwd(), "uploads", roomId);
+
+        await fs.ensureDir(dir);
+        cb(null, dir);
+      } catch (err) {
+        cb(err);
+      }
+    },
     filename: (req, file, cb) => {
       cb(null, Date.now() + "-" + file.originalname);
     },
   });
 
-  const upload = multer({
-    storage,
-
-    // ✅ FINAL FIX — OPUS BLOCKED
-    fileFilter: (req, file, cb) => {
-      const allowedExt = [".mp3", ".m4a", ".aac", ".wav"];
-      const ext = path.extname(file.originalname).toLowerCase();
-
-      if (!allowedExt.includes(ext)) {
-        return cb(
-          new Error("Only MP3 / M4A / AAC / WAV audio allowed")
-        );
-      }
-
-      cb(null, true);
-    },
-
-    limits: {
-      fileSize: 100 * 1024 * 1024, // 100MB
-    },
-  });
+  const upload = multer({ storage });
 
   router.post("/upload/:roomId", upload.single("music"), (req, res) =>
     musicController.uploadMusic(req, res, io)
   );
-
+  // ▶️ PLAY MUSIC (USER ACTION REQUIRED)
   router.post("/play/:roomId", (req, res) =>
     musicController.playMusic(req, res, io)
+  );
+  router.get("/list/:roomId", musicController.getRoomMusicList);
+  router.delete(
+    "/delete/:roomId/:musicId",
+    musicController.deleteRoomMusicList
   );
 
   router.post("/pause/:roomId", (req, res) =>
@@ -62,12 +55,7 @@ module.exports = (io) => {
     musicController.stopMusic(req, res, io)
   );
 
-  router.get("/list/:roomId", musicController.getRoomMusicList);
   router.get("/state/:roomId", musicController.getMusicState);
-  router.delete(
-    "/delete/:roomId/:musicId",
-    musicController.deleteRoomMusicList
-  );
 
   return router;
 };

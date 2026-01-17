@@ -32,27 +32,6 @@ const MusicState = require("./models/musicState");
 const app = express();
 connectMongose();
 
-/* ===================== RESET MUSIC STATE ===================== */
-(async () => {
-  try {
-    await MusicState.updateMany(
-      {},
-      {
-        isPlaying: false,
-        pausedAt: 0,
-        startedAt: null,
-        musicFile: null,
-        musicUrl: null,
-        localFilePath: null,
-        playedBy: null,
-      }
-    );
-    console.log("🧹 Music states reset");
-  } catch (err) {
-    console.error("❌ Music reset failed:", err);
-  }
-})();
-
 const PORT = process.env.PORT || 5001;
 
 /* ===================== MIDDLEWARE ===================== */

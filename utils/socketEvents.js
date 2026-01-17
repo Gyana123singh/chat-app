@@ -2,6 +2,8 @@ const roomManager = require("../utils/musicRoomManager");
 const VideoRoom = require("../models/videoRoom");
 const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
+const restoreMusicState = require("../utils/restoreMusicState");
+
 const mongoose = require("mongoose");
 
 module.exports = (io) => {
@@ -42,10 +44,9 @@ module.exports = (io) => {
       socket.data.roomId = roomId;
       socket.data.user = user;
       // 🔥 Init music state safely (no overwrite if already playing)
-      const currentState = roomManager.getState(roomId);
-      if (!currentState || !currentState.isPlaying) {
-        roomManager.initRoom(roomId);
-      }
+      // ✅ CORRECT MUSIC STATE HANDLING
+      roomManager.initRoom(roomId);
+      await restoreMusicState(roomId);
 
       // Track users
       if (!roomUsers.has(roomId)) {
