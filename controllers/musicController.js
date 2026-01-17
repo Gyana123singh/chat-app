@@ -4,6 +4,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const mongoose = require("mongoose");
 const RoomMusic = require("../models/musicRoom");
+const convertToMp3 = require("../utils/convertAudio");
 
 exports.uploadMusic = async (req, res, io) => {
   try {
@@ -15,7 +16,25 @@ exports.uploadMusic = async (req, res, io) => {
 
     roomManager.initRoom(roomId);
 
-    const { originalname, filename, size } = req.file;
+    let filePath = req.file.path;
+    let filename = req.file.filename;
+    let originalname = req.file.originalname;
+    const size = req.file.size;
+
+    // ✅ OPUS → MP3 CONVERSION
+    if (
+      req.file.mimetype.includes("opus") ||
+      originalname.toLowerCase().endsWith(".opus")
+    ) {
+      const mp3Path = await convertToMp3(filePath);
+
+      await fs.remove(filePath); // delete opus
+
+      filePath = mp3Path;
+      filename = path.basename(mp3Path);
+      originalname = originalname.replace(/\.opus$/i, ".mp3");
+    }
+
     const musicUrl = `${req.protocol}://${req.get(
       "host"
     )}/stream/${roomId}/${filename}`;
@@ -27,7 +46,7 @@ exports.uploadMusic = async (req, res, io) => {
         roomId,
         musicFile: { name: originalname, fileSize: size },
         musicUrl,
-        localFilePath: req.file.path,
+        localFilePath: filePath,
         isPlaying: false,
         startedAt: null,
         pausedAt: 0,
