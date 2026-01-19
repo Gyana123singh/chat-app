@@ -2,6 +2,19 @@ const VideoRoom = require("../models/videoRoom");
 const fs = require("fs-extra");
 const path = require("path");
 
+function getCurrentVideoTime(video) {
+  if (!video) return 0;
+
+  // playing → calculate from startedAt
+  if (video.isPlaying && video.startedAt) {
+    const diff = (Date.now() - new Date(video.startedAt).getTime()) / 1000;
+    return video.currentTime + diff;
+  }
+
+  // paused → return stored time
+  return video.currentTime || 0;
+}
+
 exports.uploadVideo = async (req, res, io) => {
   try {
     const { roomId } = req.params;
@@ -52,7 +65,7 @@ exports.uploadVideo = async (req, res, io) => {
             pausedAt: null,
           },
         },
-      }
+      },
     );
 
     io.to(`room:${roomId}`).emit("video:uploaded", {
@@ -76,18 +89,21 @@ exports.playVideo = async (req, res, io) => {
       return res.status(400).json({ error: "No video uploaded" });
     }
 
+    const currentTime = getCurrentVideoTime(videoRoom.video);
+
     await VideoRoom.findOneAndUpdate(
       { roomId },
       {
         "video.isPlaying": true,
         "video.isPaused": false,
         "video.startedAt": new Date(),
-      }
+        "video.currentTime": currentTime,
+      },
     );
 
     io.to(`room:${roomId}`).emit("video:play", {
       videoUrl: `/video-stream/${roomId}/${videoRoom.video.fileName}`,
-      startedBy: userId,
+      currentTime,
       startedAt: Date.now(),
     });
 
@@ -138,20 +154,27 @@ exports.pauseVideo = async (req, res, io) => {
   try {
     const { roomId } = req.params;
 
+    const videoRoom = await VideoRoom.findOne({ roomId });
+    if (!videoRoom) return res.json({ success: true });
+
+    const currentTime = getCurrentVideoTime(videoRoom.video);
+
     await VideoRoom.findOneAndUpdate(
       { roomId },
       {
         "video.isPaused": true,
         "video.isPlaying": false,
+        "video.currentTime": currentTime,
         "video.pausedAt": new Date(),
-      }
+      },
     );
 
-    io.to(`room:${roomId}`).emit("video:paused");
+    io.to(`room:${roomId}`).emit("video:paused", { currentTime });
+
     res.json({ success: true });
-  } catch (error) {
-    console.error("❌ pauseVideo:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("❌ pauseVideo:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -159,19 +182,27 @@ exports.resumeVideo = async (req, res, io) => {
   try {
     const { roomId } = req.params;
 
+    const videoRoom = await VideoRoom.findOne({ roomId });
+    if (!videoRoom) return res.json({ success: true });
+
     await VideoRoom.findOneAndUpdate(
       { roomId },
       {
         "video.isPaused": false,
         "video.isPlaying": true,
-      }
+        "video.startedAt": new Date(),
+      },
     );
 
-    io.to(`room:${roomId}`).emit("video:resumed");
+    io.to(`room:${roomId}`).emit("video:resumed", {
+      currentTime: videoRoom.video.currentTime,
+      startedAt: Date.now(),
+    });
+
     res.json({ success: true });
-  } catch (error) {
-    console.error("❌ resumeVideo:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error("❌ resumeVideo:", err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -187,7 +218,7 @@ exports.stopVideo = async (req, res, io) => {
         "uploads",
         "videos",
         roomId,
-        videoRoom.video.fileName
+        videoRoom.video.fileName,
       );
 
       if (fs.existsSync(filePath)) {
@@ -210,7 +241,7 @@ exports.stopVideo = async (req, res, io) => {
           startedAt: null,
           pausedAt: null,
         },
-      }
+      },
     );
 
     io.to(`room:${roomId}`).emit("video:stopped");

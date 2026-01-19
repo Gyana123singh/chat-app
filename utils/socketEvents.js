@@ -83,7 +83,7 @@ module.exports = (io) => {
               },
             },
           },
-          { new: true }
+          { new: true },
         );
 
         /* ===== USERS LIST ===== */
@@ -125,10 +125,24 @@ module.exports = (io) => {
         socket.emit("room:musicState", musicPayload);
 
         /* ===== VIDEO STATE ===== */
+        let currentTime = 0;
+
+        if (videoRoom.video) {
+          if (videoRoom.video.isPlaying && videoRoom.video.startedAt) {
+            currentTime =
+              (Date.now() - new Date(videoRoom.video.startedAt).getTime()) /
+                1000 +
+              (videoRoom.video.currentTime || 0);
+          } else {
+            currentTime = videoRoom.video.currentTime || 0;
+          }
+        }
+
         socket.emit("room:videoState", {
-          video: videoRoom.video,
-          frameSync: videoRoom.frameSync,
-          stats: videoRoom.stats,
+          video: {
+            ...videoRoom.video.toObject(),
+            currentTime,
+          },
         });
       } catch (err) {
         console.error("❌ room:join error:", err);
@@ -138,78 +152,35 @@ module.exports = (io) => {
     /* =========================
    VIDEO CONTROLS (ALL USERS)
 ========================= */
+    /* =========================
+   VIDEO CONTROLS (SYNC SAFE)
+========================= */
 
-    socket.on("video:play", async ({ roomId, userId }) => {
-      try {
-        const videoRoom = await VideoRoom.findOne({ roomId });
-        if (!videoRoom) return;
+    socket.on("video:play", ({ roomId, userId }) => {
+      if (!roomId) return;
 
-        await VideoRoom.findOneAndUpdate(
-          { roomId },
-          {
-            "video.isPlaying": true,
-            "video.isPaused": false,
-            "video.startedAt": new Date(),
-            "video.isVisible": true,
-          }
-        );
-
-        io.to(`room:${roomId}`).emit("video:started", { startedBy: userId });
-      } catch (err) {
-        console.error("❌ video:play error:", err);
-      }
+      // ✅ socket only broadcasts (no DB write)
+      io.to(`room:${roomId}`).emit("video:started", {
+        startedBy: userId,
+      });
     });
 
-    socket.on("video:pause", async ({ roomId }) => {
-      try {
-        await VideoRoom.findOneAndUpdate(
-          { roomId },
-          {
-            "video.isPaused": true,
-            "video.isPlaying": false,
-            "video.pausedAt": new Date(),
-          }
-        );
+    socket.on("video:pause", ({ roomId }) => {
+      if (!roomId) return;
 
-        io.to(`room:${roomId}`).emit("video:paused");
-      } catch (err) {
-        console.error("❌ video:pause error:", err);
-      }
+      io.to(`room:${roomId}`).emit("video:paused");
     });
 
-    socket.on("video:resume", async ({ roomId }) => {
-      try {
-        await VideoRoom.findOneAndUpdate(
-          { roomId },
-          {
-            "video.isPaused": false,
-            "video.isPlaying": true,
-          }
-        );
+    socket.on("video:resume", ({ roomId }) => {
+      if (!roomId) return;
 
-        io.to(`room:${roomId}`).emit("video:resumed");
-      } catch (err) {
-        console.error("❌ video:resume error:", err);
-      }
+      io.to(`room:${roomId}`).emit("video:resumed");
     });
 
-    socket.on("video:stop", async ({ roomId }) => {
-      try {
-        await VideoRoom.findOneAndUpdate(
-          { roomId },
-          {
-            "video.isPlaying": false,
-            "video.isPaused": false,
-            "video.currentTime": 0,
-            "video.isVisible": false,
-            "video.fileName": null,
-          }
-        );
+    socket.on("video:stop", ({ roomId }) => {
+      if (!roomId) return;
 
-        io.to(`room:${roomId}`).emit("video:stopped");
-      } catch (err) {
-        console.error("❌ video:stop error:", err);
-      }
+      io.to(`room:${roomId}`).emit("video:stopped");
     });
 
     /* =========================
@@ -455,7 +426,7 @@ module.exports = (io) => {
             message: "Failed to fetch leaderboard",
           });
         }
-      }
+      },
     );
 
     /* =========================
@@ -557,7 +528,7 @@ module.exports = (io) => {
                 startedAt: null,
                 localFilePath: null,
                 playedBy: null,
-              }
+              },
             );
           }
         }

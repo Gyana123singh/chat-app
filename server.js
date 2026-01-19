@@ -26,6 +26,8 @@ const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 const privateChatRouter = require("./router/privateChatRouter");
 const trophyRouter = require("./router/trophyRouter");
+const notificationRouter = require("./router/notificationRouter");
+const promotionRouter = require("./router/promotionRouter");
 
 const MusicState = require("./models/musicState");
 
@@ -39,7 +41,7 @@ app.use(
   cors({
     origin: "*",
     credentials: true,
-  })
+  }),
 );
 
 app.use(express.json({ limit: "100mb" }));
@@ -50,7 +52,7 @@ app.use(
     secret: process.env.SESSION_SECRET || "secret123",
     resave: false,
     saveUninitialized: true,
-  })
+  }),
 );
 
 app.use(passport.initialize());
@@ -70,6 +72,8 @@ app.use("/api/store-gifts", storeGiftRouter);
 app.use("/api/store-gift-send", sendStoreGiftRoutes);
 app.use("/api/private-chat", privateChatRouter);
 app.use("/api/trophies", trophyRouter);
+app.use("/api/notifications", notificationRouter);
+app.use("/api/promotion", promotionRouter);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -104,7 +108,7 @@ app.get("/stream/:roomId/:filename", (req, res) => {
     process.cwd(),
     "uploads",
     req.params.roomId,
-    req.params.filename
+    req.params.filename,
   );
 
   if (!fs.existsSync(filePath)) return res.sendStatus(404);
@@ -145,7 +149,7 @@ app.get("/video-stream/:roomId/:filename", (req, res) => {
     "uploads",
     "videos",
     req.params.roomId,
-    req.params.filename
+    req.params.filename,
   );
 
   if (!fs.existsSync(filePath)) return res.sendStatus(404);

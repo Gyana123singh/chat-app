@@ -1,5 +1,6 @@
 const Message = require("../models/privateMessage");
 const Conversation = require("../models/conversation");
+const Notification = require("../models/notification");
 
 module.exports = (io) => {
   const onlineUsers = new Map(); // userId -> socketId (legacy, not relied on)
@@ -21,6 +22,9 @@ module.exports = (io) => {
       socket.data.userId = userId;
       socket.data.username = username;
       socket.data.avatar = avatar;
+
+      // ✅ JOIN NOTIFICATION ROOM (SAFE ADD)
+      socket.join(`notify:${userId}`);
 
       // Multi-device safe tracking
       if (!userSockets.has(userId)) {
@@ -77,12 +81,12 @@ module.exports = (io) => {
         }
 
         const isParticipant = conversation.participants.some(
-          (p) => p.toString() === userId.toString()
+          (p) => p.toString() === userId.toString(),
         );
 
         if (!isParticipant) {
           console.warn(
-            `❌ User ${userId} tried to join unauthorized conversation ${conversationId}`
+            `❌ User ${userId} tried to join unauthorized conversation ${conversationId}`,
           );
           return;
         }
@@ -160,6 +164,26 @@ module.exports = (io) => {
 
           io.to(room).emit("private:message:receive", populated);
 
+          /* =========================
+             🔔 NOTIFICATION (ONLY ADD)
+          ========================= */
+          if (recipientId.toString() !== senderId.toString()) {
+            const notification = await Notification.create({
+              user: recipientId,
+              type: "private_message",
+              title: "New message",
+              body: text.length > 40 ? text.slice(0, 40) + "..." : text,
+              data: {
+                conversationId,
+                senderId,
+              },
+            });
+
+            io.to(`notify:${recipientId}`).emit(
+              "notification:new",
+              notification,
+            );
+          }
           console.log(`✅ Message emitted to room ${room}: ${message._id}`);
         } catch (error) {
           console.error("❌ Error sending message:", error);
@@ -168,8 +192,34 @@ module.exports = (io) => {
             details: error.message,
           });
         }
-      }
+      },
     );
+
+    /* =========================
+       NOTIFICATION READ
+    ========================= */
+    socket.on("notification:read", async ({ notificationId }) => {
+      if (!notificationId) return;
+
+      await Notification.findByIdAndUpdate(notificationId, {
+        isRead: true,
+        readAt: new Date(),
+      });
+    });
+    /* =========================
+       NOTIFICATION UNREAD
+    ========================= */
+    socket.on("notification:get:unread", async () => {
+      const userId = socket.data.userId;
+      if (!userId) return;
+
+      const count = await Notification.countDocuments({
+        user: userId,
+        isRead: false,
+      });
+
+      socket.emit("notification:unread", count);
+    });
 
     /* =========================
        TYPING INDICATOR
@@ -211,7 +261,7 @@ module.exports = (io) => {
         const message = await Message.findByIdAndUpdate(
           messageId,
           { isRead: true, readAt: new Date() },
-          { new: true }
+          { new: true },
         );
 
         if (!message) return;
@@ -257,7 +307,7 @@ module.exports = (io) => {
         } catch (error) {
           console.error("❌ Error editing message:", error);
         }
-      }
+      },
     );
 
     /* =========================
@@ -287,7 +337,7 @@ module.exports = (io) => {
         } catch (error) {
           console.error("❌ Error deleting message:", error);
         }
-      }
+      },
     );
 
     /* =========================
