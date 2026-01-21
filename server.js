@@ -26,6 +26,7 @@ const storeGiftRouter = require("./router/storeGiftRouter");
 const sendStoreGiftRoutes = require("./router/sendStoreGiftRoutes");
 const privateChatRouter = require("./router/privateChatRouter");
 const trophyRouter = require("./router/trophyRouter");
+const levelRouter = require("./router/levelRouter");
 const notificationRouter = require("./router/notificationRouter");
 const promotionRouter = require("./router/promotionRouter");
 
@@ -72,6 +73,7 @@ app.use("/api/store-gifts", storeGiftRouter);
 app.use("/api/store-gift-send", sendStoreGiftRoutes);
 app.use("/api/private-chat", privateChatRouter);
 app.use("/api/trophies", trophyRouter);
+app.use("/api/level", levelRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
 

@@ -98,14 +98,14 @@ exports.getUserLevel = async (req, res) => {
     const personalProgress = Math.round(
       ((personalLevel.totalExp - currentThreshold) /
         (nextPersonalThreshold - currentThreshold)) *
-        100
+        100,
     );
 
     const currentRoomThreshold = ROOM_LEVEL_THRESHOLDS[roomLevel.currentLevel];
     const roomProgress = Math.round(
       ((roomLevel.totalExp - currentRoomThreshold) /
         (nextRoomThreshold - currentRoomThreshold)) *
-        100
+        100,
     );
 
     res.status(200).json({
@@ -175,7 +175,7 @@ exports.getLevelBenefits = async (req, res) => {
         ...benefit,
         isUnlocked: userLevel >= requiredLevel,
         requiredLevel,
-      })
+      }),
     );
 
     res.status(200).json({
@@ -220,7 +220,7 @@ exports.getWaysToLevelUp = async (req, res) => {
     const lastReset = new Date(
       level.expSources.playLudo.lastReset.getFullYear(),
       level.expSources.playLudo.lastReset.getMonth(),
-      level.expSources.playLudo.lastReset.getDate()
+      level.expSources.playLudo.lastReset.getDate(),
     );
 
     if (today.getTime() > lastReset.getTime()) {
@@ -322,7 +322,7 @@ exports.addExpPlayLudo = async (req, res) => {
     const lastReset = new Date(
       level.expSources.playLudo.lastReset.getFullYear(),
       level.expSources.playLudo.lastReset.getMonth(),
-      level.expSources.playLudo.lastReset.getDate()
+      level.expSources.playLudo.lastReset.getDate(),
     );
 
     if (today.getTime() > lastReset.getTime()) {
@@ -397,7 +397,7 @@ exports.addExpStayInRoom = async (req, res) => {
     const lastReset = new Date(
       level.expSources.stayInRoom.lastReset.getFullYear(),
       level.expSources.stayInRoom.lastReset.getMonth(),
-      level.expSources.stayInRoom.lastReset.getDate()
+      level.expSources.stayInRoom.lastReset.getDate(),
     );
 
     if (today.getTime() > lastReset.getTime()) {
@@ -408,7 +408,7 @@ exports.addExpStayInRoom = async (req, res) => {
 
     // Calculate EXP based on duration
     const numRewards = Math.floor(
-      duration / level.expSources.stayInRoom.minPerReward
+      duration / level.expSources.stayInRoom.minPerReward,
     );
     const expToAdd = numRewards * level.expSources.stayInRoom.expPerReward;
 
@@ -733,3 +733,4 @@ exports.claimLevelUpReward = async (req, res) => {
     });
   }
 };
+

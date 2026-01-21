@@ -4,7 +4,6 @@ const router = express.Router();
 
 const upload = require("../middleware/multer.middleware");
 const { authMiddleware } = require("../middleware/auth");
-
 const promotionController = require("../controllers/promotionController");
 
 // BANNER
@@ -33,7 +32,7 @@ router.post("/create-popup", authMiddleware, promotionController.createPopup);
 router.get("/get-banners", promotionController.getBanners);
 router.get("/get-offers", promotionController.getOffers);
 router.get("/get-ads", promotionController.getAds);
-router.get("/get-popups", authMiddleware, promotionController, getPopups);
-router.post("/popup/seen", authMiddleware, promotionController, markPopupSeen);
+router.get("/get-popup", authMiddleware, promotionController.getPopups);
+router.post("/popup/seen", authMiddleware, promotionController.markPopupSeen);
 
-module.exports = router;
+module.exports=router

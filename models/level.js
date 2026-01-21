@@ -35,24 +35,25 @@ const levelSchema = new mongoose.Schema(
       playLudo: {
         count: { type: Number, default: 0 },
         totalExp: { type: Number, default: 0 },
-        dailyLimit: 10, // max rounds per day
-        dailyExp: 10, // EXP per round
+        dailyLimit: { type: Number, default: 10 },
+        dailyExp: { type: Number, default: 10 },
         lastReset: { type: Date, default: Date.now },
       },
 
       stayInRoom: {
         count: { type: Number, default: 0 },
         totalExp: { type: Number, default: 0 },
-        dailyLimit: 300, // max 300 minutes per day (5 hours)
-        minPerReward: 5, // reward every 5 minutes
-        expPerReward: 10, // EXP per 5 minutes
+        dailyLimit: { type: Number, default: 300 },
+        minPerReward: { type: Number, default: 5 },
+        expPerReward: { type: Number, default: 10 },
         lastReset: { type: Date, default: Date.now },
+
         roomDurations: [
           {
-            roomId: String,
-            duration: Number, // in minutes
-            expEarned: Number,
-            date: Date,
+            roomId: { type: String },
+            duration: { type: Number },
+            expEarned: { type: Number },
+            date: { type: Date },
           },
         ],
       },
@@ -60,19 +61,21 @@ const levelSchema = new mongoose.Schema(
       sendGift: {
         count: { type: Number, default: 0 },
         totalExp: { type: Number, default: 0 },
-        noLimit: true, // No daily limit
+        noLimit: { type: Boolean, default: true },
+
         expPerGift: {
-          coins: 1, // 25 coins gift = 1 EXP
-          diamonds: 10, // 2000 diamonds = 10 EXP
+          coins: { type: Number, default: 1 },
+          diamonds: { type: Number, default: 10 },
         },
+
         lastUpdate: { type: Date, default: Date.now },
       },
 
       buyStoreGoods: {
         count: { type: Number, default: 0 },
         totalExp: { type: Number, default: 0 },
-        noLimit: true,
-        expPer25Coins: 1, // 1 EXP per 25 coins spent
+        noLimit: { type: Boolean, default: true },
+        expPer25Coins: { type: Number, default: 1 },
         lastUpdate: { type: Date, default: Date.now },
       },
     },
@@ -101,7 +104,7 @@ const levelSchema = new mongoose.Schema(
       },
     ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Indexes

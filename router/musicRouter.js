@@ -31,28 +31,28 @@ module.exports = (io) => {
   const upload = multer({ storage });
 
   router.post("/upload/:roomId", upload.single("music"), (req, res) =>
-    musicController.uploadMusic(req, res, io)
+    musicController.uploadMusic(req, res, io),
   );
   // ▶️ PLAY MUSIC (USER ACTION REQUIRED)
   router.post("/play/:roomId", (req, res) =>
-    musicController.playMusic(req, res, io)
+    musicController.playMusic(req, res, io),
   );
   router.get("/list/:roomId", musicController.getRoomMusicList);
   router.delete(
     "/delete/:roomId/:musicId",
-    musicController.deleteRoomMusicList
+    musicController.deleteRoomMusicList,
   );
 
   router.post("/pause/:roomId", (req, res) =>
-    musicController.pauseMusic(req, res, io)
+    musicController.pauseMusic(req, res, io),
   );
 
   router.post("/resume/:roomId", (req, res) =>
-    musicController.resumeMusic(req, res, io)
+    musicController.resumeMusic(req, res, io),
   );
 
   router.post("/stop/:roomId", (req, res) =>
-    musicController.stopMusic(req, res, io)
+    musicController.stopMusic(req, res, io),
   );
 
   router.get("/state/:roomId", musicController.getMusicState);
