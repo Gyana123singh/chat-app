@@ -54,15 +54,15 @@ const storeGiftTransactionSchema = new mongoose.Schema(
     failureReason: String,
     completedAt: Date,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Indexes for analytics
 storeGiftTransactionSchema.index({ senderId: 1, createdAt: -1 });
-storeGiftTransactionSchema.index({ roomId: 1, createdAt: -1 });
+storeGiftTransactionSchema.index({ createdAt: -1 });
 storeGiftTransactionSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model(
   "StoreGiftTransaction",
-  storeGiftTransactionSchema
+  storeGiftTransactionSchema,
 );

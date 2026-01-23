@@ -44,6 +44,6 @@ const giftTransactionSchema = new mongoose.Schema(
 
 // Indexes for analytics
 giftTransactionSchema.index({ senderId: 1, createdAt: -1 });
-giftTransactionSchema.index({ roomId: 1, createdAt: -1 });
+giftTransactionSchema.index({  createdAt: -1 });
 giftTransactionSchema.index({ recipientIds: 1 });
 module.exports = mongoose.model("GiftTransaction", giftTransactionSchema);

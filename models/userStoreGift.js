@@ -37,11 +37,11 @@ const userStoreGiftSchema = new mongoose.Schema(
       default: false,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Index for user's gifts
-userStoreGiftSchema.index({ userId: 1, createdAt: -1 });
-userStoreGiftSchema.index({ userId: 1, isUsed: 1 });
+userStoreGiftSchema.index({ createdAt: -1 });
+userStoreGiftSchema.index({ isUsed: 1 });
 
 module.exports = mongoose.model("UserStoreGift", userStoreGiftSchema);

@@ -108,7 +108,7 @@ const levelSchema = new mongoose.Schema(
 );
 
 // Indexes
-levelSchema.index({ userId: 1 });
+
 levelSchema.index({ "personal.currentLevel": -1 });
 levelSchema.index({ "personal.totalExp": -1 });
 

@@ -84,7 +84,6 @@
     { timestamps: true }
   );
 
-  videoRoomSchema.index({ roomId: 1 });
   videoRoomSchema.index({ hostId: 1, "video.isPlaying": 1 });
 
   module.exports = mongoose.model("VideoRoom", videoRoomSchema);
