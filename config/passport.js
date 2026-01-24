@@ -7,7 +7,7 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "https://chat-app-1-qvl9.onrender.com/auth/google/callback",
+      callbackURL: "https://api.dilvoicechat.fun/auth/google/auth/google/callback",
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
