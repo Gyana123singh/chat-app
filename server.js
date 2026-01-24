@@ -36,12 +36,12 @@ const MusicState = require("./models/musicState");
 const app = express();
 connectMongose();
 
-const PORT = process.env.PORT || 5001;
+const PORT = Number(process.env.PORT || 5004);
 
 /* ===================== MIDDLEWARE ===================== */
 app.use(
   cors({
-    origin: "*",
+    origin: "*",  
     credentials: true,
   }),
 );
@@ -77,7 +77,7 @@ app.use("/api/trophies", trophyRouter);
 app.use("/api/level", levelRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
-app.use("/api/cp",cpRouter)
+app.use("/api/cp", cpRouter);
 
 app.get("/", (req, res) => {
   res.send("API is running...");
@@ -206,14 +206,29 @@ server.listen(PORT, () => {
 });
 
 /* ===================== SHUTDOWN ===================== */
+let isShuttingDown = false;
+
 const gracefulShutdown = () => {
-  console.log("🛑 Server shutting down...");
-  if (cronInstance?.stopCronJobs) cronInstance.stopCronJobs();
-  server.close(() => process.exit(0));
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log("🛑 Gracefully shutting down...");
+
+  if (cronInstance?.stopCronJobs) {
+    cronInstance.stopCronJobs();
+  }
+
+  server.close(() => {
+    console.log("✅ Server closed");
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 5000);
 };
 
-process.on("SIGINT", gracefulShutdown);
-process.on("SIGTERM", gracefulShutdown);
-process.on("SIGQUIT", gracefulShutdown);
+process.once("SIGINT", gracefulShutdown);
+process.once("SIGTERM", gracefulShutdown);
 
 module.exports = { app, io, server };
