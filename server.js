@@ -212,7 +212,7 @@ const gracefulShutdown = () => {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
-  console.log("🛑 Gracefully shutting down...");
+  console.log("🛑 Gracefully shutting downs...");
 
   if (cronInstance?.stopCronJobs) {
     cronInstance.stopCronJobs();
