@@ -206,11 +206,11 @@ server.listen(PORT, () => {
 });
 
 /* ===================== SHUTDOWN ===================== */
-let isShuttingDown = false;
+let isShuttingDowns = false;
 
 const gracefulShutdown = () => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
+  if (isShuttingDowns) return;
+  isShuttingDowns = true;
 
   console.log("🛑 Gracefully shutting downs...");
 
@@ -228,7 +228,7 @@ const gracefulShutdown = () => {
   }, 5000);
 };
 
-process.once("SIGINT", gracefulShutdown);
-process.once("SIGTERM", gracefulShutdown);
+process.once("SIGINT", gracefulShutdowns);
+process.once("SIGTERM", gracefulShutdowns);
 
 module.exports = { app, io, server };
