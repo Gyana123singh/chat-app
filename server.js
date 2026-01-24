@@ -29,6 +29,7 @@ const trophyRouter = require("./router/trophyRouter");
 const levelRouter = require("./router/levelRouter");
 const notificationRouter = require("./router/notificationRouter");
 const promotionRouter = require("./router/promotionRouter");
+const cpRouter = require("./router/cpRoutes");
 
 const MusicState = require("./models/musicState");
 
@@ -76,6 +77,7 @@ app.use("/api/trophies", trophyRouter);
 app.use("/api/level", levelRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
+app.use("/api/cp",cpRouter)
 
 app.get("/", (req, res) => {
   res.send("API is running...");

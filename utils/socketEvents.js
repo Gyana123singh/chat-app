@@ -3,6 +3,7 @@ const VideoRoom = require("../models/videoRoom");
 const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
+const { addCP } = require("../utils/cpEngine");
 
 const mongoose = require("mongoose");
 
@@ -27,6 +28,7 @@ module.exports = (io) => {
       socket.data.username = username;
       socket.data.avatar = avatar;
 
+      socket.join(userId.toString()); // 🔥 ADD THIS LINE for CP
       micStates.set(userId, { muted: false, speaking: false });
 
       console.log("🟢 User connected:", { userId, username });
@@ -55,6 +57,14 @@ module.exports = (io) => {
       roomUsers.get(roomId).add(user.id);
 
       console.log(`📍 ${user.username} joined ${roomName}`);
+
+      // ✅ CP reward: join room
+      await addCP({
+        userId: user.id,
+        amount: 5,
+        source: "JOIN_ROOM",
+        io,
+      });
 
       try {
         /* ===== VIDEO ROOM SYNC ===== */
@@ -148,12 +158,41 @@ module.exports = (io) => {
         console.error("❌ room:join error:", err);
       }
     });
+    // for cp Reward
+    socket.on("room:stayReward", async () => {
+      try {
+        const { userId } = socket.data;
+        if (!userId) return;
+
+        await addCP({
+          userId,
+          amount: 5,
+          source: "STAY_5_MIN",
+          io,
+        });
+      } catch (err) {
+        console.error("❌ stayReward CP error:", err.message);
+      }
+    });
+    //for cp hostReward
+    socket.on("room:hostReward", async () => {
+      try {
+        const { userId } = socket.data;
+        if (!userId) return;
+
+        await addCP({
+          userId,
+          amount: 20,
+          source: "HOST_10_MIN",
+          io,
+        });
+      } catch (err) {
+        console.error("❌ host CP error:", err.message);
+      }
+    });
 
     /* =========================
    VIDEO CONTROLS (ALL USERS)
-========================= */
-    /* =========================
-   VIDEO CONTROLS (SYNC SAFE)
 ========================= */
 
     socket.on("video:play", ({ roomId, userId }) => {
@@ -385,6 +424,18 @@ module.exports = (io) => {
         timestamp: new Date().toISOString(),
         animation: true,
       });
+
+      // ✅ CP reward for gift
+      const cpAmount = Math.floor(giftData.price / 25) * 2;
+
+      if (cpAmount > 0) {
+        await addCP({
+          userId,
+          amount: cpAmount,
+          source: "SEND_GIFT",
+          io,
+        });
+      }
     });
 
     /* =========================
