@@ -41,7 +41,7 @@ const PORT = Number(process.env.PORT || 5004);
 /* ===================== MIDDLEWARE ===================== */
 app.use(
   cors({
-    origin: "*",  
+    origin: "*",
     credentials: true,
   }),
 );
@@ -206,13 +206,14 @@ server.listen(PORT, () => {
 });
 
 /* ===================== SHUTDOWN ===================== */
-let isShuttingDowns = false;
 
-const gracefulShutdowns = () => {
-  if (isShuttingDowns) return;
-  isShuttingDowns = true;
+process.isShuttingDown = false;
 
-  console.log("🛑 Gracefully shutting downs...");
+const gracefulShutdown = () => {
+  if (process.isShuttingDown) return;
+  process.isShuttingDown = true;
+
+  console.log("🛑 Gracefully shutting down...");
 
   if (cronInstance?.stopCronJobs) {
     cronInstance.stopCronJobs();
@@ -223,12 +224,10 @@ const gracefulShutdowns = () => {
     process.exit(0);
   });
 
-  setTimeout(() => {
-    process.exit(1);
-  }, 5000);
+  setTimeout(() => process.exit(1), 5000);
 };
 
-process.once("SIGINT", gracefulShutdowns);
-process.once("SIGTERM", gracefulShutdowns);
+process.once("SIGINT", gracefulShutdown);
+process.once("SIGTERM", gracefulShutdown);
 
 module.exports = { app, io, server };
