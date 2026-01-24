@@ -208,7 +208,7 @@ server.listen(PORT, () => {
 /* ===================== SHUTDOWN ===================== */
 let isShuttingDowns = false;
 
-const gracefulShutdown = () => {
+const gracefulShutdowns = () => {
   if (isShuttingDowns) return;
   isShuttingDowns = true;
 
