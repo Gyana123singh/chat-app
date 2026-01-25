@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const createPK = require("../controllers/pkController");
+const { createPK } = require("../controllers/pkController");
 const middleware = require("../middleware/auth"); // your JWT middleware
 
 // ==========================
