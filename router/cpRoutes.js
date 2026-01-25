@@ -13,7 +13,7 @@ const cpController = require("../controllers/cpController");
 // ✅ Get CP status
 // GET /api/cp/status
 router.get(
-  "/status",
+  "/cp-status",
   authMiddleware,
   cpController.getCP
 );
@@ -21,7 +21,7 @@ router.get(
 // ✅ Claim CP → Coins
 // POST /api/cp/claim
 router.post(
-  "/claim",
+  "/cp-claim",
   authMiddleware,
   cpController.claimCP
 );
@@ -29,7 +29,7 @@ router.post(
 // ✅ CP History (WAFA style)
 // GET /api/cp/history
 router.get(
-  "/history",
+  "/cp-history",
   authMiddleware,
   cpController.getCPHistory
 );
