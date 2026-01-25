@@ -190,6 +190,7 @@ require("./middleware/soket.middleware")(io);
 require("./utils/socketEvents")(io);
 require("./utils/giftSocketEvents")(io);
 require("./utils/socketEventPrivateChat")(io);
+require("./utils/socketFriendsSuggestions")(io);
 
 global.io = io;
 
