@@ -8,7 +8,7 @@ exports.createPK = async (req, res) => {
 
     // ❌ Validate room
     const room = await Room.findOne({ roomId });
-    if (!room) return res.status(404).json({ message: "Room not found" });
+    if (!room) return res.status(404).json({ message: "Rooms not found" });
 
     // ❌ Only host
     if (room.host.toString() !== hostId) {
