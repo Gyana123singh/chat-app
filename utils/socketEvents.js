@@ -4,6 +4,7 @@ const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
 const { addCP } = require("../utils/cpEngine");
+const levelController = require("../controllers/levelController");
 
 const mongoose = require("mongoose");
 
@@ -13,6 +14,11 @@ module.exports = (io) => {
   const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
+  // ===============================
+  // WAFA LEVEL TIMERS (SAFE)
+  // ===============================
+  const roomStayTimers = new Map(); // userId -> interval
+  const micExpTimers = new Map(); // userId -> interval
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
@@ -154,6 +160,30 @@ module.exports = (io) => {
             currentTime,
           },
         });
+
+        // ===============================
+        // ⏱ 5 MIN STAY EXP (PERSONAL)
+        // ===============================
+        if (!roomStayTimers.has(user.id)) {
+          const stayTimer = setInterval(
+            async () => {
+              try {
+                await levelController.addPersonalExp(user.id, 10, io);
+
+                io.to(user.id.toString()).emit("level:exp", {
+                  type: "personal",
+                  exp: 10,
+                  message: "+10 EXP (5 min stay)",
+                });
+              } catch (e) {
+                console.error("stay exp error:", e.message);
+              }
+            },
+            5 * 60 * 1000,
+          );
+
+          roomStayTimers.set(user.id, stayTimer);
+        }
       } catch (err) {
         console.error("❌ room:join error:", err);
       }
@@ -231,6 +261,50 @@ module.exports = (io) => {
       await pk.save();
 
       io.to(`room:${roomId}`).emit("pk:ended", pk);
+    });
+
+    socket.on("pk:end", async ({ roomId }) => {
+      try {
+        const PKBattle = require("../models/pkBattle");
+
+        const pk = await PKBattle.findOne({
+          roomId,
+          status: "running",
+        });
+
+        if (!pk || pk.status === "ended") return;
+
+        pk.status = "ended";
+
+        pk.endedAt = new Date();
+        await pk.save();
+
+        // 🏆 DECIDE WINNER
+        let winnerId = null;
+
+        if (pk.leftUser.score > pk.rightUser.score) {
+          winnerId = pk.leftUser.userId;
+        } else if (pk.rightUser.score > pk.leftUser.score) {
+          winnerId = pk.rightUser.userId;
+        }
+
+        // 🔥 GIVE CP TO WINNER
+        if (winnerId) {
+          await addCP({
+            userId: winnerId,
+            amount: 50,
+            source: "PK",
+            io,
+          });
+        }
+
+        io.to(`room:${roomId}`).emit("pk:ended", {
+          pk,
+          winnerId,
+        });
+      } catch (err) {
+        console.error("❌ pk:end error:", err.message);
+      }
     });
 
     /* =========================
@@ -324,6 +398,10 @@ module.exports = (io) => {
         muted: true,
         speaking: false,
       });
+      if (micExpTimers.has(userId)) {
+        clearInterval(micExpTimers.get(userId));
+        micExpTimers.delete(userId);
+      }
     });
 
     socket.on("mic:unmute", () => {
@@ -337,6 +415,10 @@ module.exports = (io) => {
         muted: false,
         speaking: false,
       });
+      if (micExpTimers.has(userId)) {
+        clearInterval(micExpTimers.get(userId));
+        micExpTimers.delete(userId);
+      }
     });
 
     socket.on("mic:speaking", (speaking) => {
@@ -353,6 +435,36 @@ module.exports = (io) => {
         muted: false,
         speaking,
       });
+
+      // ===============================
+      // 🎤 10 MIN ROOM EXP (WAFA)
+      // ===============================
+      if (speaking === true && !micExpTimers.has(userId)) {
+        const micTimer = setInterval(
+          async () => {
+            try {
+              await levelController.addRoomExp(userId, 20, io);
+
+              io.to(userId.toString()).emit("level:exp", {
+                type: "room",
+                exp: 20,
+                message: "+20 Room EXP (10 min mic)",
+              });
+            } catch (err) {
+              console.error("❌ mic EXP error:", err.message);
+            }
+          },
+          10 * 60 * 1000,
+        );
+
+        micExpTimers.set(userId, micTimer);
+      }
+
+      // ❌ stop mic EXP when not speaking
+      if (speaking === false && micExpTimers.has(userId)) {
+        clearInterval(micExpTimers.get(userId));
+        micExpTimers.delete(userId);
+      }
     });
 
     /* =========================
@@ -478,6 +590,20 @@ module.exports = (io) => {
           io,
         });
       }
+      // ===============================
+      // 🎁 GIFT EXP (WAFA)
+      // ===============================
+      const exp = Math.floor(giftData.price / 25);
+
+      if (exp > 0) {
+        await levelController.addPersonalExp(userId, exp, io);
+
+        io.to(userId.toString()).emit("level:exp", {
+          type: "personal",
+          exp,
+          message: `+${exp} EXP from gift`,
+        });
+      }
     });
 
     /* =========================
@@ -587,7 +713,18 @@ module.exports = (io) => {
         if (userId) {
           onlineUsers.delete(userId);
           micStates.delete(userId);
+          // ===============================
+          // 🔥 CLEAR LEVEL TIMERS (ALWAYS)
+          // ===============================
+          if (roomStayTimers.has(userId)) {
+            clearInterval(roomStayTimers.get(userId));
+            roomStayTimers.delete(userId);
+          }
 
+          if (micExpTimers.has(userId)) {
+            clearInterval(micExpTimers.get(userId));
+            micExpTimers.delete(userId);
+          }
           if (roomId && typingUsers.has(roomId)) {
             typingUsers.get(roomId).delete(userId);
           }

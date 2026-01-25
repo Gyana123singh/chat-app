@@ -49,6 +49,11 @@ const userSchema = new mongoose.Schema(
         type: String,
         default: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
       },
+      badge: {
+        type: String,
+        default: null, // cp_active
+      },
+
       avatarSource: {
         type: String,
         enum: ["google", "custom"],
@@ -181,7 +186,7 @@ const userSchema = new mongoose.Schema(
       ],
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // ✅ Index for coin-based queries (leaderboards, etc.)

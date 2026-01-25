@@ -4,12 +4,34 @@ const router = express.Router();
 const { authMiddleware } = require("../middleware/auth");
 const cpController = require("../controllers/cpController");
 
-// Get CP status
-// GET /api/cp
-router.get("/get-cp-status", authMiddleware, cpController.getCP);
+/*
+=================================
+        CP ROUTES
+=================================
+*/
 
-// Claim CP → Coins
+// ✅ Get CP status
+// GET /api/cp/status
+router.get(
+  "/status",
+  authMiddleware,
+  cpController.getCP
+);
+
+// ✅ Claim CP → Coins
 // POST /api/cp/claim
-router.post("/claim", authMiddleware, cpController.claimCP);
+router.post(
+  "/claim",
+  authMiddleware,
+  cpController.claimCP
+);
+
+// ✅ CP History (WAFA style)
+// GET /api/cp/history
+router.get(
+  "/history",
+  authMiddleware,
+  cpController.getCPHistory
+);
 
 module.exports = router;

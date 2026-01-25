@@ -12,7 +12,9 @@ const cpSchema = new mongoose.Schema(
     dailyCP: { type: Number, default: 0 },
     totalCP: { type: Number, default: 0 },
 
-    isActive: { type: Boolean, default: false }, // 🔥 8000 badge
+    dailyLimit: { type: Number, default: 8000 },
+
+    isActive: { type: Boolean, default: false }, // 🔥 CP badge
 
     lastReset: { type: Date, default: Date.now },
   },
