@@ -5,6 +5,8 @@ const Room = require("../models/room");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 const trophyController = require("../controllers/trophyController");
+const PKBattle = require("../models/pkBattle");
+
 // this for admin side to add gift and category
 exports.addGift = async (req, res) => {
   try {
@@ -278,7 +280,7 @@ exports.sendGift = async (req, res) => {
         });
       }
       finalRecipients = micOnlineUsers.filter(
-        (userId) => req.body.micStatus && req.body.micStatus[userId]?.speaking
+        (userId) => req.body.micStatus && req.body.micStatus[userId]?.speaking,
       );
 
       if (finalRecipients.length === 0) {
@@ -291,7 +293,7 @@ exports.sendGift = async (req, res) => {
 
     // ✅ Remove sender from recipients
     finalRecipients = finalRecipients.filter(
-      (recipientId) => recipientId.toString() !== senderId.toString()
+      (recipientId) => recipientId.toString() !== senderId.toString(),
     );
 
     if (finalRecipients.length === 0) {
@@ -305,7 +307,15 @@ exports.sendGift = async (req, res) => {
     const recipientCount = finalRecipients.length;
     const totalCoinsRequired = gift.price * recipientCount;
 
-    // ✅ Check sender's balance
+    // ✅ SAFETY CHECK (IMPORTANT)
+    if (totalCoinsRequired <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid gift amount",
+      });
+    }
+
+    // ✅ Check sender balance
     if (sender.coins < totalCoinsRequired) {
       return res.status(400).json({
         success: false,
@@ -329,7 +339,7 @@ exports.sendGift = async (req, res) => {
           return recipient;
         }
         return null;
-      })
+      }),
     );
 
     // ✅ Track successful updates
@@ -355,20 +365,58 @@ exports.sendGift = async (req, res) => {
       status: "completed",
     });
 
+    const activePK = await PKBattle.findOne({
+      roomId: roomId.toString(),
+      status: "running",
+    });
+
+    if (!activePK) return;
+
+    if (activePK.status !== "running") return;
+
+    let score = 1;
+
+    if (activePK.mode === "coins") score = gift.price;
+    if (activePK.mode === "votes") score = 1;
+    if (activePK.mode === "earning") score = gift.price;
+
+    let leftHit = false;
+    let rightHit = false;
+
+    for (const recipientId of finalRecipients) {
+      if (activePK.leftUser.userId.toString() === recipientId.toString()) {
+        leftHit = true;
+      }
+
+      if (activePK.rightUser.userId.toString() === recipientId.toString()) {
+        rightHit = true;
+      }
+    }
+
+    if (leftHit) activePK.leftUser.score += score;
+    if (rightHit) activePK.rightUser.score += score;
+
+    await activePK.save();
+
+    global.io.to(`room:${roomId}`).emit("pk:update", {
+      left: activePK.leftUser,
+      right: activePK.rightUser,
+    });
+
     // ✅ FIX: UPDATE SENDER'S TROPHY POINTS WITH PROPER ERROR HANDLING
     try {
       const trophyController = require("./trophyController");
       await trophyController.updateLeaderboardOnGift(
         senderId, // ✅ SENDER gets trophy points
-        totalCoinsRequired // ✅ Total coins SPENT by sender
+        totalCoinsRequired, // ✅ Total coins SPENT by sender
       );
       console.log(
-        `✅ Trophy updated for sender ${senderId}: +${totalCoinsRequired} points`
+        `✅ Trophy updated for sender ${senderId}: +${totalCoinsRequired} points`,
       );
     } catch (trophyError) {
       console.error(
         `⚠️ Trophy update failed for sender ${senderId}:`,
-        trophyError.message
+        trophyError.message,
       );
       // ⚠️ Log error but don't fail gift transaction
       // In production, you may want to queue this for retry
@@ -473,7 +521,7 @@ exports.getUserReceivedGifts = async (req, res) => {
     // 🔥 Calculate total gifts received
     const totalCoinsReceived = transactions.reduce(
       (sum, t) => sum + t.giftPrice,
-      0
+      0,
     );
 
     res.status(200).json({
@@ -514,7 +562,7 @@ exports.getGiftAnalytics = async (req, res) => {
     // Total coins spent
     const totalCoinsSpent = sentGifts.reduce(
       (sum, t) => sum + t.totalCoinsDeducted,
-      0
+      0,
     );
 
     // Breakdown by sendType

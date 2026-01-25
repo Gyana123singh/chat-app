@@ -10,7 +10,7 @@ exports.firebaseOtpLogin = async (req, res) => {
       return res.status(400).json({ message: "ID token required" });
     }
 
-    // 🔐 Verify Firebase ID Token
+    // 🔐 Verify Firebase token
     const decoded = await admin.auth().verifyIdToken(idToken);
 
     const phoneNumber = decoded.phone_number;
@@ -19,11 +19,17 @@ exports.firebaseOtpLogin = async (req, res) => {
       return res.status(400).json({ message: "Phone number not found" });
     }
 
-    // 🌍 Country code detection
+    // 🌍 Country detection
     let countryCode = "";
-    if (phoneNumber.startsWith("+91")) countryCode = "+91";
-    else if (phoneNumber.startsWith("+92")) countryCode = "+92";
-    else if (phoneNumber.startsWith("+880")) countryCode = "+880";
+
+    if (phoneNumber.startsWith("+91"))
+      countryCode = "+91"; // India
+    else if (phoneNumber.startsWith("+92"))
+      countryCode = "+92"; // Pakistan
+    else if (phoneNumber.startsWith("+880"))
+      countryCode = "+880"; // Bangladesh
+    else if (phoneNumber.startsWith("+977"))
+      countryCode = "+977"; // 🇳🇵 Nepal
     else {
       return res.status(400).json({ message: "Country not supported" });
     }
@@ -35,12 +41,12 @@ exports.firebaseOtpLogin = async (req, res) => {
       user = await User.create({
         phone: phoneNumber,
         countryCode,
-        username: `user_${phoneNumber.slice(-4)}`, // auto username
+        username: `user_${phoneNumber.slice(-4)}`,
         role: "user",
       });
     }
 
-    // 🔑 SIGN JWT (✅ CORRECT)
+    // 🔑 JWT token
     const token = signToken(user);
 
     res.status(200).json({

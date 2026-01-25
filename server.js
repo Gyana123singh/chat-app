@@ -30,7 +30,7 @@ const levelRouter = require("./router/levelRouter");
 const notificationRouter = require("./router/notificationRouter");
 const promotionRouter = require("./router/promotionRouter");
 const cpRouter = require("./router/cpRoutes");
-
+const pkRoutes = require("./router/pkRouter");
 const MusicState = require("./models/musicState");
 
 const app = express();
@@ -78,6 +78,7 @@ app.use("/api/level", levelRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
 app.use("/api/cp", cpRouter);
+app.use("/api/pk", pkRoutes);
 
 app.get("/", (req, res) => {
   res.send("API is running...");

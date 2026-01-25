@@ -192,6 +192,48 @@ module.exports = (io) => {
     });
 
     /* =========================
+        🔥 PK EVENTS
+========================= */
+
+    // 🔁 reconnect sync
+    socket.on("pk:getActive", async ({ roomId }) => {
+      try {
+        const PKBattle = require("../models/pkBattle");
+
+        const activePK = await PKBattle.findOne({
+          roomId,
+          status: "running",
+        })
+          .populate("leftUser.userId", "username profile.avatar")
+          .populate("rightUser.userId", "username profile.avatar");
+
+        if (activePK) {
+          socket.emit("pk:started", activePK);
+        }
+      } catch (err) {
+        console.error("❌ pk:getActive:", err.message);
+      }
+    });
+
+    // ❌ cancel by host
+    socket.on("pk:cancel", async ({ roomId }) => {
+      const PKBattle = require("../models/pkBattle");
+
+      const pk = await PKBattle.findOne({
+        roomId,
+        status: "running",
+      });
+
+      if (!pk || pk.hostId.toString() !== socket.data.userId.toString()) return;
+
+      pk.status = "ended";
+      pk.endedAt = new Date();
+      await pk.save();
+
+      io.to(`room:${roomId}`).emit("pk:ended", pk);
+    });
+
+    /* =========================
    VIDEO CONTROLS (ALL USERS)
 ========================= */
 
