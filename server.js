@@ -85,6 +85,13 @@ app.use("/api/pk", pkRoutes);
 app.get("/", (req, res) => {
   res.send("API is running...");
 });
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "API is running",
+    time: new Date(),
+  });
+});
 
 /* ===================== SOCKET ===================== */
 const server = http.createServer(app);
