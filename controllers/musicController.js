@@ -9,7 +9,8 @@ const convertToMp3 = require("../utils/convertAudio");
 /* ============================
    UPLOAD MUSIC (DJ LOCK)
 ============================ */
-exports.uploadMusic = async (req, res, io) => {
+exports.uploadMusic = async (req, res) => {
+  const io = req.app.get("io");
   try {
     const { roomId } = req.params;
     const userId = req.body.userId || req.headers["userid"];
@@ -88,7 +89,8 @@ exports.uploadMusic = async (req, res, io) => {
 /* ============================
    PLAY MUSIC (DJ ONLY)
 ============================ */
-exports.playMusic = async (req, res, io) => {
+exports.playMusic = async (req, res) => {
+  const io = req.app.get("io");
   try {
     const { roomId } = req.params;
     const { userId } = req.body;
@@ -153,7 +155,8 @@ exports.playMusic = async (req, res, io) => {
 /* ============================
    PAUSE MUSIC (DJ ONLY)
 ============================ */
-exports.pauseMusic = async (req, res, io) => {
+exports.pauseMusic = async (req, res) => {
+  const io = req.app.get("io");
   try {
     const { roomId } = req.params;
     const { pausedAt, userId } = req.body;
@@ -188,7 +191,8 @@ exports.pauseMusic = async (req, res, io) => {
 /* ============================
    RESUME MUSIC (DJ ONLY)
 ============================ */
-exports.resumeMusic = async (req, res, io) => {
+exports.resumeMusic = async (req, res) => {
+  const io = req.app.get("io");
   try {
     const { roomId } = req.params;
     const { userId } = req.body;
@@ -223,7 +227,8 @@ exports.resumeMusic = async (req, res, io) => {
 /* ============================
    STOP MUSIC (RELEASE LOCK)
 ============================ */
-exports.stopMusic = async (req, res, io) => {
+exports.stopMusic = async (req, res) => {
+  const io = req.app.get("io");
   try {
     const { roomId } = req.params;
     const { userId } = req.body;
