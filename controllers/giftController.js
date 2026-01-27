@@ -329,30 +329,12 @@ exports.sendGift = async (req, res) => {
     sender.coins -= totalCoinsRequired;
     await sender.save();
 
-    // ✅ Add coins to each recipient
-    const recipientUpdateResults = await Promise.allSettled(
-      finalRecipients.map(async (recipientId) => {
-        const recipient = await User.findById(recipientId);
-        if (recipient) {
-          recipient.coins += gift.price;
-          await recipient.save();
-          return recipient;
-        }
-        return null;
-      }),
-    );
-
-    // ✅ Track successful updates
-    const successfulRecipients = recipientUpdateResults
-      .filter((result) => result.status === "fulfilled" && result.value)
-      .map((result) => result.value._id);
-
     // ✅ Create gift transaction record
     const transaction = await GiftTransaction.create({
       roomId,
       senderId,
-      receiverId: finalRecipients[0],
       giftId,
+      recipientIds: finalRecipients, // ✅ correct
       giftName: gift.name,
       giftIcon: gift.icon,
       giftPrice: gift.price,
@@ -360,8 +342,6 @@ exports.sendGift = async (req, res) => {
       giftRarity: gift.rarity,
       sendType,
       totalCoinsDeducted: totalCoinsRequired,
-      recipientCount: successfulRecipients.length,
-      recipientIds: successfulRecipients,
       status: "completed",
     });
 
@@ -427,7 +407,7 @@ exports.sendGift = async (req, res) => {
       global.io.emit("gift:sent-notify", {
         gifterUsername: sender.username,
         gifterUserId: senderId,
-        recipientCount: successfulRecipients.length,
+
         totalCoins: totalCoinsRequired,
         timestamp: new Date(),
       });
@@ -436,13 +416,12 @@ exports.sendGift = async (req, res) => {
     // ✅ Response
     res.status(200).json({
       success: true,
-      message: `Gift sent successfully to ${successfulRecipients.length} recipient(s)`,
+
       data: {
         transactionId: transaction._id,
         giftName: gift.name,
         giftIcon: gift.icon,
         sendType,
-        recipientCount: successfulRecipients.length,
         coinsPerRecipient: gift.price,
         totalCoinsDeducted: totalCoinsRequired,
         senderNewBalance: sender.coins,
