@@ -3,7 +3,6 @@ const VideoRoom = require("../models/videoRoom");
 const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
-const { addCP } = require("../utils/cpEngine");
 const levelController = require("../controllers/levelController");
 
 const mongoose = require("mongoose");
