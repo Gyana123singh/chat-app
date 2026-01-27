@@ -64,14 +64,6 @@ module.exports = (io) => {
 
       console.log(`📍 ${user.username} joined ${roomName}`);
 
-      // ✅ CP reward: join room
-      await addCP({
-        userId: user.id,
-        amount: 5,
-        source: "JOIN_ROOM",
-        io,
-      });
-
       try {
         /* ===== VIDEO ROOM SYNC ===== */
         let videoRoom = await VideoRoom.findOne({ roomId });
@@ -188,38 +180,6 @@ module.exports = (io) => {
         console.error("❌ room:join error:", err);
       }
     });
-    // for cp Reward
-    socket.on("room:stayReward", async () => {
-      try {
-        const { userId } = socket.data;
-        if (!userId) return;
-
-        await addCP({
-          userId,
-          amount: 5,
-          source: "STAY_5_MIN",
-          io,
-        });
-      } catch (err) {
-        console.error("❌ stayReward CP error:", err.message);
-      }
-    });
-    //for cp hostReward
-    socket.on("room:hostReward", async () => {
-      try {
-        const { userId } = socket.data;
-        if (!userId) return;
-
-        await addCP({
-          userId,
-          amount: 20,
-          source: "HOST_10_MIN",
-          io,
-        });
-      } catch (err) {
-        console.error("❌ host CP error:", err.message);
-      }
-    });
 
     /* =========================
         🔥 PK EVENTS
@@ -286,16 +246,6 @@ module.exports = (io) => {
           winnerId = pk.leftUser.userId;
         } else if (pk.rightUser.score > pk.leftUser.score) {
           winnerId = pk.rightUser.userId;
-        }
-
-        // 🔥 GIVE CP TO WINNER
-        if (winnerId) {
-          await addCP({
-            userId: winnerId,
-            amount: 50,
-            source: "PK",
-            io,
-          });
         }
 
         io.to(`room:${roomId}`).emit("pk:ended", {
