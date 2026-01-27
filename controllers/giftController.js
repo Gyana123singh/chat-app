@@ -345,43 +345,42 @@ exports.sendGift = async (req, res) => {
       status: "completed",
     });
 
+    
     const activePK = await PKBattle.findOne({
       roomId: roomId.toString(),
       status: "running",
     });
 
-    if (!activePK) return;
+    if (activePK && activePK.status === "running") {
+      let score = 1;
 
-    if (activePK.status !== "running") return;
+      if (activePK.mode === "coins") score = gift.price;
+      if (activePK.mode === "votes") score = 1;
+      if (activePK.mode === "earning") score = gift.price;
 
-    let score = 1;
+      let leftHit = false;
+      let rightHit = false;
 
-    if (activePK.mode === "coins") score = gift.price;
-    if (activePK.mode === "votes") score = 1;
-    if (activePK.mode === "earning") score = gift.price;
+      for (const recipientId of finalRecipients) {
+        if (activePK.leftUser.userId.toString() === recipientId.toString()) {
+          leftHit = true;
+        }
 
-    let leftHit = false;
-    let rightHit = false;
-
-    for (const recipientId of finalRecipients) {
-      if (activePK.leftUser.userId.toString() === recipientId.toString()) {
-        leftHit = true;
+        if (activePK.rightUser.userId.toString() === recipientId.toString()) {
+          rightHit = true;
+        }
       }
 
-      if (activePK.rightUser.userId.toString() === recipientId.toString()) {
-        rightHit = true;
-      }
+      if (leftHit) activePK.leftUser.score += score;
+      if (rightHit) activePK.rightUser.score += score;
+
+      await activePK.save();
+
+      global.io.to(`room:${roomId}`).emit("pk:update", {
+        left: activePK.leftUser,
+        right: activePK.rightUser,
+      });
     }
-
-    if (leftHit) activePK.leftUser.score += score;
-    if (rightHit) activePK.rightUser.score += score;
-
-    await activePK.save();
-
-    global.io.to(`room:${roomId}`).emit("pk:update", {
-      left: activePK.leftUser,
-      right: activePK.rightUser,
-    });
 
     // ✅ FIX: UPDATE SENDER'S TROPHY POINTS WITH PROPER ERROR HANDLING
     try {
