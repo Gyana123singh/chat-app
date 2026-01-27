@@ -560,12 +560,13 @@ module.exports = (io) => {
     /* =========================
        GIFTS
     ========================= */
-    socket.on("gift:send", async ({ roomId, giftData, sendType }) => {
+    socket.on("gift:send:effect", async ({ roomId, giftData, sendType }) => {
       const { userId, username, avatar } = socket.data;
       if (!roomId || !userId || !giftData) return;
 
       const roomName = `room:${roomId}`;
 
+      // 🎁 floating animation
       io.to(roomName).emit("gift:received", {
         senderId: userId,
         senderUsername: username,
@@ -579,9 +580,8 @@ module.exports = (io) => {
         animation: true,
       });
 
-      // ✅ CP reward for gift
+      // 🪙 CP reward
       const cpAmount = Math.floor(giftData.price / 25) * 2;
-
       if (cpAmount > 0) {
         await addCP({
           userId,
@@ -590,11 +590,9 @@ module.exports = (io) => {
           io,
         });
       }
-      // ===============================
-      // 🎁 GIFT EXP (WAFA)
-      // ===============================
-      const exp = Math.floor(giftData.price / 25);
 
+      // ⭐ EXP reward
+      const exp = Math.floor(giftData.price / 25);
       if (exp > 0) {
         await levelController.addPersonalExp(userId, exp, io);
 
