@@ -41,10 +41,12 @@ const PORT = Number(process.env.PORT || 5004);
 /* ===================== MIDDLEWARE ===================== */
 app.use(
   cors({
-    origin: "*",
+    origin: true, // 👈 auto reflect frontend origin
     credentials: true,
   }),
 );
+
+app.options("*", cors());
 
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
@@ -89,9 +91,9 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
+    origin: true,
     credentials: true,
+    methods: ["GET", "POST"],
   },
   transports: ["websocket", "polling"],
   maxHttpBufferSize: 100 * 1024 * 1024,
