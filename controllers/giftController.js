@@ -196,179 +196,144 @@ exports.checkEligibility = async (req, res) => {
  */
 exports.sendGift = async (req, res) => {
   try {
-    const senderId = req.user?.id;
-    const { roomId, giftId, recipients, sendType, micOnlineUsers } = req.body;
+    const senderId = req.user.id;
+    const {
+      roomId,
+      giftId,
+      recipients = [],
+      sendType,
+      micOnlineUsers = [],
+    } = req.body;
 
-    // ✅ ALL VALIDATION
+    /* =========================
+       BASIC VALIDATION
+    ========================= */
     if (!roomId || !giftId || !sendType) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: roomId, giftId, sendType",
+        message: "roomId, giftId and sendType are required",
       });
     }
 
     if (!["individual", "all_in_room", "all_on_mic"].includes(sendType)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid sendType. Must be individual, all_in_room, or all_on_mic",
+        message: "Invalid sendType",
       });
     }
 
-    // ✅ Get sender
+    /* =========================
+       FETCH DATA
+    ========================= */
     const sender = await User.findById(senderId);
-    if (!sender) {
-      return res.status(404).json({
-        success: false,
-        message: "Sender not found",
-      });
-    }
+    if (!sender)
+      return res
+        .status(404)
+        .json({ success: false, message: "Sender not found" });
 
-    // ✅ Get gift
     const gift = await Gift.findById(giftId);
-    if (!gift) {
-      return res.status(404).json({
-        success: false,
-        message: "Gift not found",
-      });
-    }
+    if (!gift || !gift.isAvailable)
+      return res
+        .status(404)
+        .json({ success: false, message: "Gift not available" });
 
-    if (!gift.isAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: "Gift is not available",
-      });
-    }
-
-    // ✅ Get room
     const room = await Room.findById(roomId);
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
-    }
+    if (!room)
+      return res
+        .status(404)
+        .json({ success: false, message: "Room not found" });
 
-    // ✅ Determine recipients
+    /* =========================
+       FINAL RECIPIENTS
+    ========================= */
     let finalRecipients = [];
 
     if (sendType === "individual") {
-      if (
-        !recipients ||
-        !Array.isArray(recipients) ||
-        recipients.length === 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Recipients array required for individual send",
-        });
-      }
       finalRecipients = recipients;
-    } else if (sendType === "all_in_room") {
-      if (!Array.isArray(micOnlineUsers) || micOnlineUsers.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "No users in room",
-        });
-      }
-      finalRecipients = micOnlineUsers;
-    } else if (sendType === "all_on_mic") {
-      if (!Array.isArray(micOnlineUsers) || micOnlineUsers.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "No users on mic",
-        });
-      }
-      finalRecipients = micOnlineUsers.filter(
-        (userId) => req.body.micStatus && req.body.micStatus[userId]?.speaking,
-      );
-
-      if (finalRecipients.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "No users currently on mic",
-        });
-      }
     }
 
-    // ✅ Remove sender from recipients
+    if (sendType === "all_in_room") {
+      finalRecipients = micOnlineUsers;
+    }
+
+    if (sendType === "all_on_mic") {
+      finalRecipients = micOnlineUsers.filter(
+        (uid) => req.body.micStatus?.[uid]?.speaking === true,
+      );
+    }
+
+    // remove sender
     finalRecipients = finalRecipients.filter(
-      (recipientId) => recipientId.toString() !== senderId.toString(),
+      (id) => id.toString() !== senderId.toString(),
     );
 
     if (finalRecipients.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "No valid recipients found",
+        message: "No valid recipients",
       });
     }
 
-    // ✅ Calculate total cost
-    const recipientCount = finalRecipients.length;
-    const totalCoinsRequired = gift.price * recipientCount;
+    /* =========================
+       COIN CALCULATION
+    ========================= */
+    const totalCoins = gift.price * finalRecipients.length;
 
-    // ✅ SAFETY CHECK (IMPORTANT)
-    if (totalCoinsRequired <= 0) {
+    if (sender.coins < totalCoins) {
       return res.status(400).json({
         success: false,
-        message: "Invalid gift amount",
-      });
-    }
-
-    // ✅ Check sender balance
-    if (sender.coins < totalCoinsRequired) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient coins. Required: ${totalCoinsRequired}, Available: ${sender.coins}`,
-        required: totalCoinsRequired,
+        message: "Insufficient coins",
+        required: totalCoins,
         available: sender.coins,
       });
     }
 
-    // ✅ Start transaction - deduct from sender
-    sender.coins -= totalCoinsRequired;
+    /* =========================
+       DEDUCT COINS
+    ========================= */
+    sender.coins -= totalCoins;
     await sender.save();
 
-    // ✅ Create gift transaction record
+    /* =========================
+       SAVE TRANSACTION
+    ========================= */
     const transaction = await GiftTransaction.create({
       roomId,
       senderId,
       giftId,
-      recipientIds: finalRecipients, // ✅ correct
+      recipientIds: finalRecipients,
       giftName: gift.name,
       giftIcon: gift.icon,
       giftPrice: gift.price,
       giftCategory: gift.category,
       giftRarity: gift.rarity,
       sendType,
-      totalCoinsDeducted: totalCoinsRequired,
+      totalCoinsDeducted: totalCoins,
       status: "completed",
     });
 
-    
+    /* =========================
+       PK SYSTEM
+    ========================= */
     const activePK = await PKBattle.findOne({
       roomId: roomId.toString(),
       status: "running",
     });
 
-    if (activePK && activePK.status === "running") {
+    if (activePK) {
       let score = 1;
-
       if (activePK.mode === "coins") score = gift.price;
-      if (activePK.mode === "votes") score = 1;
       if (activePK.mode === "earning") score = gift.price;
 
       let leftHit = false;
       let rightHit = false;
 
-      for (const recipientId of finalRecipients) {
-        if (activePK.leftUser.userId.toString() === recipientId.toString()) {
+      for (const rid of finalRecipients) {
+        if (activePK.leftUser.userId.toString() === rid.toString())
           leftHit = true;
-        }
 
-        if (activePK.rightUser.userId.toString() === recipientId.toString()) {
+        if (activePK.rightUser.userId.toString() === rid.toString())
           rightHit = true;
-        }
       }
 
       if (leftHit) activePK.leftUser.score += score;
@@ -382,57 +347,43 @@ exports.sendGift = async (req, res) => {
       });
     }
 
-    // ✅ FIX: UPDATE SENDER'S TROPHY POINTS WITH PROPER ERROR HANDLING
+    /* =========================
+       TROPHY LEADERBOARD
+    ========================= */
     try {
       const trophyController = require("./trophyController");
-      await trophyController.updateLeaderboardOnGift(
-        senderId, // ✅ SENDER gets trophy points
-        totalCoinsRequired, // ✅ Total coins SPENT by sender
-      );
-      console.log(
-        `✅ Trophy updated for sender ${senderId}: +${totalCoinsRequired} points`,
-      );
-    } catch (trophyError) {
-      console.error(
-        `⚠️ Trophy update failed for sender ${senderId}:`,
-        trophyError.message,
-      );
-      // ⚠️ Log error but don't fail gift transaction
-      // In production, you may want to queue this for retry
+      await trophyController.updateLeaderboardOnGift(senderId, totalCoins);
+    } catch (err) {
+      console.error("⚠️ Trophy update failed:", err.message);
     }
 
-    // ✅ Emit socket event for leaderboard update
-    if (global.io) {
-      global.io.emit("gift:sent-notify", {
-        gifterUsername: sender.username,
-        gifterUserId: senderId,
+    /* =========================
+       SOCKET NOTIFY (OPTIONAL)
+    ========================= */
+    global.io?.emit("gift:sent-notify", {
+      gifterUserId: senderId,
+      gifterUsername: sender.username,
+      totalCoins,
+      timestamp: new Date(),
+    });
 
-        totalCoins: totalCoinsRequired,
-        timestamp: new Date(),
-      });
-    }
-
-    // ✅ Response
-    res.status(200).json({
+    /* =========================
+       RESPONSE
+    ========================= */
+    return res.status(200).json({
       success: true,
-
+      message: "Gift sent successfully",
       data: {
         transactionId: transaction._id,
-        giftName: gift.name,
-        giftIcon: gift.icon,
-        sendType,
-        coinsPerRecipient: gift.price,
-        totalCoinsDeducted: totalCoinsRequired,
+        totalCoinsDeducted: totalCoins,
         senderNewBalance: sender.coins,
-        timestamp: new Date(),
       },
     });
   } catch (error) {
-    console.error("❌ sendGift error:", error.message);
-    res.status(500).json({
+    console.error("❌ sendGift error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Error sending gift",
-      error: error.message,
+      message: "Failed to send gift",
     });
   }
 };

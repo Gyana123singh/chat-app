@@ -579,29 +579,6 @@ module.exports = (io) => {
         timestamp: new Date().toISOString(),
         animation: true,
       });
-
-      // 🪙 CP reward
-      const cpAmount = Math.floor(giftData.price / 25) * 2;
-      if (cpAmount > 0) {
-        await addCP({
-          userId,
-          amount: cpAmount,
-          source: "SEND_GIFT",
-          io,
-        });
-      }
-
-      // ⭐ EXP reward
-      const exp = Math.floor(giftData.price / 25);
-      if (exp > 0) {
-        await levelController.addPersonalExp(userId, exp, io);
-
-        io.to(userId.toString()).emit("level:exp", {
-          type: "personal",
-          exp,
-          message: `+${exp} EXP from gift`,
-        });
-      }
     });
 
     /* =========================
