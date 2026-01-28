@@ -201,6 +201,9 @@ require("./utils/giftSocketEvents")(io);
 require("./utils/socketEventPrivateChat")(io);
 require("./utils/socketFriendsSuggestions")(io);
 
+const socketService = require("./utils/socketService");
+socketService.init(io);
+
 global.io = io;
 
 console.log("🚀 Socket.IO + Music Streaming ready");

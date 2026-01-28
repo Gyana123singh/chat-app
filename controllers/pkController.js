@@ -1,5 +1,6 @@
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room");
+const { getIO } = require("../utils/socketService");
 
 exports.createPK = async (req, res) => {
   try {
@@ -7,7 +8,8 @@ exports.createPK = async (req, res) => {
     const hostId = req.user.id;
 
     // ❌ Validate room
-    const room = await Room.findOne({ roomId });
+    const room = await Room.findById(roomId);
+
     if (!room) return res.status(404).json({ message: "Rooms not found" });
 
     // ❌ Only host
@@ -37,10 +39,12 @@ exports.createPK = async (req, res) => {
       rightUser: { userId: rightUserId },
       mode,
       duration,
+      status: "running", // ✅ REQUIRED
+      startedAt: new Date(), // ✅ REQUIRED
     });
 
     // 🔥 notify room
-    global.io.to(`room:${roomId}`).emit("pk:started", pk);
+    getIO().to(`room:${roomId}`).emit("pk:started", pk);
 
     // ⏱ auto end
     setTimeout(async () => {
@@ -58,7 +62,7 @@ exports.createPK = async (req, res) => {
 
       await battle.save();
 
-      global.io.to(`room:${roomId}`).emit("pk:ended", battle);
+      getIO().to(`room:${roomId}`).emit("pk:ended", battle);
     }, duration * 1000);
 
     return res.json({
