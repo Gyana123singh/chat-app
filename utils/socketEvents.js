@@ -509,26 +509,7 @@ module.exports = (io) => {
     /* =========================
        GIFTS
     ========================= */
-    socket.on("gift:send:effect", async ({ roomId, giftData, sendType }) => {
-      const { userId, username, avatar } = socket.data;
-      if (!roomId || !userId || !giftData) return;
-
-      const roomName = `room:${roomId}`;
-
-      // 🎁 floating animation
-      io.to(roomName).emit("gift:received", {
-        senderId: userId,
-        senderUsername: username,
-        senderAvatar: avatar,
-        giftName: giftData.name,
-        giftIcon: giftData.icon,
-        giftPrice: giftData.price,
-        giftRarity: giftData.rarity,
-        sendType,
-        timestamp: new Date().toISOString(),
-        animation: true,
-      });
-    });
+   
 
     /* =========================
        TROPHY / LEADERBOARD

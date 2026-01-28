@@ -203,6 +203,7 @@ exports.sendGift = async (req, res) => {
       recipients = [],
       sendType,
       micOnlineUsers = [],
+      micStatus = {},
     } = req.body;
 
     /* =========================
@@ -226,43 +227,42 @@ exports.sendGift = async (req, res) => {
        FETCH DATA
     ========================= */
     const sender = await User.findById(senderId);
-    if (!sender)
-      return res
-        .status(404)
-        .json({ success: false, message: "Sender not found" });
+    if (!sender) {
+      return res.status(404).json({
+        success: false,
+        message: "Sender not found",
+      });
+    }
 
     const gift = await Gift.findById(giftId);
-    if (!gift || !gift.isAvailable)
-      return res
-        .status(404)
-        .json({ success: false, message: "Gift not available" });
+    if (!gift || !gift.isAvailable) {
+      return res.status(404).json({
+        success: false,
+        message: "Gift not available",
+      });
+    }
 
     const room = await Room.findById(roomId);
-    if (!room)
-      return res
-        .status(404)
-        .json({ success: false, message: "Room not found" });
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
 
     /* =========================
        FINAL RECIPIENTS
     ========================= */
     let finalRecipients = [];
 
-    if (sendType === "individual") {
-      finalRecipients = recipients;
-    }
-
-    if (sendType === "all_in_room") {
-      finalRecipients = micOnlineUsers;
-    }
-
+    if (sendType === "individual") finalRecipients = recipients;
+    if (sendType === "all_in_room") finalRecipients = micOnlineUsers;
     if (sendType === "all_on_mic") {
       finalRecipients = micOnlineUsers.filter(
-        (uid) => req.body.micStatus?.[uid]?.speaking === true,
+        (uid) => micStatus?.[uid]?.speaking === true,
       );
     }
 
-    // remove sender
     finalRecipients = finalRecipients.filter(
       (id) => id.toString() !== senderId.toString(),
     );
@@ -279,20 +279,26 @@ exports.sendGift = async (req, res) => {
     ========================= */
     const totalCoins = gift.price * finalRecipients.length;
 
-    if (sender.coins < totalCoins) {
+    /* =========================
+       ATOMIC COIN DEDUCTION ✅
+    ========================= */
+    const updatedSender = await User.findOneAndUpdate(
+      {
+        _id: senderId,
+        coins: { $gte: totalCoins },
+      },
+      {
+        $inc: { coins: -totalCoins },
+      },
+      { new: true },
+    );
+
+    if (!updatedSender) {
       return res.status(400).json({
         success: false,
         message: "Insufficient coins",
-        required: totalCoins,
-        available: sender.coins,
       });
     }
-
-    /* =========================
-       DEDUCT COINS
-    ========================= */
-    sender.coins -= totalCoins;
-    await sender.save();
 
     /* =========================
        SAVE TRANSACTION
@@ -302,6 +308,7 @@ exports.sendGift = async (req, res) => {
       senderId,
       giftId,
       recipientIds: finalRecipients,
+      recipientCount: finalRecipients.length,
       giftName: gift.name,
       giftIcon: gift.icon,
       giftPrice: gift.price,
@@ -313,71 +320,87 @@ exports.sendGift = async (req, res) => {
     });
 
     /* =========================
-       PK SYSTEM
+       🎁 SOCKET ANIMATION
     ========================= */
-    const activePK = await PKBattle.findOne({
-      roomId: roomId.toString(),
-      status: "running",
-    });
+    const payload = {
+      senderId,
+      senderUsername: updatedSender.username,
+      senderAvatar: updatedSender.profile?.avatar || null,
+      gift: {
+        id: gift._id,
+        name: gift.name,
+        icon: gift.icon,
+        price: gift.price,
+        rarity: gift.rarity,
+      },
+      recipients: finalRecipients,
+      sendType,
+      timestamp: Date.now(),
+    };
 
-    if (activePK) {
-      let score = 1;
-      if (activePK.mode === "coins") score = gift.price;
-      if (activePK.mode === "earning") score = gift.price;
+    global.io.to(`room:${roomId}`).emit("gift:received", payload);
 
-      let leftHit = false;
-      let rightHit = false;
-
-      for (const rid of finalRecipients) {
-        if (activePK.leftUser.userId.toString() === rid.toString())
-          leftHit = true;
-
-        if (activePK.rightUser.userId.toString() === rid.toString())
-          rightHit = true;
-      }
-
-      if (leftHit) activePK.leftUser.score += score;
-      if (rightHit) activePK.rightUser.score += score;
-
-      await activePK.save();
-
-      global.io.to(`room:${roomId}`).emit("pk:update", {
-        left: activePK.leftUser,
-        right: activePK.rightUser,
-      });
-    }
-
-    /* =========================
-       TROPHY LEADERBOARD
-    ========================= */
-    try {
-      const trophyController = require("./trophyController");
-      await trophyController.updateLeaderboardOnGift(senderId, totalCoins);
-    } catch (err) {
-      console.error("⚠️ Trophy update failed:", err.message);
-    }
-
-    /* =========================
-       SOCKET NOTIFY (OPTIONAL)
-    ========================= */
-    global.io?.emit("gift:sent-notify", {
-      gifterUserId: senderId,
-      gifterUsername: sender.username,
-      totalCoins,
-      timestamp: new Date(),
+    // fallback direct emit (important)
+    finalRecipients.forEach((uid) => {
+      global.io.to(uid.toString()).emit("gift:received", payload);
     });
 
     /* =========================
-       RESPONSE
+       ⚡ FAST RESPONSE
     ========================= */
     return res.status(200).json({
       success: true,
       message: "Gift sent successfully",
-      data: {
-        transactionId: transaction._id,
-        totalCoinsDeducted: totalCoins,
-        senderNewBalance: sender.coins,
-      },
+      balance: updatedSender.coins,
+      transactionId: transaction._id,
+    });
+
+    /* =========================
+       🔁 BACKGROUND TASKS
+    ========================= */
+
+    // PK UPDATE
+    setImmediate(async () => {
+      try {
+        const activePK = await PKBattle.findOne({
+          roomId: roomId.toString(),
+          status: "running",
+        });
+
+        if (!activePK) return;
+
+        let score = gift.price;
+        let leftHit = false;
+        let rightHit = false;
+
+        for (const rid of finalRecipients) {
+          if (activePK.leftUser.userId.toString() === rid.toString())
+            leftHit = true;
+          if (activePK.rightUser.userId.toString() === rid.toString())
+            rightHit = true;
+        }
+
+        if (leftHit) activePK.leftUser.score += score;
+        if (rightHit) activePK.rightUser.score += score;
+
+        await activePK.save();
+
+        global.io.to(`room:${roomId}`).emit("pk:update", {
+          left: activePK.leftUser,
+          right: activePK.rightUser,
+        });
+      } catch (e) {
+        console.log("⚠️ PK update failed");
+      }
+    });
+
+    // TROPHY UPDATE
+    setImmediate(async () => {
+      try {
+        await trophyController.updateLeaderboardOnGift(senderId, totalCoins);
+      } catch (e) {
+        console.log("⚠️ Trophy update failed");
+      }
     });
   } catch (error) {
     console.error("❌ sendGift error:", error);
