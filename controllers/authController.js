@@ -12,10 +12,8 @@ exports.googleAuthSuccess = async (req, res) => {
   // ✅ Redirect to Vercel frontend
   // res.redirect(`myapp://auth/google/success?token=${token}`);
   res.redirect(
-  `https://test-admin-chat-ccf8cblwg-gyana123singhs-projects.vercel.app/Login?token=${token}`
-);
-
-
+    `https://test-admin-chat-ccf8cblwg-gyana123singhs-projects.vercel.app/Login?token=${token}`,
+  );
 };
 
 // for phone OTP login
