@@ -41,7 +41,7 @@ const PORT = Number(process.env.PORT || 5004);
 /* ===================== MIDDLEWARE ===================== */
 app.use(
   cors({
-    origin: "https://test-admin-chat-ccf8cblwg-gyana123singhs-projects.vercel.app", // 👈 auto reflect frontend origin
+    origin: true, // 👈 auto reflect frontend origin
     credentials: true,
   }),
 );
