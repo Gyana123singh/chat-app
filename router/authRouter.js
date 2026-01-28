@@ -9,17 +9,16 @@ router.get(
   passport.authenticate("google", {
     scope: ["profile", "email"],
     prompt: "select_account consent",
-  })
+  }),
 );
 
 // 2️⃣ Google Callback
 router.get(
   "/google/callback",
   passport.authenticate("google", {
-    session: false,
-    failureRedirect: "/failed",
+    failureRedirect: `${process.env.CLIENT_URL}/Login?error=google`,
   }),
-  authController.googleAuthSuccess
+  authController.googleAuthSuccess,
 );
 
 module.exports = router;

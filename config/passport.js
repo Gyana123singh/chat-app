@@ -1,6 +1,21 @@
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const User = require("../models/users");
+const { handleGoogleAuth } = require("../utils/googleAuthService");
+
+// ✅ REQUIRED
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err, null);
+  }
+});
 
 passport.use(
   new GoogleStrategy(
@@ -11,30 +26,9 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        console.log("Access Token:", accessToken);
-        console.log("Refresh Token:", refreshToken);
-        const email = profile.emails?.[0]?.value;
-        if (!email) return done(null, false);
-
-        let user = await User.findOne({
-          $or: [{ googleId: profile.id }, { email }],
-        });
-
-        if (!user) {
-          user = await User.create({
-            googleId: profile.id,
-            email,
-            username: email.split("@")[0] + "_" + profile.id.slice(-5),
-            isVerified: true,
-            profile: {
-              avatar: profile.photos?.[0]?.value,
-            },
-          });
-        }
-
-        return done(null, user);
+        const user = await handleGoogleAuth(profile);
+        return done(null, user); // ✅ MUST BE USER
       } catch (err) {
-        console.error("GOOGLE AUTH ERROR →", err);
         return done(err, null);
       }
     }

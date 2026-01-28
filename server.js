@@ -53,7 +53,7 @@ app.use(
   session({
     secret: process.env.SESSION_SECRET || "secret123",
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
   }),
 );
 
