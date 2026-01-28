@@ -262,13 +262,13 @@ exports.sendGift = async (req, res) => {
     }
 
     if (sendType === "all_in_room") {
-      finalRecipients = micOnlineUsers;
+      finalRecipients = Array.isArray(micOnlineUsers) ? micOnlineUsers : [];
     }
 
     if (sendType === "all_on_mic") {
-      finalRecipients = micOnlineUsers.filter(
-        (uid) => micStatus?.[uid]?.speaking === true,
-      );
+      finalRecipients = Array.isArray(micOnlineUsers)
+        ? micOnlineUsers.filter((uid) => micStatus?.[uid]?.speaking === true)
+        : [];
     }
 
     // remove sender
@@ -333,18 +333,20 @@ exports.sendGift = async (req, res) => {
     });
 
     if (activePK) {
-      let leftHit = false;
-      let rightHit = false;
+      const leftId = activePK.leftUser?.userId?.toString();
+      const rightId = activePK.rightUser?.userId?.toString();
 
       for (const rid of finalRecipients) {
-        if (activePK.leftUser.userId.toString() === rid.toString())
-          leftHit = true;
-        if (activePK.rightUser.userId.toString() === rid.toString())
-          rightHit = true;
-      }
+        const r = rid.toString();
 
-      if (leftHit) activePK.leftUser.score += gift.price;
-      if (rightHit) activePK.rightUser.score += gift.price;
+        if (leftId && leftId === r) {
+          activePK.leftUser.score += gift.price;
+        }
+
+        if (rightId && rightId === r) {
+          activePK.rightUser.score += gift.price;
+        }
+      }
 
       await activePK.save();
 
