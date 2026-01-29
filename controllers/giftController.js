@@ -261,7 +261,7 @@ exports.sendGift = async (req, res) => {
     if (sender.coins < totalCoins) {
       return res.status(400).json({
         success: false,
-        message: "Insufficient coins",
+        message: "Insufficient coin",
       });
     }
 
