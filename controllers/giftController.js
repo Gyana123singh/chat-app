@@ -205,8 +205,7 @@ exports.checkEligibility = async (req, res) => {
 
 exports.sendGift = async (req, res) => {
   try {
-    
-    const senderId = req.user.sub; // ✅ FIXED
+    const senderId = req.user.sub;
     const {
       roomId,
       giftId,
