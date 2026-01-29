@@ -224,7 +224,7 @@ exports.sendGift = async (req, res) => {
 
     const sender = await User.findById(senderId);
     const gift = await Gift.findById(giftId);
-    const room = await Room.findById(roomId);
+    const room = await Room.findOne({ roomId });
 
     if (!sender || !gift || !room) {
       return res.status(404).json({
