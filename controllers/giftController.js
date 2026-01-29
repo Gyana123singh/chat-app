@@ -267,6 +267,7 @@ exports.sendGift = async (req, res) => {
 
     // 💰 deduct coins
     sender.coins -= totalCoins;
+    sender.totalSpent += totalCoins;
     await sender.save();
 
     // 🧾 transaction
@@ -279,12 +280,23 @@ exports.sendGift = async (req, res) => {
       giftName: gift.name,
       giftIcon: gift.icon,
       giftPrice: gift.price,
-      giftCategory: gift.category,
+      category: gift.category,
       giftRarity: gift.rarity,
       sendType,
       totalCoinsDeducted: totalCoins,
       status: "completed",
     });
+
+    // 🔥 ADD THIS RIGHT HERE 👇👇👇
+    await User.updateMany(
+      { _id: { $in: finalRecipients } },
+      {
+        $inc: {
+          "stats.giftsReceived": 1,
+          totalEarned: gift.price,
+        },
+      },
+    );
 
     const io = getIO();
 
