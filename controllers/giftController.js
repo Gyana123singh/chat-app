@@ -6,6 +6,7 @@ const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 const trophyController = require("../controllers/trophyController");
 const { getIO } = require("../utils/socketService");
+const mongoose = require("mongoose");
 
 // this for admin side to add gift and category
 exports.addGift = async (req, res) => {
@@ -287,16 +288,49 @@ exports.sendGift = async (req, res) => {
       status: "completed",
     });
 
-    // 🔥 ADD THIS RIGHT HERE 👇👇👇
-    await User.updateMany(
-      { _id: { $in: finalRecipients } },
-      {
-        $inc: {
-          "stats.giftsReceived": 1,
-          totalEarned: gift.price,
+    // 🔥 DEBUG LOGGING
+    console.log("📊 Before User Update:", {
+      finalRecipientsCount: finalRecipients.length,
+      giftPrice: gift.price,
+      totalCoins: totalCoins,
+      sampleRecipient: finalRecipients[0],
+      recipientType: typeof finalRecipients[0],
+    });
+
+    // ✅ FIXED: Added 'new' keyword for ObjectId constructor
+    const recipientObjectIds = finalRecipients
+      .map((id) => {
+        try {
+          return new mongoose.Types.ObjectId(id);
+        } catch (e) {
+          console.log("Invalid ObjectId:", id, e.message);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    if (recipientObjectIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid recipient IDs format",
+      });
+    }
+
+    try {
+      await User.updateMany(
+        { _id: { $in: recipientObjectIds } },
+        {
+          $inc: {
+            "stats.giftsReceived": 1,
+            totalEarned: gift.price,
+          },
         },
-      },
-    );
+      );
+      console.log("✅ User update successful");
+    } catch (updateErr) {
+      console.error("❌ User update error:", updateErr);
+      throw updateErr;
+    }
 
     const io = getIO();
 
