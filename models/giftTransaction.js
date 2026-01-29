@@ -39,7 +39,6 @@ const giftTransactionSchema = new mongoose.Schema(
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
-      required: true,
     },
 
     giftRarity: String,
@@ -47,12 +46,10 @@ const giftTransactionSchema = new mongoose.Schema(
     sendType: {
       type: String,
       enum: ["individual", "all_in_room", "all_on_mic"],
-      required: true,
     },
 
     totalCoinsDeducted: {
       type: Number,
-      required: true,
     },
 
     status: {
@@ -61,7 +58,7 @@ const giftTransactionSchema = new mongoose.Schema(
       default: "completed",
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Indexes
