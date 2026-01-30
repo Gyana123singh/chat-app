@@ -15,7 +15,7 @@ const giftTransactionSchema = new mongoose.Schema(
     // Track who sent and what type
     sendType: {
       type: String,
-      enum: ["individual", "all_in_room", "all_on_mic"],
+      enum: ["all_in_room", "all_on_mic"],
       required: true,
     },
     totalCoinsDeducted: {
@@ -39,11 +39,11 @@ const giftTransactionSchema = new mongoose.Schema(
     },
     createdAt: { type: Date, default: Date.now },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Indexes for analytics
 giftTransactionSchema.index({ senderId: 1, createdAt: -1 });
-giftTransactionSchema.index({  createdAt: -1 });
+giftTransactionSchema.index({ createdAt: -1 });
 giftTransactionSchema.index({ recipientIds: 1 });
 module.exports = mongoose.model("GiftTransaction", giftTransactionSchema);

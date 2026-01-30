@@ -180,6 +180,99 @@ module.exports = (io) => {
       }
     });
 
+    // gift sending on room
+    socket.on("gift:send", async ({ roomId, giftId, sendType }) => {
+      try {
+        const senderId = socket.data.userId;
+        if (!senderId || !roomId || !giftId) return;
+
+        const room = await Room.findById(roomId).populate("participants.user");
+        const gift = await Gift.findById(giftId);
+        const sender = await User.findById(senderId);
+
+        if (!room || !gift || !sender) return;
+
+        let recipients = [];
+
+        if (sendType === "all_in_room") {
+          recipients = room.participants.map((p) => p.user._id);
+        }
+
+        if (sendType === "all_on_mic") {
+          recipients = room.participants
+            .filter((p) => {
+              const mic = micStates.get(p.user._id.toString());
+              return mic && mic.muted === false;
+            })
+            .map((p) => p.user._id);
+        }
+
+        if (!recipients.length) return;
+
+        const totalCoins = gift.price * recipients.length;
+
+        if (sender.coins < totalCoins) {
+          socket.emit("gift:error", { message: "Not enough coins" });
+          return;
+        }
+
+        // 1️⃣ Deduct coins from sender ONLY
+        sender.coins -= totalCoins;
+        sender.totalSpent += totalCoins;
+        await sender.save();
+
+        // 2️⃣ Receivers: only gift count (NO coins)
+        await User.updateMany(
+          { _id: { $in: recipients } },
+          {
+            $inc: {
+              "stats.giftsReceived": 1,
+            },
+          },
+        );
+
+        // 3️⃣ Save transaction
+        const tx = await GiftTransaction.create({
+          roomId,
+          senderId,
+          giftId,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftRarity: gift.rarity,
+          sendType,
+          recipientCount: recipients.length,
+          recipientIds: recipients,
+          totalCoinsDeducted: totalCoins,
+          status: "completed",
+        });
+
+        // 4️⃣ Animate gift
+        io.to(`room:${roomId}`).emit("gift:animation", {
+          sender: {
+            id: sender._id,
+            username: sender.username,
+            avatar: sender.profile.avatar,
+          },
+          gift: {
+            id: gift._id,
+            name: gift.name,
+            icon: gift.icon,
+            rarity: gift.rarity,
+          },
+          count: recipients.length,
+          sendType,
+          txId: tx._id,
+        });
+
+        // 5️⃣ Update sender coins live
+        io.to(senderId.toString()).emit("coins:update", {
+          coins: sender.coins,
+        });
+      } catch (err) {
+        console.error("🎁 gift error:", err.message);
+      }
+    });
     /* =========================
         🔥 PK EVENTS
 ========================= */
