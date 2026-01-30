@@ -91,7 +91,7 @@ exports.addCategory = async (req, res) => {
       });
     }
 
-    const allowedTypes = ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG"];
+    const allowedTypes = ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG","NONE"];
 
     if (!allowedTypes.includes(type)) {
       return res.status(400).json({

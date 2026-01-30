@@ -36,7 +36,7 @@ const giftSchema = new mongoose.Schema(
     // 🔥 THIS TELLS FRONTEND WHAT TO DO
     effectType: {
       type: String,
-      enum: ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG"],
+      enum: ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG","NONE"],
       default: "NONE",
     },
     createdAt: { type: Date, default: Date.now },
