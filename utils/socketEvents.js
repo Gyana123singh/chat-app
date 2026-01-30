@@ -256,6 +256,32 @@ module.exports = (io) => {
       }
     });
 
+    socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
+      const { userId, username, avatar } = socket.data;
+
+      if (!roomId || !imageUrl) return;
+
+      const message = {
+        id: `${userId}-${Date.now()}`,
+        type: "image",
+        userId,
+        username,
+        avatar,
+        imageUrl,
+        width: width || null,
+        height: height || null,
+        timestamp: new Date().toISOString(),
+      };
+
+      if (!roomMessages.has(roomId)) {
+        roomMessages.set(roomId, []);
+      }
+
+      roomMessages.get(roomId).push(message);
+
+      io.to(`room:${roomId}`).emit("message:receive", message);
+    });
+
     /* =========================
    VIDEO CONTROLS (ALL USERS)
 ========================= */

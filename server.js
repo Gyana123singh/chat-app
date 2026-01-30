@@ -31,6 +31,8 @@ const notificationRouter = require("./router/notificationRouter");
 const promotionRouter = require("./router/promotionRouter");
 const cpRouter = require("./router/cpRoutes");
 const pkRoutes = require("./router/pkRouter");
+const chatUploadRouter = require("./router/chatUploadRouter");
+const privateImageUpload = require("./router/privateImageUpload");
 const MusicState = require("./models/musicState");
 
 const app = express();
@@ -48,6 +50,9 @@ app.use(
 
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+
+// ✅ STATIC FILES
+app.use("/uploads", express.static("uploads"));
 
 app.use(
   session({
@@ -80,6 +85,9 @@ app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
 app.use("/api/cp", cpRouter);
 app.use("/api/pk", pkRoutes);
+app.use("/api/image-upload", chatUploadRouter);
+
+app.use("/api/private-upload", privateImageUpload);
 
 app.get("/", (req, res) => {
   res.send("API is running...");

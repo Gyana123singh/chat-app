@@ -120,23 +120,24 @@ module.exports = (io) => {
           recipientId,
         });
 
-        if (!conversationId || !recipientId || !text || !senderId) {
-          console.warn("❌ Missing message data");
+        // ✅ REQUIRED FIELDS
+        if (!conversationId || !recipientId || !senderId) {
           socket.emit("private:message:error", {
             error: "Missing required fields",
           });
           return;
         }
 
-        try {
-          if (text.trim().length === 0) {
-            socket.emit("private:message:error", {
-              error: "Message cannot be empty",
-            });
-            return;
-          }
+        // ✅ allow text OR image
+        if (!text && !attachment) {
+          socket.emit("private:message:error", {
+            error: "Message cannot be empty",
+          });
+          return;
+        }
 
-          if (text.length > 1000) {
+        try {
+          if (text && text.trim().length > 1000) {
             socket.emit("private:message:error", {
               error: "Message too long",
             });
@@ -147,7 +148,7 @@ module.exports = (io) => {
             conversationId,
             sender: senderId,
             recipient: recipientId,
-            text: text.trim(),
+            text: text ? text.trim() : "",
             attachment: attachment || null,
           });
 
@@ -164,19 +165,18 @@ module.exports = (io) => {
 
           io.to(room).emit("private:message:receive", populated);
 
-          /* =========================
-             🔔 NOTIFICATION (ONLY ADD)
-          ========================= */
+          // 🔔 notification
           if (recipientId.toString() !== senderId.toString()) {
             const notification = await Notification.create({
               user: recipientId,
               type: "private_message",
               title: "New message",
-              body: text.length > 40 ? text.slice(0, 40) + "..." : text,
-              data: {
-                conversationId,
-                senderId,
-              },
+              body: attachment
+                ? "📷 Photo"
+                : text.length > 40
+                  ? text.slice(0, 40) + "..."
+                  : text,
+              data: { conversationId, senderId },
             });
 
             io.to(`notify:${recipientId}`).emit(
@@ -184,12 +184,12 @@ module.exports = (io) => {
               notification,
             );
           }
-          console.log(`✅ Message emitted to room ${room}: ${message._id}`);
+
+          console.log(`✅ Message emitted to room ${room}`);
         } catch (error) {
           console.error("❌ Error sending message:", error);
           socket.emit("private:message:error", {
             error: "Failed to send message",
-            details: error.message,
           });
         }
       },
