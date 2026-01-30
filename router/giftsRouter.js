@@ -15,7 +15,6 @@ router.post(
   giftController.checkEligibility,
 );
 
-router.post("/sendGift", authMiddleware, giftController.sendGift);
 
 // Get all gift transactions in a room
 router.get("/room/:roomId", authMiddleware, giftController.getGiftTransactions);
