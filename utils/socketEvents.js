@@ -4,6 +4,7 @@ const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
 const levelController = require("../controllers/levelController");
+const Room = require("../models/room");
 
 const mongoose = require("mongoose");
 
@@ -234,6 +235,7 @@ module.exports = (io) => {
         // 3️⃣ Save transaction
         const tx = await GiftTransaction.create({
           roomId,
+          roomName: room.roomName, // ✅ ADD THIS LINE
           senderId,
           giftId,
           giftName: gift.name,

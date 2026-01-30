@@ -1,49 +1,70 @@
 const mongoose = require("mongoose");
+
 const giftTransactionSchema = new mongoose.Schema(
   {
-    username: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
-    roomId: { type: mongoose.Schema.Types.ObjectId, ref: "Room" },
-    isOnMic: { type: Boolean, default: false },
-    senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    receiverId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    giftId: { type: mongoose.Schema.Types.ObjectId, ref: "Gift" }, // ✅
+    roomId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Room",
+      required: true,
+    },
+
+    roomName: {
+      type: String, // snapshot
+    },
+
+    senderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    giftId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Gift",
+      required: true,
+    },
+
     giftName: String,
     giftIcon: String,
     giftPrice: Number,
     giftCategory: String,
     giftRarity: String,
-    // Track who sent and what type
+
     sendType: {
       type: String,
       enum: ["all_in_room", "all_on_mic"],
       required: true,
     },
-    totalCoinsDeducted: {
-      type: Number,
-      required: true,
-    },
+
     recipientCount: {
       type: Number,
       required: true,
     },
+
     recipientIds: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
+
+    totalCoinsDeducted: {
+      type: Number,
+      required: true,
+    },
+
     status: {
       type: String,
-      enum: ["pending", "completed", "failed"],
-      default: "pending",
+      enum: ["completed", "failed"],
+      default: "completed",
     },
-    createdAt: { type: Date, default: Date.now },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
-// Indexes for analytics
+// indexes
 giftTransactionSchema.index({ senderId: 1, createdAt: -1 });
-giftTransactionSchema.index({ createdAt: -1 });
+giftTransactionSchema.index({ roomId: 1, createdAt: -1 });
 giftTransactionSchema.index({ recipientIds: 1 });
+
 module.exports = mongoose.model("GiftTransaction", giftTransactionSchema);
