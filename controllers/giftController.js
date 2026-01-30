@@ -45,41 +45,6 @@ exports.addGift = async (req, res) => {
   }
 };
 // this for admin side to add gift and category
-// exports.addCategory = async (req, res) => {
-//   try {
-//     const { name } = req.body;
-
-//     // ✅ Validation
-//     if (!name || !name.trim()) {
-//       return res.status(400).json({
-//         message: "Category name is required",
-//       });
-//     }
-
-//     // ✅ Check duplicate
-//     const exists = await Category.findOne({ name: name.trim() });
-//     if (exists) {
-//       return res.status(409).json({
-//         message: "Category already exists",
-//       });
-//     }
-
-//     // ✅ Create category
-//     const category = await Category.create({
-//       name: name.trim(),
-//     });
-
-//     return res.status(201).json({
-//       message: "Category added successfully",
-//       category,
-//     });
-//   } catch (error) {
-//     console.error("Add Category Error:", error);
-//     return res.status(500).json({
-//       message: "Internal server error",
-//     });
-//   }
-// };
 exports.addCategory = async (req, res) => {
   try {
     const { type } = req.body;
