@@ -6,93 +6,132 @@ const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 const trophyController = require("../controllers/trophyController");
 const PKBattle = require("../models/pkBattle");
-const { getIO } = require("../utils/socketService");
 
-// this for admin side to add gift and category
 exports.addGift = async (req, res) => {
   try {
     const { name, price, category } = req.body;
 
-    // ❌ Validation
-    if (!name || !price || !category || !req.file) {
+    // Validation
+    if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
-        message: "Name, price, category and image are required",
+        message: "Name, price and category are required",
       });
     }
 
-    // ✅ Upload image to Cloudinary
-    const uploadResult = await cloudinary.uploader.upload(req.file.path, {
-      folder: "gifts",
-      resource_type: "image",
-    });
+    let icon = "";
+    if (req.file) {
+      icon = req.file.path;
+    }
 
-    // ✅ Save gift
     const gift = await Gift.create({
       name,
       price,
-      category,
-
-      // 🔥 IMPORTANT PART
-      icon: uploadResult.secure_url, // ✅ MAIN IMAGE
-      cloudinaryId: uploadResult.public_id,
-
-      mediaType: uploadResult.format === "gif" ? "gif" : "image",
+      category, // string now
+      icon,
     });
 
     return res.status(201).json({
       success: true,
-      message: "Gift added successfully",
-      gift,
+      message: "Gift created successfully",
+      data: gift,
     });
   } catch (error) {
-    console.error("Add Gift Error:", error);
+    console.error("❌ Create Gift Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error",
+      message: error.message || "Error creating gift",
     });
   }
 };
 // this for admin side to add gift and category
+// exports.addCategory = async (req, res) => {
+//   try {
+//     const { name } = req.body;
+
+//     // ✅ Validation
+//     if (!name || !name.trim()) {
+//       return res.status(400).json({
+//         message: "Category name is required",
+//       });
+//     }
+
+//     // ✅ Check duplicate
+//     const exists = await Category.findOne({ name: name.trim() });
+//     if (exists) {
+//       return res.status(409).json({
+//         message: "Category already exists",
+//       });
+//     }
+
+//     // ✅ Create category
+//     const category = await Category.create({
+//       name: name.trim(),
+//     });
+
+//     return res.status(201).json({
+//       message: "Category added successfully",
+//       category,
+//     });
+//   } catch (error) {
+//     console.error("Add Category Error:", error);
+//     return res.status(500).json({
+//       message: "Internal server error",
+//     });
+//   }
+// };
 exports.addCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { type } = req.body;
 
-    // ✅ Validation
-    if (!name || !name.trim()) {
+    if (!type) {
       return res.status(400).json({
-        message: "Category name is required",
+        success: false,
+        message: "Category type is required",
       });
     }
 
-    // ✅ Check duplicate
-    const exists = await Category.findOne({ name: name.trim() });
+    const allowedTypes = ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG"];
+
+    if (!allowedTypes.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid category type",
+      });
+    }
+
+    const exists = await Category.findOne({ type });
+
     if (exists) {
-      return res.status(409).json({
+      return res.status(400).json({
+        success: false,
         message: "Category already exists",
       });
     }
 
-    // ✅ Create category
     const category = await Category.create({
-      name: name.trim(),
+      type,
+      title: type, // display same as type
     });
 
     return res.status(201).json({
-      message: "Category added successfully",
-      category,
+      success: true,
+      data: category,
     });
   } catch (error) {
-    console.error("Add Category Error:", error);
+    console.error("❌ Add Category Error:", error);
     return res.status(500).json({
-      message: "Internal server error",
+      success: false,
+      message: error.message || "Server error",
     });
   }
 };
-// this for admin side to add gift and category
+
 exports.getCategory = async (req, res) => {
   try {
-    const categories = await Category.find().sort({ createdAt: -1 }); // ✅ OLD → NEW (new data at bottom)
+    const categories = await Category.find({ isActive: true })
+      .select("type -_id")
+      .sort({ createdAt: 1 });
 
     return res.status(200).json({
       success: true,
@@ -107,47 +146,45 @@ exports.getCategory = async (req, res) => {
     });
   }
 };
-
 // this for admin side to add gift and category
 exports.getAllGifts = async (req, res) => {
   try {
-    const { category, page = 1, limit = 20 } = req.query;
-
-    // ✅ FIX 1: correct field name
-    let query = { isAvailable: true };
-
-    // ✅ FIX 2: category filter
-    if (category) {
-      query.category = category;
-    }
-
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    // ✅ FIX 3: populate category name
-    const gifts = await Gift.find(query)
-      .populate("category", "name") // 🔥 IMPORTANT
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
-
-    const total = await Gift.countDocuments(query);
+    const gifts = await Gift.find({ isAvailable: true }).sort({
+      createdAt: -1,
+    });
 
     return res.status(200).json({
       success: true,
-      gifts,
-      pagination: {
-        total,
-        page: pageNum,
-        pages: Math.ceil(total / limitNum),
-      },
+      data: gifts,
     });
   } catch (error) {
-    console.error("Get All Gifts Error:", error);
-    return res.status(500).json({
+    console.error("❌ Fetch All Gifts Error:", error);
+    res.status(500).json({
       success: false,
-      message: "Failed to fetch gifts",
+      message: "Error fetching gifts",
+    });
+  }
+};
+
+// GET /api/store-gifts/get-gift-by-category/:category
+exports.getGiftsByCategory = async (req, res) => {
+  try {
+    const { category } = req.params;
+
+    const gifts = await Gift.find({
+      category: { $regex: `^${category}$`, $options: "i" }, // case-insensitive
+      isAvailable: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: gifts,
+    });
+  } catch (error) {
+    console.error("❌ Fetch Category Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching gifts category",
     });
   }
 };
@@ -193,16 +230,6 @@ exports.checkEligibility = async (req, res) => {
     });
   }
 };
-
-// ..........................................................
-// this is for user side to send gift
-
-/**
- * 🔥 SEND GIFT - Main function (UPDATED WITH TROPHY INTEGRATION & ERROR HANDLING)
- * Handles: Individual, All in Room, All on Mic
- */
-
-
 
 /**
  * 🔥 GET GIFT TRANSACTIONS IN ROOM

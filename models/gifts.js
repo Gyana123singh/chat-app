@@ -16,11 +16,9 @@ const giftSchema = new mongoose.Schema(
 
       min: 1,
     },
-    // ✅ FIX HERE
+
     category: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Category",
-      required: true,
+      type: String,
     },
     animationUrl: {
       type: String,
@@ -35,9 +33,15 @@ const giftSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // 🔥 THIS TELLS FRONTEND WHAT TO DO
+    effectType: {
+      type: String,
+      enum: ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG"],
+      default: "NONE",
+    },
     createdAt: { type: Date, default: Date.now },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Gift", giftSchema);

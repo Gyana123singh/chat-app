@@ -5,14 +5,14 @@ const giftController = require("../controllers/giftController");
 const { authMiddleware } = require("../middleware/auth");
 const multer = require("../middleware/multer.middleware");
 
-router.post("/addGift", multer.single("image"), giftController.addGift);
+router.post("/addGift", multer.single("icon"), giftController.addGift);
 router.get("/getAllGift", giftController.getAllGifts);
 router.post("/addCategory", giftController.addCategory);
 router.get("/getCategory", giftController.getCategory);
 router.post(
   "/check-eligibility",
   authMiddleware,
-  giftController.checkEligibility
+  giftController.checkEligibility,
 );
 
 router.post("/sendGift", authMiddleware, giftController.sendGift);
@@ -21,7 +21,15 @@ router.post("/sendGift", authMiddleware, giftController.sendGift);
 router.get("/room/:roomId", authMiddleware, giftController.getGiftTransactions);
 
 // Get gifts received by a user
-router.get("/received-gift", authMiddleware, giftController.getUserReceivedGifts);
+router.get(
+  "/received-gift",
+  authMiddleware,
+  giftController.getUserReceivedGifts,
+);
+router.get(
+  "/get-gift-by-category/:category",
+  giftController.getGiftsByCategory,
+);
 
 // Get gift sending analytics for a user
 router.get("/analytics", authMiddleware, giftController.getGiftAnalytics);

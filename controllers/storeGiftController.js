@@ -64,9 +64,6 @@ exports.addStoreCategory = async (req, res) => {
 };
 
 /* ===============================
-   GET ALL CATEGORIES
-================================ */
-/* ===============================
    GET ALL CATEGORIES (TABS)
 ================================ */
 exports.getStoreCategory = async (req, res) => {
