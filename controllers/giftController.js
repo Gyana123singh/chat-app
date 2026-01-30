@@ -91,7 +91,7 @@ exports.addCategory = async (req, res) => {
       });
     }
 
-    const allowedTypes = ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG","NONE"];
+    const allowedTypes = ["HOT", "LUCKY", "SIV", "CUSTOMIZED", "BAG", "NONE"];
 
     if (!allowedTypes.includes(type)) {
       return res.status(400).json({
@@ -111,7 +111,6 @@ exports.addCategory = async (req, res) => {
 
     const category = await Category.create({
       type,
-      title: type, // display same as type
     });
 
     return res.status(201).json({
@@ -122,7 +121,7 @@ exports.addCategory = async (req, res) => {
     console.error("❌ Add Category Error:", error);
     return res.status(500).json({
       success: false,
-      message: error.message || "Server error",
+      message: "Server error",
     });
   }
 };

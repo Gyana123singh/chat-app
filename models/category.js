@@ -2,9 +2,10 @@ const mongoose = require("mongoose");
 
 const categorySchema = new mongoose.Schema(
   {
-   
     type: {
       type: String,
+      required: true,
+      unique: true,
     },
     isActive: {
       type: Boolean,
