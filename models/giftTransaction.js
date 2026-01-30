@@ -3,11 +3,9 @@ const mongoose = require("mongoose");
 const giftTransactionSchema = new mongoose.Schema(
   {
     roomId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Room",
+      type: String,
       required: true,
     },
-
     roomName: {
       type: String, // snapshot
     },
@@ -59,7 +57,7 @@ const giftTransactionSchema = new mongoose.Schema(
       default: "completed",
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // indexes
