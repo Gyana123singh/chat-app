@@ -7,6 +7,7 @@ const levelController = require("../controllers/levelController");
 const Room = require("../models/room");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
+const Transaction = require("../models/transaction");
 const User = require("../models/users");
 
 const mongoose = require("mongoose");
@@ -183,166 +184,271 @@ module.exports = (io) => {
         console.error("❌ room:join error:", err);
       }
     });
-
-    // =========================
-    // 🎁 GIFT SEND (WAFA LEVEL)
-    // =========================
     // =========================
     // 🎁 GIFT SEND (FINAL & SAFE)
     // =========================
-    socket.on("gift:send", async ({ roomId, giftId, sendType }) => {
+
+    socket.on(
+      "gift:send",
+      async ({ roomId, giftId, sendType, quantity = 1 }) => {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+          const senderId = socket.data.userId;
+          if (!senderId || !roomId || !giftId) {
+            await session.abortTransaction();
+            return;
+          }
+
+          // 🎁 Validate Gift (SESSION SAFE)
+          const gift = await Gift.findOne({
+            _id: giftId,
+            isAvailable: true,
+          }).session(session);
+
+          if (!gift) {
+            await session.abortTransaction();
+            socket.emit("gift:error", { code: "GIFT_NOT_FOUND" });
+            return;
+          }
+
+          const roomName = `room:${roomId}`;
+          const sockets = await io.in(roomName).fetchSockets();
+
+          // 🎯 Collect recipients (exclude sender)
+          let recipients = sockets
+            .map((s) => s.data.userId)
+            .filter(Boolean)
+            .filter((id) => id.toString() !== senderId.toString());
+
+          // 🎤 MIC FILTER
+          if (sendType === "all_on_mic") {
+            recipients = recipients.filter((uid) => {
+              const mic = micStates.get(uid.toString());
+              return mic?.muted === false;
+            });
+          }
+
+          if (recipients.length === 0) {
+            await session.abortTransaction();
+            socket.emit("gift:error", {
+              code: "NO_RECIPIENT",
+              message: "No users available",
+            });
+            return;
+          }
+
+          // 🔢 MULTIPLIER (x1, x9, x49, x99, x499)
+          const qty = Math.max(1, Math.min(Number(quantity), 499));
+
+          // 💰 TOTAL COST
+          const totalCoins = gift.price * qty * recipients.length;
+
+          // 🔥 ATOMIC COIN DEDUCTION
+          const sender = await User.findOneAndUpdate(
+            { _id: senderId, coins: { $gte: totalCoins } },
+            {
+              $inc: {
+                coins: -totalCoins,
+                totalSpent: totalCoins,
+              },
+            },
+            { new: true, session },
+          );
+
+          // ❌ INSUFFICIENT COINS
+          if (!sender) {
+            await session.abortTransaction();
+
+            const balance = await User.findById(senderId).select("coins");
+
+            socket.emit("gift:recharge", {
+              requiredCoins: totalCoins,
+              currentCoins: balance?.coins || 0,
+            });
+            return;
+          }
+
+          // 🎁 RECEIVERS STATS (NO COINS)
+          await User.updateMany(
+            { _id: { $in: recipients } },
+            {
+              $inc: {
+                "stats.giftsReceived": qty,
+                "trophy.totalContributions": gift.price * qty,
+              },
+            },
+            { session },
+          );
+
+          // 🧾 GIFT TRANSACTION
+          const [giftTx] = await GiftTransaction.create(
+            [
+              {
+                roomId,
+                senderId,
+                giftId,
+                giftName: gift.name,
+                giftIcon: gift.icon,
+                giftPrice: gift.price,
+                giftCategory: gift.category,
+                giftRarity: gift.rarity,
+                sendType, // individual | all_in_room | all_on_mic
+                quantity: qty,
+                recipientCount: recipients.length,
+                recipientIds: recipients,
+                totalCoinsDeducted: totalCoins,
+                status: "completed",
+              },
+            ],
+            { session },
+          );
+
+          // 💳 WALLET TRANSACTION (AUDIT SAFE)
+          await Transaction.create(
+            [
+              {
+                userId: senderId,
+                type: "COIN_SPENT",
+                transactionType: "gift",
+                gift: gift._id,
+                giftName: gift.name,
+                coinsUsed: totalCoins,
+                sender: senderId,
+                room: roomId,
+                paymentMethod: "gift",
+                status: "SUCCESS",
+                completedAt: new Date(),
+                message: `Sent ${gift.name} x${qty}`,
+              },
+            ],
+            { session },
+          );
+
+          await session.commitTransaction();
+
+          // 🎬 BROADCAST GIFT ANIMATION
+          io.to(roomName).emit("gift:animation", {
+            sender: {
+              id: sender._id,
+              username: sender.username,
+              avatar: sender.profile.avatar,
+            },
+            gift: {
+              id: gift._id,
+              name: gift.name,
+              icon: gift.icon,
+              rarity: gift.rarity,
+              effectType: gift.effectType,
+              animationUrl: gift.animationUrl,
+            },
+            recipients,
+            quantity: qty,
+            totalCoinsDeducted: totalCoins,
+            count: recipients.length,
+            sendType,
+            txId: giftTx._id,
+          });
+
+          // 💰 REALTIME WALLET UPDATE
+          io.to(senderId.toString()).emit("coins:update", {
+            coins: sender.coins,
+          });
+        } catch (err) {
+          await session.abortTransaction();
+          console.error("🎁 Gift send error:", err);
+          socket.emit("gift:error", {
+            code: "GIFT_FAILED",
+            message: "Something went wrong",
+          });
+        } finally {
+          session.endSession();
+        }
+      },
+    );
+
+    /* =========================
+        🔥 PK EVENTS
+========================= */
+    socket.on("gift:send:pk", async ({ roomId, pkId, toUserId, giftId }) => {
       const session = await mongoose.startSession();
       session.startTransaction();
 
       try {
         const senderId = socket.data.userId;
-        if (!senderId || !roomId || !giftId) {
-          await session.abortTransaction();
-          return;
-        }
+        const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
+        const isInRoom = roomSockets.some(
+          (s) => s.data.userId?.toString() === senderId.toString(),
+        );
 
-        // 🎁 Validate Gift
-        const gift = await Gift.findOne({
-          _id: giftId,
-          isAvailable: true,
-        });
+        if (!isInRoom) throw new Error("User not in room");
 
-        if (!gift) {
-          await session.abortTransaction();
-          socket.emit("gift:error", { code: "GIFT_NOT_FOUND" });
-          return;
-        }
+        const pk = await PKBattle.findOne({
+          _id: pkId,
+          roomId,
+          status: "running",
+        }).session(session);
 
-        const roomName = `room:${roomId}`;
-        const sockets = await io.in(roomName).fetchSockets();
+        if (!pk) throw new Error("PK not active");
 
-        // 🎯 Collect recipients (exclude sender)
-        let recipients = sockets
-          .map((s) => s.data.userId)
-          .filter(Boolean)
-          .filter((id) => id.toString() !== senderId.toString());
+        // ❌ self vote
+        if (senderId.toString() === toUserId.toString())
+          throw new Error("Self vote blocked");
 
-        // 🎤 MIC FILTER (SAFE)
-        if (sendType === "all_on_mic") {
-          recipients = recipients.filter((uid) => {
-            const mic = micStates.get(uid.toString());
-            return mic?.muted === false;
-          });
-        }
+        const gift = await Gift.findById(giftId).session(session);
+        if (!gift) throw new Error("Gift not found");
 
-        if (recipients.length === 0) {
-          await session.abortTransaction();
-          socket.emit("gift:error", {
-            code: "NO_RECIPIENT",
-            message: "No users available",
-          });
-          return;
-        }
-
-        // 💰 Total cost
-        const totalCoins = gift.price * recipients.length;
-
-        // 🔥 ATOMIC COIN DEDUCTION
         const sender = await User.findOneAndUpdate(
-          { _id: senderId, coins: { $gte: totalCoins } },
-          {
-            $inc: {
-              coins: -totalCoins,
-              totalSpent: totalCoins,
-            },
-          },
+          { _id: senderId, coins: { $gte: gift.price } },
+          { $inc: { coins: -gift.price, totalSpent: gift.price } },
           { new: true, session },
         );
 
-        // ❌ INSUFFICIENT COINS → RECHARGE
-        if (!sender) {
-          await session.abortTransaction();
+        if (!sender) throw new Error("INSUFFICIENT_COINS");
 
-          const balance = await User.findById(senderId).select("coins");
+        // 🎯 scoring
+        let scoreValue = gift.price;
+        if (pk.mode === "votes") scoreValue = 1;
+        if (pk.mode === "earning") scoreValue = Math.floor(gift.price * 0.7);
 
-          socket.emit("gift:recharge", {
-            requiredCoins: totalCoins,
-            currentCoins: balance?.coins || 0,
-          });
-          return;
+        if (pk.leftUser.userId.toString() === toUserId) {
+          pk.leftUser.score += scoreValue;
+        } else if (pk.rightUser.userId.toString() === toUserId) {
+          pk.rightUser.score += scoreValue;
+        } else {
+          throw new Error("Invalid PK side");
         }
 
-        // 🎁 RECEIVERS (STATS ONLY — NO COINS)
-        await User.updateMany(
-          { _id: { $in: recipients } },
-          {
-            $inc: {
-              "stats.giftsReceived": 1,
-              "trophy.totalContributions": gift.price,
-            },
-          },
-          { session },
-        );
+        pk.contributions.push({
+          fromUser: senderId,
+          toUser: toUserId,
+          giftId,
+          value: scoreValue,
+        });
 
-        // 🧾 TRANSACTION LOG
-        const [tx] = await GiftTransaction.create(
-          [
-            {
-              roomId,
-              senderId,
-              giftId,
-              giftName: gift.name,
-              giftIcon: gift.icon,
-              giftPrice: gift.price,
-              giftCategory: gift.category,
-              giftRarity: gift.rarity,
-              sendType,
-              recipientCount: recipients.length,
-              recipientIds: recipients,
-              totalCoinsDeducted: totalCoins,
-              status: "completed",
-            },
-          ],
-          { session },
-        );
+        await pk.save({ session });
 
         await session.commitTransaction();
 
-        // 🎬 BROADCAST GIFT ANIMATION (SENDER + RECEIVERS)
-        io.to(roomName).emit("gift:animation", {
-          sender: {
-            id: sender._id,
-            username: sender.username,
-            avatar: sender.profile.avatar,
-          },
-          gift: {
-            id: gift._id,
-            name: gift.name,
-            icon: gift.icon,
-            rarity: gift.rarity,
-            effectType: gift.effectType,
-            animationUrl: gift.animationUrl,
-          },
-          recipients,
-          count: recipients.length,
-          sendType,
-          txId: tx._id,
+        io.to(`room:${roomId}`).emit("pk:score:update", {
+          leftScore: pk.leftUser.score,
+          rightScore: pk.rightUser.score,
         });
 
-        // 💰 UPDATE SENDER COINS (REALTIME)
         io.to(senderId.toString()).emit("coins:update", {
           coins: sender.coins,
         });
       } catch (err) {
         await session.abortTransaction();
-        console.error("🎁 Gift send error:", err);
-        socket.emit("gift:error", {
-          code: "GIFT_FAILED",
-          message: "Something went wrong",
-        });
+
+        if (err.message === "INSUFFICIENT_COINS") {
+          socket.emit("gift:recharge");
+        }
       } finally {
         session.endSession();
       }
     });
-
-    /* =========================
-        🔥 PK EVENTS
-========================= */
 
     // 🔁 reconnect sync
     socket.on("pk:getActive", async ({ roomId }) => {
@@ -359,6 +465,20 @@ module.exports = (io) => {
         if (activePK) {
           socket.emit("pk:started", activePK);
         }
+        const pk = activePK;
+
+        const remainingMs = pk.startedAt
+          ? Math.max(
+              0,
+              pk.duration * 1000 -
+                (Date.now() - new Date(pk.startedAt).getTime()),
+            )
+          : 0;
+
+        socket.emit("pk:started", {
+          ...pk.toObject(),
+          remainingMs,
+        });
       } catch (err) {
         console.error("❌ pk:getActive:", err.message);
       }
@@ -372,6 +492,7 @@ module.exports = (io) => {
         roomId,
         status: "running",
       });
+      await Room.findOneAndUpdate({ roomId }, { activePK: null });
 
       if (!pk || pk.hostId.toString() !== socket.data.userId.toString()) return;
 
@@ -390,7 +511,7 @@ module.exports = (io) => {
           roomId,
           status: "running",
         });
-
+        await Room.findOneAndUpdate({ roomId }, { activePK: null });
         if (!pk || pk.status === "ended") return;
 
         pk.status = "ended";

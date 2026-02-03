@@ -204,12 +204,13 @@ exports.getGiftTransactions = async (req, res) => {
     const { limit = 50, skip = 0 } = req.query;
 
     const transactions = await GiftTransaction.find({ roomId })
-      .populate("senderId", "username avatar")
-      .populate("recipientIds", "username avatar")
+      .populate("senderId", "username profile.avatar")
+      .populate("recipientIds", "username profile.avatar")
       .populate("giftId", "name icon rarity")
       .sort({ createdAt: -1 })
       .limit(Number(limit))
-      .skip(Number(skip));
+      .skip(Number(skip))
+      .lean();
 
     const total = await GiftTransaction.countDocuments({ roomId });
 
@@ -227,7 +228,6 @@ exports.getGiftTransactions = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching gift transactions",
-      error: error.message,
     });
   }
 };
@@ -235,6 +235,7 @@ exports.getGiftTransactions = async (req, res) => {
 /**
  * 🔥 GET GIFTS RECEIVED BY USER
  */
+
 exports.getUserReceivedGifts = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -243,20 +244,25 @@ exports.getUserReceivedGifts = async (req, res) => {
     const transactions = await GiftTransaction.find({
       recipientIds: userId,
     })
-      .populate("senderId", "username avatar")
+      .populate("senderId", "username profile.avatar")
       .populate("giftId", "name icon rarity")
-      .populate("roomId", "roomName")
       .sort({ createdAt: -1 })
       .limit(Number(limit))
-      .skip(Number(skip));
+      .skip(Number(skip))
+      .lean();
 
     const total = await GiftTransaction.countDocuments({
       recipientIds: userId,
     });
 
-    // 🔥 Calculate total gifts received
+    // 🔥 CORRECT MULTIPLIER CALCULATION
     const totalCoinsReceived = transactions.reduce(
-      (sum, t) => sum + t.giftPrice,
+      (sum, t) => sum + t.giftPrice * (t.quantity || 1),
+      0,
+    );
+
+    const totalGiftsReceived = transactions.reduce(
+      (sum, t) => sum + (t.quantity || 1),
       0,
     );
 
@@ -265,7 +271,7 @@ exports.getUserReceivedGifts = async (req, res) => {
       data: {
         transactions,
         summary: {
-          totalGiftsReceived: transactions.length,
+          totalGiftsReceived,
           totalCoinsReceived,
           pagination: {
             total,
@@ -280,7 +286,6 @@ exports.getUserReceivedGifts = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching received gifts",
-      error: error.message,
     });
   }
 };

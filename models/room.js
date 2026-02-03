@@ -36,6 +36,12 @@ const roomSchema = new mongoose.Schema(
       default: "",
       maxlength: 500,
     },
+    // models/room.js (ADD THIS FIELD ONLY)
+    activePK: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PKBattle",
+      default: null,
+    },
     category: {
       type: String,
       enum: [
@@ -124,7 +130,7 @@ const roomSchema = new mongoose.Schema(
       },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Room", roomSchema);

@@ -3,11 +3,12 @@ const mongoose = require("mongoose");
 const giftTransactionSchema = new mongoose.Schema(
   {
     roomId: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Room",
       required: true,
     },
     roomName: {
-      type: String, // snapshot
+      type: String, // snapshot (keep this)
     },
 
     senderId: {
@@ -30,7 +31,8 @@ const giftTransactionSchema = new mongoose.Schema(
 
     sendType: {
       type: String,
-      enum: ["all_in_room", "all_on_mic"],
+      enum: ["individual", "all_in_room", "all_on_mic"],
+
       required: true,
     },
 
@@ -50,7 +52,10 @@ const giftTransactionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-
+    quantity: {
+      type: Number,
+      default: 1,
+    },
     status: {
       type: String,
       enum: ["completed", "failed"],

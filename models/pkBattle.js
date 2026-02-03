@@ -36,6 +36,16 @@ const pkBattleSchema = new mongoose.Schema(
 
     startedAt: Date,
     endedAt: Date,
+    // ADD inside pkBattleSchema
+    contributions: [
+      {
+        fromUser: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        toUser: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        giftId: { type: mongoose.Schema.Types.ObjectId, ref: "Gift" },
+        value: Number,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
 
     winner: {
       type: mongoose.Schema.Types.ObjectId,
@@ -43,7 +53,7 @@ const pkBattleSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("PKBattle", pkBattleSchema);

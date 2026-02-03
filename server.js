@@ -34,9 +34,11 @@ const pkRoutes = require("./router/pkRouter");
 const chatUploadRouter = require("./router/chatUploadRouter");
 const privateImageUpload = require("./router/privateImageUpload");
 const MusicState = require("./models/musicState");
+const { recoverRunningPKs } = require("./utils/pkRecovery");
 
 const app = express();
 connectMongose();
+recoverRunningPKs(); // 🔥 ADD THIS AFTER DB CONNECT
 
 const PORT = Number(process.env.PORT || 5004);
 
@@ -122,8 +124,6 @@ fs.ensureDirSync(uploadDir);
 /* ===================== MUSIC ROUTES ===================== */
 const musicRouter = require("./router/musicRouter")(io);
 app.use("/api/music", musicRouter);
-
-
 
 /* ===================== VIDEO ===================== */
 const videoRouter = require("./router/videoRouter")(io);

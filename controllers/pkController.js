@@ -1,76 +1,57 @@
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room");
 const { getIO } = require("../utils/socketService");
+const schedulePKEnd = require("../utils/pkScheduler");
 
 exports.createPK = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { roomId, leftUserId, rightUserId, mode, duration } = req.body;
     const hostId = req.user.id;
 
-    // ❌ Validate room
-    const room = await Room.findById(roomId);
+    const room = await Room.findById(roomId).session(session);
+    if (!room) throw new Error("Room not found");
 
-    if (!room) return res.status(404).json({ message: "Rooms not found" });
-
-    // ❌ Only host
     if (room.host.toString() !== hostId) {
-      return res.status(403).json({
-        message: "Only host can start PK",
-      });
+      throw new Error("Only host can start PK");
     }
 
-    // ❌ Only one PK at a time
-    const existingPK = await PKBattle.findOne({
-      roomId,
-      status: "running",
-    });
-
-    if (existingPK) {
-      return res.status(400).json({
-        message: "PK already running in this room",
-      });
+    if (room.activePK) {
+      throw new Error("PK already active in this room");
     }
 
-    // ✅ Create PK
-    const pk = await PKBattle.create({
-      roomId,
-      hostId,
-      leftUser: { userId: leftUserId },
-      rightUser: { userId: rightUserId },
-      mode,
-      duration,
-      status: "running", // ✅ REQUIRED
-      startedAt: new Date(), // ✅ REQUIRED
-    });
+    const pk = await PKBattle.create(
+      [
+        {
+          roomId,
+          hostId,
+          leftUser: { userId: leftUserId },
+          rightUser: { userId: rightUserId },
+          mode,
+          duration,
+          status: "running",
+          startedAt: new Date(),
+        },
+      ],
+      { session },
+    );
 
-    // 🔥 notify room
-    getIO().to(`room:${roomId}`).emit("pk:started", pk);
+    room.activePK = pk[0]._id;
+    await room.save({ session });
 
-    // ⏱ auto end
-    setTimeout(async () => {
-      const battle = await PKBattle.findById(pk._id);
-      if (!battle || battle.status !== "running") return;
+    await session.commitTransaction();
 
-      battle.status = "ended";
-      battle.endedAt = new Date();
+    getIO().to(`room:${roomId}`).emit("pk:started", pk[0]);
 
-      if (battle.leftUser.score > battle.rightUser.score) {
-        battle.winner = battle.leftUser.userId;
-      } else if (battle.rightUser.score > battle.leftUser.score) {
-        battle.winner = battle.rightUser.userId;
-      }
+    schedulePKEnd(pk[0]._id, duration); // 🔥 SAFE TIMER
 
-      await battle.save();
-
-      getIO().to(`room:${roomId}`).emit("pk:ended", battle);
-    }, duration * 1000);
-
-    return res.json({
-      success: true,
-      pk,
-    });
+    res.json({ success: true, pk: pk[0] });
   } catch (err) {
-    console.error("❌ createPK error:", err.message);
-    res.status(500).json({ message: err.message });
+    await session.abortTransaction();
+    res.status(400).json({ message: err.message });
+  } finally {
+    session.endSession();
   }
 };
