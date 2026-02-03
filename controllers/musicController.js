@@ -5,6 +5,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 const RoomMusic = require("../models/musicRoom");
 const convertToMp3 = require("../utils/convertAudio");
+const cloudinary = require("../config/cloudinary");
 
 /* ============================
    UPLOAD MUSIC (DJ LOCK)
@@ -46,21 +47,26 @@ exports.uploadMusic = async (req, res) => {
       originalname = originalname.replace(/\.opus$/i, ".mp3");
     }
 
-    const musicUrl = `${req.protocol}://${req.get(
-      "host",
-    )}/stream/${roomId}/${filename}`;
+    const uploadResult = await cloudinary.uploader.upload(filePath, {
+      resource_type: "video", // REQUIRED for audio
+      folder: `room-music/${roomId}`,
+    });
+    await fs.remove(filePath); // 🔥 REQUIRED
+    const { secure_url, public_id } = uploadResult;
+
+    const musicUrl = secure_url;
 
     await MusicState.findOneAndUpdate(
       { roomId },
       {
         roomId,
         musicFile: { name: originalname, fileSize: size },
-        musicUrl,
-        localFilePath: filePath,
+        musicUrl, // Cloudinary URL
+        localFilePath: null, // IMPORTANT
         isPlaying: false,
         startedAt: null,
         pausedAt: 0,
-        playedBy: userId, // 🎧 CURRENT DJ
+        playedBy: userId,
       },
       { upsert: true },
     );
@@ -70,6 +76,7 @@ exports.uploadMusic = async (req, res) => {
       fileName: filename,
       originalName: originalname,
       fileSize: size,
+      cloudinaryPublicId: public_id, // ✅ ADD THIS
       musicUrl,
       uploadedBy: userId,
     });
@@ -119,7 +126,6 @@ exports.playMusic = async (req, res) => {
       roomId,
       {
         name: dbState.musicFile.name,
-        filename: path.basename(dbState.localFilePath),
       },
       userId,
     );
@@ -244,8 +250,6 @@ exports.stopMusic = async (req, res) => {
 
     roomManager.stopMusic(roomId);
 
-    if (dbState.localFilePath) await fs.remove(dbState.localFilePath);
-
     await MusicState.findOneAndUpdate(
       { roomId },
       {
@@ -317,45 +321,48 @@ exports.getRoomMusicList = async (req, res) => {
 exports.deleteRoomMusicList = async (req, res) => {
   try {
     const { roomId, musicId } = req.params;
+    const userId = req.headers["userid"] || req.body.userId;
     const io = req.app.get("io");
 
-    console.log("🎵 DELETE REQUEST:", { roomId, musicId });
+    if (!userId) {
+      return res.status(400).json({ error: "userId required" });
+    }
 
     if (!mongoose.Types.ObjectId.isValid(musicId)) {
       return res.status(400).json({ error: "Invalid musicId" });
     }
 
+    // 1️⃣ FIND MUSIC
     const music = await RoomMusic.findOne({ _id: musicId, roomId });
 
     if (!music) {
       return res.status(404).json({ error: "Music not found" });
     }
 
-    /* ============================
-       DELETE FILE FROM STORAGE
-    ============================ */
-    const filePath = path.join(
-      process.cwd(),
-      "uploads",
-      roomId,
-      music.fileName,
-    );
-
-    if (await fs.pathExists(filePath)) {
-      await fs.remove(filePath);
+    // 2️⃣ 🔐 PERMISSION CHECK (UPLOADER ONLY)
+    if (music.uploadedBy.toString() !== userId.toString()) {
+      return res.status(403).json({ error: "Not allowed" });
     }
 
-    /* ============================
-       DELETE FROM DB
-    ============================ */
+    // 3️⃣ ☁️ DELETE FROM CLOUDINARY (SAFE)
+    if (music.cloudinaryPublicId) {
+      try {
+        await cloudinary.uploader.destroy(music.cloudinaryPublicId, {
+          resource_type: "video",
+        });
+      } catch (err) {
+        console.error("⚠️ Cloudinary delete failed:", err.message);
+        // ❗ Do NOT block delete if Cloudinary fails
+      }
+    }
+
+    // 4️⃣ DELETE FROM DB
     await RoomMusic.deleteOne({ _id: musicId });
 
-    /* ============================
-       STOP IF CURRENTLY PLAYING
-    ============================ */
+    // 5️⃣ STOP MUSIC IF THIS TRACK IS CURRENTLY PLAYING
     const state = roomManager.getState(roomId);
 
-    if (state?.musicFile?.filename === music.fileName) {
+    if (state?.musicFile?.name === music.originalName) {
       roomManager.stopMusic(roomId);
 
       await MusicState.findOneAndUpdate(
@@ -371,15 +378,13 @@ exports.deleteRoomMusicList = async (req, res) => {
         },
       );
 
-      io?.to(`room:${roomId}`).emit("music:stopped", {
+      io.to(`room:${roomId}`).emit("music:stopped", {
         reason: "deleted",
       });
     }
 
-    /* ============================
-       NOTIFY ROOM
-    ============================ */
-    io?.to(`room:${roomId}`).emit("music:list:deleted", {
+    // 6️⃣ NOTIFY ROOM
+    io.to(`room:${roomId}`).emit("music:list:deleted", {
       musicId,
     });
 

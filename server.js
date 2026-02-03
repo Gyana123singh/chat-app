@@ -123,42 +123,7 @@ fs.ensureDirSync(uploadDir);
 const musicRouter = require("./router/musicRouter")(io);
 app.use("/api/music", musicRouter);
 
-/* ===================== AUDIO STREAM ===================== */
-app.get("/stream/:roomId/:filename", (req, res) => {
-  const filePath = path.resolve(
-    process.cwd(),
-    "uploads",
-    req.params.roomId,
-    req.params.filename,
-  );
 
-  if (!fs.existsSync(filePath)) return res.sendStatus(404);
-
-  const stat = fs.statSync(filePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
-
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-      "Accept-Ranges": "bytes",
-      "Content-Length": end - start + 1,
-      "Content-Type": "audio/mpeg",
-    });
-
-    fs.createReadStream(filePath, { start, end }).pipe(res);
-  } else {
-    res.writeHead(200, {
-      "Content-Length": fileSize,
-      "Content-Type": "audio/mpeg",
-    });
-    fs.createReadStream(filePath).pipe(res);
-  }
-});
 
 /* ===================== VIDEO ===================== */
 const videoRouter = require("./router/videoRouter")(io);

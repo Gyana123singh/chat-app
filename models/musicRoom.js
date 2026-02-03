@@ -17,6 +17,10 @@ const roomMusicSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    cloudinaryPublicId: {
+      type: String,
+      required: true,
+    },
 
     fileSize: {
       type: Number,
@@ -33,7 +37,7 @@ const roomMusicSchema = new mongoose.Schema(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("MusicRoom", roomMusicSchema);
