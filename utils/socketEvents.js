@@ -187,71 +187,87 @@ module.exports = (io) => {
     // =========================
     // 🎁 GIFT SEND (WAFA LEVEL)
     // =========================
+    // =========================
+    // 🎁 GIFT SEND (FINAL & SAFE)
+    // =========================
     socket.on("gift:send", async ({ roomId, giftId, sendType }) => {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+
       try {
         const senderId = socket.data.userId;
-        if (!senderId || !roomId || !giftId) return;
+        if (!senderId || !roomId || !giftId) {
+          await session.abortTransaction();
+          return;
+        }
 
-        // ✅ get gift
-        const gift = await Gift.findById(giftId);
-        if (!gift || !gift.isAvailable) return;
+        // 🎁 Validate Gift
+        const gift = await Gift.findOne({
+          _id: giftId,
+          isAvailable: true,
+        });
+
+        if (!gift) {
+          await session.abortTransaction();
+          socket.emit("gift:error", { code: "GIFT_NOT_FOUND" });
+          return;
+        }
 
         const roomName = `room:${roomId}`;
-
-        // ✅ get only ONLINE users in room
         const sockets = await io.in(roomName).fetchSockets();
 
-        let recipients = sockets.map((s) => s.data.userId).filter(Boolean);
+        // 🎯 Collect recipients (exclude sender)
+        let recipients = sockets
+          .map((s) => s.data.userId)
+          .filter(Boolean)
+          .filter((id) => id.toString() !== senderId.toString());
 
-        // ❌ remove sender (no self gift)
-        recipients = recipients.filter(
-          (id) => id.toString() !== senderId.toString(),
-        );
-
-        // 🎤 MIC FILTER
+        // 🎤 MIC FILTER (SAFE)
         if (sendType === "all_on_mic") {
           recipients = recipients.filter((uid) => {
             const mic = micStates.get(uid.toString());
-            return mic && mic.muted === false;
+            return mic?.muted === false;
           });
         }
 
-        if (!recipients.length) {
+        if (recipients.length === 0) {
+          await session.abortTransaction();
           socket.emit("gift:error", {
-            message: "No recipients available",
+            code: "NO_RECIPIENT",
+            message: "No users available",
           });
           return;
         }
 
+        // 💰 Total cost
         const totalCoins = gift.price * recipients.length;
 
-        // =========================
         // 🔥 ATOMIC COIN DEDUCTION
-        // =========================
         const sender = await User.findOneAndUpdate(
-          {
-            _id: senderId,
-            coins: { $gte: totalCoins },
-          },
+          { _id: senderId, coins: { $gte: totalCoins } },
           {
             $inc: {
               coins: -totalCoins,
               totalSpent: totalCoins,
             },
           },
-          { new: true },
+          { new: true, session },
         );
 
+        // ❌ INSUFFICIENT COINS → RECHARGE
         if (!sender) {
-          socket.emit("gift:error", {
-            message: "Not enough coins",
+          await session.abortTransaction();
+
+          const balance = await User.findById(senderId).select("coins");
+
+          socket.emit("gift:recharge", {
+            requiredCoins: totalCoins,
+            currentCoins: balance?.coins || 0,
           });
           return;
         }
 
-        // =========================
-        // 🎁 RECEIVER STATS
-        // =========================
+        // 🎁 RECEIVERS (STATS ONLY — NO COINS)
         await User.updateMany(
           { _id: { $in: recipients } },
           {
@@ -260,30 +276,34 @@ module.exports = (io) => {
               "trophy.totalContributions": gift.price,
             },
           },
+          { session },
         );
 
-        // =========================
-        // 🧾 SAVE TRANSACTION
-        // =========================
-        const tx = await GiftTransaction.create({
-          roomId,
-          senderId,
-          giftId,
-          giftName: gift.name,
-          giftIcon: gift.icon,
-          giftPrice: gift.price,
-          giftCategory: gift.category,
-          giftRarity: gift.rarity,
-          sendType,
-          recipientCount: recipients.length,
-          recipientIds: recipients,
-          totalCoinsDeducted: totalCoins,
-          status: "completed",
-        });
+        // 🧾 TRANSACTION LOG
+        const [tx] = await GiftTransaction.create(
+          [
+            {
+              roomId,
+              senderId,
+              giftId,
+              giftName: gift.name,
+              giftIcon: gift.icon,
+              giftPrice: gift.price,
+              giftCategory: gift.category,
+              giftRarity: gift.rarity,
+              sendType,
+              recipientCount: recipients.length,
+              recipientIds: recipients,
+              totalCoinsDeducted: totalCoins,
+              status: "completed",
+            },
+          ],
+          { session },
+        );
 
-        // =========================
-        // 🎬 GIFT ANIMATION
-        // =========================
+        await session.commitTransaction();
+
+        // 🎬 BROADCAST GIFT ANIMATION (SENDER + RECEIVERS)
         io.to(roomName).emit("gift:animation", {
           sender: {
             id: sender._id,
@@ -298,22 +318,25 @@ module.exports = (io) => {
             effectType: gift.effectType,
             animationUrl: gift.animationUrl,
           },
+          recipients,
           count: recipients.length,
           sendType,
           txId: tx._id,
         });
 
-        // =========================
-        // 💰 LIVE COINS UPDATE
-        // =========================
+        // 💰 UPDATE SENDER COINS (REALTIME)
         io.to(senderId.toString()).emit("coins:update", {
           coins: sender.coins,
         });
       } catch (err) {
-        console.error("🎁 gift send error:", err);
+        await session.abortTransaction();
+        console.error("🎁 Gift send error:", err);
         socket.emit("gift:error", {
-          message: "Gift failed, try again",
+          code: "GIFT_FAILED",
+          message: "Something went wrong",
         });
+      } finally {
+        session.endSession();
       }
     });
 
