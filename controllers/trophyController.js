@@ -16,7 +16,7 @@ const getPeriodBoundaries = () => {
     0,
     0,
     0,
-    0
+    0,
   );
 
   // Start of this week (Sunday 00:00:00)
@@ -32,7 +32,7 @@ const getPeriodBoundaries = () => {
     0,
     0,
     0,
-    0
+    0,
   );
 
   return { now, startOfDay, startOfWeek, startOfMonth };
@@ -243,143 +243,101 @@ exports.getTopContributors = async (req, res) => {
  * This is called internally when gifts are sent
  * ✅ FIXED: Proper error handling, validation, async rank update
  */
-exports.updateLeaderboardOnGift = async (userId, giftPrice) => {
-  try {
-    // ✅ FIX #1: Validate inputs
-    if (!userId || typeof giftPrice !== "number" || giftPrice <= 0) {
-      throw new Error("Invalid userId or giftPrice");
-    }
 
-    const { now, startOfDay, startOfWeek, startOfMonth } =
-      getPeriodBoundaries();
+exports.updateLeaderboardOnGift = async (userId, totalCoinsSpent) => {
+  if (!userId || !Number.isFinite(totalCoinsSpent) || totalCoinsSpent <= 0)
+    return;
 
-    // ✅ FIX #2: Verify sender exists
-    const user = await User.findById(userId).select("username profile.avatar");
-    if (!user) {
-      throw new Error("Sender user not found");
-    }
+  // 1️⃣ Read previous trophy data FIRST (for streak calc)
+  const prevUser = await User.findById(userId).select("trophy");
 
-    // Find or create leaderboard entry
-    let leaderboard = await Leaderboard.findOne({ userId });
+  // 2️⃣ Increment leaderboard totals atomically
+  const inc = {
+    "daily.coins": totalCoinsSpent,
+    "weekly.coins": totalCoinsSpent,
+    "monthly.coins": totalCoinsSpent,
+    "allTime.coins": totalCoinsSpent,
+    "daily.giftsReceived": 1,
+    "weekly.giftsReceived": 1,
+    "monthly.giftsReceived": 1,
+    "allTime.giftsReceived": 1,
+    "daily.totalValue": totalCoinsSpent,
+    "weekly.totalValue": totalCoinsSpent,
+    "monthly.totalValue": totalCoinsSpent,
+    "allTime.totalValue": totalCoinsSpent,
+  };
 
-    if (!leaderboard) {
-      leaderboard = new Leaderboard({
-        userId,
-        username: user.username || "Unknown",
-        avatar: user.profile?.avatar || null,
-      });
-    }
+  await Leaderboard.findOneAndUpdate(
+    { userId },
+    {
+      $inc: inc,
+      $setOnInsert: { userId },
+      $set: { lastContributionDate: new Date() },
+    },
+    { upsert: true, new: true },
+  );
 
-    // ✅ FIX #3: Safe default checks for all periods
-    const updatePeriodStats = (periodData, startDate) => {
-      const lastUpdated = periodData.lastUpdated
-        ? new Date(periodData.lastUpdated)
-        : null;
+  // 3️⃣ Calculate level from PREVIOUS + new total
+  const prevTotal = prevUser?.trophy?.totalCoinsEarned || 0;
+  const newTotal = prevTotal + totalCoinsSpent;
 
-      if (!lastUpdated || lastUpdated < startDate) {
-        // New period - reset stats
-        return {
-          coins: giftPrice,
-          giftsReceived: 1,
-          totalValue: giftPrice,
-          lastUpdated: now,
-        };
-      } else {
-        // Same period - increment stats
-        return {
-          coins: (periodData.coins || 0) + giftPrice,
-          giftsReceived: (periodData.giftsReceived || 0) + 1,
-          totalValue: (periodData.totalValue || 0) + giftPrice,
-          lastUpdated: now,
-        };
-      }
-    };
+  let level = 1;
+  if (newTotal >= 10000) level = 4;
+  else if (newTotal >= 5000) level = 3;
+  else if (newTotal >= 2000) level = 2;
 
-    // Update daily, weekly, monthly stats
-    leaderboard.daily = updatePeriodStats(leaderboard.daily, startOfDay);
-    leaderboard.weekly = updatePeriodStats(leaderboard.weekly, startOfWeek);
-    leaderboard.monthly = updatePeriodStats(leaderboard.monthly, startOfMonth);
+  // 4️⃣ Streak calculation using PREVIOUS date (NOT overwritten)
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // Update all-time stats (no reset)
-    leaderboard.allTime.coins = (leaderboard.allTime?.coins || 0) + giftPrice;
-    leaderboard.allTime.giftsReceived =
-      (leaderboard.allTime?.giftsReceived || 0) + 1;
-    leaderboard.allTime.totalValue =
-      (leaderboard.allTime?.totalValue || 0) + giftPrice;
+  let last = prevUser?.trophy?.lastContributionDate
+    ? new Date(
+        prevUser.trophy.lastContributionDate.getFullYear(),
+        prevUser.trophy.lastContributionDate.getMonth(),
+        prevUser.trophy.lastContributionDate.getDate(),
+      )
+    : null;
 
-    // ✅ FIX #4: Update user streak and trophy stats
-    const lastContribution = user.trophy?.lastContributionDate
-      ? new Date(user.trophy.lastContributionDate)
-      : null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  let currentStreak = prevUser?.trophy?.currentStreak || 0;
+  let longestStreak = prevUser?.trophy?.longestStreak || 0;
 
-    let currentStreak = user.trophy?.currentStreak || 0;
-    let longestStreak = user.trophy?.longestStreak || 0;
-    let totalContributions = (user.trophy?.totalContributions || 0) + 1;
-    let totalCoinsEarned = (user.trophy?.totalCoinsEarned || 0) + giftPrice;
-
-    if (!lastContribution) {
-      // First contribution
+  if (!last) {
+    currentStreak = 1;
+  } else {
+    const diffDays = Math.round((today - last) / 86400000);
+    if (diffDays === 0) {
+      // same day → keep streak
+    } else if (diffDays === 1) {
+      currentStreak += 1;
+    } else {
       currentStreak = 1;
-    } else {
-      const lastContributionDate = new Date(lastContribution);
-      lastContributionDate.setHours(0, 0, 0, 0);
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-
-      if (lastContributionDate.getTime() === today.getTime()) {
-        // Already contributed today, don't increase streak
-        currentStreak = user.trophy?.currentStreak || 1;
-      } else if (lastContributionDate.getTime() === yesterday.getTime()) {
-        // Contributed yesterday, continue streak
-        currentStreak = (user.trophy?.currentStreak || 0) + 1;
-        longestStreak = Math.max(currentStreak, longestStreak);
-      } else {
-        // Streak broken, reset
-        currentStreak = 1;
-      }
     }
-
-    // Update user's trophy object
-    user.trophy = {
-      ...user.trophy,
-      currentStreak,
-      longestStreak,
-      lastContributionDate: now,
-      totalContributions,
-      totalCoinsEarned,
-    };
-
-    // ✅ FIX #5: Calculate user level based on total coins earned (Wafa-style)
-    let level = 1;
-    if (totalCoinsEarned >= 10000) {
-      level = 4; // Platinum
-    } else if (totalCoinsEarned >= 5000) {
-      level = 3; // Gold
-    } else if (totalCoinsEarned >= 2000) {
-      level = 2; // Silver
-    } else {
-      level = 1; // Bronze
-    }
-
-    leaderboard.level = level;
-    leaderboard.currentStreak = currentStreak;
-    leaderboard.longestStreak = longestStreak;
-    leaderboard.lastContributionDate = now;
-
-    // Save both documents
-    await Promise.all([user.save(), leaderboard.save()]);
-
-    console.log(
-      `✅ Trophy updated for user ${userId}: +${giftPrice} coins, Level: ${level}, Streak: ${currentStreak}`
-    );
-
-    return leaderboard;
-  } catch (error) {
-    console.error("❌ updateLeaderboardOnGift error:", error.message);
-    throw error;
   }
+
+  longestStreak = Math.max(longestStreak, currentStreak);
+
+  // 5️⃣ Update User + Leaderboard trophy meta
+  await Promise.all([
+    User.updateOne(
+      { _id: userId },
+      {
+        $inc: {
+          "trophy.totalContributions": 1,
+          "trophy.totalCoinsEarned": totalCoinsSpent,
+        },
+        $set: {
+          "trophy.lastContributionDate": now,
+          "trophy.currentStreak": currentStreak,
+          "trophy.longestStreak": longestStreak,
+          "trophy.level": level,
+        },
+      },
+    ),
+    Leaderboard.updateOne(
+      { userId },
+      { $set: { level, currentStreak, longestStreak } },
+    ),
+  ]);
 };
 
 /**
@@ -480,7 +438,7 @@ exports.getUserLevel = async (req, res) => {
       thresholds[currentLevel + 1] || thresholds[currentLevel];
     const progress = Math.min(
       Math.round((totalEarned / nextLevelThreshold) * 100),
-      100
+      100,
     );
 
     res.status(200).json({

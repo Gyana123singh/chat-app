@@ -278,7 +278,6 @@ module.exports = (io) => {
             {
               $inc: {
                 "stats.giftsReceived": qty,
-                "trophy.totalContributions": gift.price * qty,
               },
             },
             { session },
@@ -329,6 +328,15 @@ module.exports = (io) => {
           );
 
           await session.commitTransaction();
+          // 🏆 Update Trophy / Leaderboard (AFTER COMMIT ONLY)
+          const {
+            updateLeaderboardOnGift,
+          } = require("../controllers/trophyController"); // adjust path
+
+          // totalCoins already computed as: gift.price * qty * recipients.length
+          updateLeaderboardOnGift(senderId, totalCoins).catch((e) =>
+            console.error("Trophy update failed:", e.message),
+          );
 
           // 🎬 BROADCAST GIFT ANIMATION
           io.to(roomName).emit("gift:animation", {
@@ -824,29 +832,32 @@ module.exports = (io) => {
           }
 
           const skip = (page - 1) * limit;
-          const leaderboard = await Leaderboard.find()
+
+          const rows = await Leaderboard.find()
             .populate("userId", "username profile.avatar")
             .sort({ [`${period}.coins`]: -1 })
             .skip(skip)
             .limit(limit)
             .lean();
 
-          const formatted = leaderboard.map((entry, index) => ({
-            rank: skip + index + 1,
-            userId: entry.userId?._id,
-            username: entry.userId?.username || "Unknown",
-            avatar: entry.userId?.profile?.avatar || null,
-            coins: entry[period].coins,
-            level: entry.level || 1,
+          const formatted = rows.map((e, i) => ({
+            rank: skip + i + 1,
+            userId: e.userId?._id,
+            username: e.userId?.username || "Unknown",
+            avatar: e.userId?.profile?.avatar || null,
+            level: e.level || 1,
+            coins: e[period]?.coins || 0,
           }));
 
           socket.emit("trophy:leaderboard-data", {
             success: true,
-            leaderboard: formatted,
             period,
+            leaderboard: formatted,
+            page,
+            limit,
           });
         } catch (err) {
-          console.error("❌ trophy:get-leaderboard error:", err);
+          console.error("❌ trophy:get-leaderboard:", err.message);
           socket.emit("trophy:error", {
             message: "Failed to fetch leaderboard",
           });

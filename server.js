@@ -39,6 +39,8 @@ const { recoverRunningPKs } = require("./utils/pkRecovery");
 const app = express();
 connectMongose();
 recoverRunningPKs(); // 🔥 ADD THIS AFTER DB CONNECT
+// 🔥 Start trophy cron jobs
+require("./utils/trophyCron");
 
 const PORT = Number(process.env.PORT || 5004);
 

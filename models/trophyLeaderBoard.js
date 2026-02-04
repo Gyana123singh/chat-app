@@ -146,10 +146,11 @@ const leaderboardSchema = new mongoose.Schema(
       default: null,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // 🔍 Index for efficient queries
+leaderboardSchema.index({ userId: 1 }, { unique: true });
 leaderboardSchema.index({ "daily.coins": -1 });
 leaderboardSchema.index({ "weekly.coins": -1 });
 leaderboardSchema.index({ "monthly.coins": -1 });
