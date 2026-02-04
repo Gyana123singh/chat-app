@@ -13,7 +13,7 @@ exports.createPK = async (req, res) => {
     const hostId = req.user.id;
 
     const room = await Room.findOneAndUpdate(
-      { _id: roomId, activePK: null },
+      { roomId: roomId, activePK: null }, // ✅ use STRING roomId
       { $set: { activePK: "LOCK" } },
       { new: true, session },
     );
