@@ -240,16 +240,23 @@ exports.stopMusic = async (req, res) => {
     const { userId } = req.body;
 
     const dbState = await MusicState.findOne({ roomId });
-    if (!dbState) return res.json({ success: true });
+    if (!dbState) {
+      return res.json({ success: true });
+    }
 
-    if (!dbState.playedBy) return res.json({ success: true });
+    // Only DJ can stop
+    if (!dbState.playedBy) {
+      return res.json({ success: true });
+    }
 
     if (dbState.playedBy.toString() !== userId.toString()) {
       return res.status(403).json({ error: "Only DJ can stop music" });
     }
 
+    // 🧨 1) Clear in-memory state (PERMANENT)
     roomManager.stopMusic(roomId);
 
+    // 🧹 2) Clear DB state (PERMANENT)
     await MusicState.findOneAndUpdate(
       { roomId },
       {
@@ -259,14 +266,18 @@ exports.stopMusic = async (req, res) => {
         pausedAt: 0,
         startedAt: null,
         localFilePath: null,
-        playedBy: null, // 🔓 UNLOCK
+        playedBy: null, // 🔓 UNLOCK DJ
       },
     );
 
-    io.to(`room:${roomId}`).emit("music:stopped");
+    // 📡 3) Notify all users
+    io.to(`room:${roomId}`).emit("music:stopped", {
+      reason: "stopped_by_dj",
+    });
 
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
+    console.error("❌ stopMusic:", err);
     res.status(500).json({ error: err.message });
   }
 };

@@ -952,19 +952,18 @@ module.exports = (io) => {
 
           const musicState = roomManager.getState(roomId);
 
-          // 🔥 STOP MUSIC ONLY IF OWNER LEFT
+          // 🔥 STOP MUSIC IF DJ LEFT (ALWAYS, EVEN IF PAUSED)
           if (
             roomId &&
-            musicState.isPlaying &&
             musicState.playedBy &&
             musicState.playedBy.toString() === userId.toString()
           ) {
-            io.to(`room:${roomId}`).emit("music:stopped", {
-              message: "Music owner left. Music stopped.",
-            });
+            console.log("🎵 DJ left room, stopping music permanently");
 
+            // 1) Stop in-memory
             roomManager.stopMusic(roomId);
 
+            // 2) Clear DB state completely
             await MusicState.findOneAndUpdate(
               { roomId },
               {
@@ -977,6 +976,11 @@ module.exports = (io) => {
                 playedBy: null,
               },
             );
+
+            // 3) Notify all users
+            io.to(`room:${roomId}`).emit("music:stopped", {
+              reason: "dj_left",
+            });
           }
         }
 
