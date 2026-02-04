@@ -1,7 +1,8 @@
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room");
 const { getIO } = require("../utils/socketService");
-const schedulePKEnd = require("../utils/pkScheduler");
+const { schedulePKEnd } = require("../utils/pkScheduler");
+const mongoose = require("mongoose");
 
 exports.createPK = async (req, res) => {
   const session = await mongoose.startSession();
@@ -11,15 +12,16 @@ exports.createPK = async (req, res) => {
     const { roomId, leftUserId, rightUserId, mode, duration } = req.body;
     const hostId = req.user.id;
 
-    const room = await Room.findById(roomId).session(session);
-    if (!room) throw new Error("Room not found");
+    const room = await Room.findOneAndUpdate(
+      { _id: roomId, activePK: null },
+      { $set: { activePK: "LOCK" } },
+      { new: true, session },
+    );
+
+    if (!room) throw new Error("PK already active or room not found");
 
     if (room.host.toString() !== hostId) {
       throw new Error("Only host can start PK");
-    }
-
-    if (room.activePK) {
-      throw new Error("PK already active in this room");
     }
 
     const pk = await PKBattle.create(

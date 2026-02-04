@@ -9,6 +9,8 @@ const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 const Transaction = require("../models/transaction");
 const User = require("../models/users");
+const PKBattle = require("../models/pkBattle");
+const { clearPKTimer } = require("../utils/pkScheduler");
 
 const mongoose = require("mongoose");
 
@@ -455,17 +457,14 @@ module.exports = (io) => {
       try {
         const PKBattle = require("../models/pkBattle");
 
-        const activePK = await PKBattle.findOne({
+        const pk = await PKBattle.findOne({
           roomId,
           status: "running",
         })
           .populate("leftUser.userId", "username profile.avatar")
           .populate("rightUser.userId", "username profile.avatar");
 
-        if (activePK) {
-          socket.emit("pk:started", activePK);
-        }
-        const pk = activePK;
+        if (!pk) return; // ✅ IMPORTANT FIX
 
         const remainingMs = pk.startedAt
           ? Math.max(
@@ -499,7 +498,7 @@ module.exports = (io) => {
       pk.status = "ended";
       pk.endedAt = new Date();
       await pk.save();
-
+      clearPKTimer(pk._id); // ✅ ADD THIS
       io.to(`room:${roomId}`).emit("pk:ended", pk);
     });
 
@@ -518,7 +517,7 @@ module.exports = (io) => {
 
         pk.endedAt = new Date();
         await pk.save();
-
+        clearPKTimer(pk._id); // ✅ ADD THIS
         // 🏆 DECIDE WINNER
         let winnerId = null;
 

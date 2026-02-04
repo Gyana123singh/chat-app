@@ -4,12 +4,25 @@ const { getIO } = require("../utils/socketService");
 
 const activeTimers = new Map();
 
+function clearPKTimer(pkId) {
+  const key = pkId.toString();
+  if (activeTimers.has(key)) {
+    clearTimeout(activeTimers.get(key));
+    activeTimers.delete(key);
+  }
+}
+
 function schedulePKEnd(pkId, duration) {
-  if (activeTimers.has(pkId)) return;
+  const key = pkId.toString();
+
+  if (activeTimers.has(key)) return;
 
   const timer = setTimeout(async () => {
     const pk = await PKBattle.findById(pkId);
-    if (!pk || pk.status !== "running") return;
+    if (!pk || pk.status !== "running") {
+      clearPKTimer(pkId);
+      return;
+    }
 
     pk.status = "ended";
     pk.endedAt = new Date();
@@ -21,15 +34,14 @@ function schedulePKEnd(pkId, duration) {
     }
 
     await pk.save();
-
     await Room.findOneAndUpdate({ roomId: pk.roomId }, { activePK: null });
 
     getIO().to(`room:${pk.roomId}`).emit("pk:ended", pk);
 
-    activeTimers.delete(pkId);
+    clearPKTimer(pkId);
   }, duration * 1000);
 
-  activeTimers.set(pkId, timer);
+  activeTimers.set(key, timer);
 }
 
-module.exports = { schedulePKEnd };
+module.exports = { schedulePKEnd, clearPKTimer };

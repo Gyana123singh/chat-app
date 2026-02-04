@@ -10,7 +10,8 @@ async function recoverRunningPKs() {
     const remaining = pk.duration * 1000 - elapsed;
 
     if (remaining <= 0) {
-      schedulePKEnd(pk._id, 0);
+      // 🔥 End immediately but async-safe
+      schedulePKEnd(pk._id, 1);
     } else {
       schedulePKEnd(pk._id, remaining / 1000);
     }
