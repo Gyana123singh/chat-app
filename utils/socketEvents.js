@@ -394,6 +394,10 @@ module.exports = (io) => {
 
         if (!isInRoom) throw new Error("User not in room");
 
+        if (!mongoose.Types.ObjectId.isValid(pkId)) {
+          throw new Error("Invalid PK ID");
+        }
+
         const pk = await PKBattle.findOne({
           _id: pkId,
           roomId,

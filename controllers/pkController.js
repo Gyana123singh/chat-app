@@ -12,7 +12,20 @@ exports.createPK = async (req, res) => {
     const { roomId, leftUserId, rightUserId, mode, duration } = req.body;
     const hostId = req.user.id;
 
-    // ✅ 1. Find room by STRING roomId
+    // ✅ 0. Basic validation
+    if (!roomId || !mode || !duration) {
+      throw new Error("Missing required fields");
+    }
+
+    // ✅ 0.1 Validate user IDs
+    if (
+      !mongoose.Types.ObjectId.isValid(leftUserId) ||
+      !mongoose.Types.ObjectId.isValid(rightUserId)
+    ) {
+      throw new Error("Invalid user id(s)");
+    }
+
+    // ✅ 1. Find room by STRING roomId (UUID)
     const room = await Room.findOne({ roomId }).session(session);
 
     if (!room) throw new Error("Room not found");
@@ -32,7 +45,7 @@ exports.createPK = async (req, res) => {
           leftUser: { userId: leftUserId },
           rightUser: { userId: rightUserId },
           mode,
-          duration,
+          duration: Number(duration), // ✅ ensure number
           status: "running",
           startedAt: new Date(),
         },
@@ -50,7 +63,7 @@ exports.createPK = async (req, res) => {
     getIO().to(`room:${roomId}`).emit("pk:started", pk);
 
     // ⏱ Auto end
-    schedulePKEnd(pk._id, duration);
+    schedulePKEnd(pk._id, Number(duration));
 
     res.json({ success: true, pk });
   } catch (err) {
