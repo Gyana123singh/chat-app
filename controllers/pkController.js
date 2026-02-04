@@ -18,7 +18,7 @@ exports.createPK = async (req, res) => {
       { new: true, session },
     );
 
-    if (!room) throw new Error("PK already active or room not found");
+    if (!room) throw new Error("PK already active or room no found");
 
     if (room.host.toString() !== hostId) {
       throw new Error("Only host can start PK");
