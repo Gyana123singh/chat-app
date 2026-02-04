@@ -21,7 +21,7 @@ exports.createRoom = async (req, res) => {
     }
 
     const user = await User.findById(userId).select(
-      "username email profile.avatar"
+      "username email profile.avatar",
     );
 
     if (!user) {
@@ -167,7 +167,7 @@ exports.updateFrameStats = async (req, res) => {
           "video.lastSyncTime": new Date(),
         },
       },
-      { new: true }
+      { new: true },
     );
 
     if (!videoRoom) {
@@ -225,7 +225,7 @@ exports.updateListenerVideoStatus = async (req, res) => {
           "video.lastSyncTime": new Date(),
         },
       },
-      { new: true }
+      { new: true },
     );
 
     if (!videoRoom) {
@@ -236,7 +236,7 @@ exports.updateListenerVideoStatus = async (req, res) => {
     }
 
     const participant = videoRoom.participants.find(
-      (p) => p.userId.toString() === userId.toString()
+      (p) => p.userId.toString() === userId.toString(),
     );
 
     res.status(200).json({
@@ -302,7 +302,7 @@ exports.recordVideoSession = async (req, res) => {
           "video.lastSyncTime": true,
         },
       },
-      { new: true }
+      { new: true },
     );
 
     if (!videoRoom) {
@@ -324,13 +324,13 @@ exports.recordVideoSession = async (req, res) => {
         Math.round(
           (safeFPS / 30) * 40 +
             (safeLatency <= 100 ? 30 : 20) +
-            (safeDropped === 0 ? 30 : 10)
-        )
-      )
+            (safeDropped === 0 ? 30 : 10),
+        ),
+      ),
     );
 
     console.log(
-      `📊 Session ended: ${safeFrames} frames, ${safeBandwidth} KB, Quality: ${qualityScore}/100`
+      `📊 Session ended: ${safeFrames} frames, ${safeBandwidth} KB, Quality: ${qualityScore}/100`,
     );
 
     res.status(200).json({
@@ -363,7 +363,7 @@ exports.getVideoQualityMetrics = async (req, res) => {
 
     const videoRoom = await VideoRoom.findOne({ roomId }).populate(
       "hostId",
-      "username profile.avatar"
+      "username profile.avatar",
     );
 
     if (!videoRoom) {
@@ -375,10 +375,10 @@ exports.getVideoQualityMetrics = async (req, res) => {
 
     // ✅ FIX #6: SAFE CALCULATION WITH NULL-COALESCING
     const totalListeners = videoRoom.participants.filter(
-      (p) => p.role === "listener"
+      (p) => p.role === "listener",
     ).length;
     const activeListeners = videoRoom.participants.filter(
-      (p) => p.isReceivingVideo === true
+      (p) => p.isReceivingVideo === true,
     ).length;
 
     const participantCount = Math.max(1, videoRoom.participants.length);
@@ -387,25 +387,25 @@ exports.getVideoQualityMetrics = async (req, res) => {
       Math.round(
         (videoRoom.participants.reduce((sum, p) => sum + (p.videoFPS || 0), 0) /
           participantCount) *
-          10
+          10,
       ) / 10;
 
     const avgLatency = Math.round(
       videoRoom.participants.reduce(
         (sum, p) => sum + (p.videoLatency || 0),
-        0
-      ) / participantCount
+        0,
+      ) / participantCount,
     );
 
     const sessionDuration = Math.max(
       1,
       (videoRoom.video.lastSyncTime?.getTime() || Date.now()) -
-        videoRoom.createdAt.getTime()
+        videoRoom.createdAt.getTime(),
     );
     const bandwidthPerSecond =
       Math.round(
         ((videoRoom.stats.totalBandwidthUsed || 0) / (sessionDuration / 1000)) *
-          100
+          100,
       ) / 100;
 
     // ✅ FIX #6: CLAMP QUALITY SCORE TO 0-100
@@ -416,9 +416,9 @@ exports.getVideoQualityMetrics = async (req, res) => {
         Math.round(
           (avgFPS / 30) * 40 +
             (avgLatency <= 100 ? 30 : 20) +
-            (videoRoom.stats.droppedFrames === 0 ? 30 : 10)
-        )
-      )
+            (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
+        ),
+      ),
     );
 
     res.status(200).json({
@@ -517,7 +517,7 @@ exports.getRoomById = async (req, res) => {
 
     const room = await Room.findOne({ roomId }).populate(
       "participants.user",
-      "username avatar"
+      "username avatar",
     );
 
     if (!room) {
@@ -594,7 +594,9 @@ exports.getAllRooms = async (req, res) => {
 ========================= */
 exports.updateRoom = async (req, res) => {
   try {
-    const room = await Room.findById(req.params.id);
+    const { roomId } = req.params;
+
+    const room = await Room.findOne({ roomId }); // ✅ FIX
 
     if (!room) {
       return res.status(404).json({
@@ -829,7 +831,7 @@ exports.leaveRoom = async (req, res) => {
 
     // ✅ Remove user safely
     room.participants = room.participants.filter(
-      (p) => p.user.toString() !== userId
+      (p) => p.user.toString() !== userId,
     );
 
     if (beforeCount === room.participants.length) {
