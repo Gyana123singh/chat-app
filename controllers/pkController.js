@@ -12,19 +12,19 @@ exports.createPK = async (req, res) => {
     const { roomId, leftUserId, rightUserId, mode, duration } = req.body;
     const hostId = req.user.id;
 
-    const room = await Room.findOneAndUpdate(
-      { roomId: roomId, activePK: null }, // ✅ use STRING roomId
-      { $set: { activePK: "LOCK" } },
-      { new: true, session },
-    );
+    // ✅ 1. Find room by STRING roomId
+    const room = await Room.findOne({ roomId }).session(session);
 
-    if (!room) throw new Error("PK already active or room no found");
+    if (!room) throw new Error("Room not found");
 
-    if (room.host.toString() !== hostId) {
+    if (room.activePK) throw new Error("PK already active in this room");
+
+    if (room.host.toString() !== hostId.toString()) {
       throw new Error("Only host can start PK");
     }
 
-    const pk = await PKBattle.create(
+    // ✅ 2. Create PK
+    const [pk] = await PKBattle.create(
       [
         {
           roomId,
@@ -40,18 +40,22 @@ exports.createPK = async (req, res) => {
       { session },
     );
 
-    room.activePK = pk[0]._id;
+    // ✅ 3. Attach PK to room
+    room.activePK = pk._id;
     await room.save({ session });
 
     await session.commitTransaction();
 
-    getIO().to(`room:${roomId}`).emit("pk:started", pk[0]);
+    // 📡 Notify room
+    getIO().to(`room:${roomId}`).emit("pk:started", pk);
 
-    schedulePKEnd(pk[0]._id, duration); // 🔥 SAFE TIMER
+    // ⏱ Auto end
+    schedulePKEnd(pk._id, duration);
 
-    res.json({ success: true, pk: pk[0] });
+    res.json({ success: true, pk });
   } catch (err) {
     await session.abortTransaction();
+    console.error("❌ createPK error:", err.message);
     res.status(400).json({ message: err.message });
   } finally {
     session.endSession();
