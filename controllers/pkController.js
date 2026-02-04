@@ -20,7 +20,7 @@ exports.createPK = async (req, res) => {
     if (room.activePK) throw new Error("PK already active in this room");
 
     if (room.host.toString() !== hostId.toString()) {
-      throw new Error("Only host can start PK");
+      throw new Error("Only host can start Pk");
     }
 
     // ✅ 2. Create PK
