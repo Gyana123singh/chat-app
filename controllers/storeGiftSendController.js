@@ -53,7 +53,7 @@ exports.sendGiftToUser = async (req, res) => {
       await User.findByIdAndUpdate(
         receiverId,
         { $set: effectUpdate },
-        { session }
+        { session },
       );
     }
 
@@ -81,7 +81,7 @@ exports.sendGiftToUser = async (req, res) => {
           completedAt: new Date(),
         },
       ],
-      { session }
+      { session },
     );
 
     await UserGift.create(
@@ -96,7 +96,7 @@ exports.sendGiftToUser = async (req, res) => {
           receivedFrom: senderId,
         },
       ],
-      { session }
+      { session },
     );
 
     await session.commitTransaction();
@@ -204,7 +204,7 @@ exports.sendGiftToMultipleUsers = async (req, res) => {
 
       // Update receivers
       const receivers = await User.find({ _id: { $in: receiverIds } }).session(
-        session
+        session,
       );
 
       for (let receiver of receivers) {
@@ -305,7 +305,8 @@ exports.sendGiftToRoom = async (req, res) => {
 
     const gift = await Gift.findById(giftId);
     const sender = await User.findById(senderId);
-    const room = await Room.findById(roomId).populate("participants.user");
+    // roomId is a UUID string (not Mongo ObjectId) — query by roomId field
+    const room = await Room.findOne({ roomId }).populate("participants.user");
 
     if (!gift || !sender || !room) {
       return res.status(404).json({ success: false, message: "Invalid data" });
@@ -337,7 +338,7 @@ exports.sendGiftToRoom = async (req, res) => {
     await User.updateMany(
       { _id: { $in: receiverIds } },
       { $inc: { "stats.giftsReceived": quantity } },
-      { session }
+      { session },
     );
 
     await GiftTransaction.create(
@@ -360,7 +361,7 @@ exports.sendGiftToRoom = async (req, res) => {
           completedAt: new Date(),
         },
       ],
-      { session }
+      { session },
     );
 
     await session.commitTransaction();
