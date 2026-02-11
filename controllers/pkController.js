@@ -125,64 +125,6 @@ exports.getPKHistory = async (req, res) => {
 /**
  * GET /api/pk/leaderboard?page=1&limit=20
  */
-exports.getPKLeaderboard = async (req, res) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (page - 1) * limit;
-
-    const pipeline = [
-      { $match: { status: "ended", winner: { $ne: null } } },
-
-      {
-        $group: {
-          _id: "$winner",
-          wins: { $sum: 1 },
-          totalBattles: { $sum: 1 },
-        },
-      },
-
-      { $sort: { wins: -1 } },
-
-      { $skip: skip },
-      { $limit: Number(limit) },
-
-      {
-        $lookup: {
-          from: "users",
-          localField: "_id",
-          foreignField: "_id",
-          as: "user",
-        },
-      },
-
-      { $unwind: "$user" },
-
-      {
-        $project: {
-          userId: "$user._id",
-          username: "$user.username",
-          avatar: "$user.profile.avatar",
-          wins: 1,
-          totalBattles: 1,
-        },
-      },
-    ];
-
-    const rows = await PKBattle.aggregate(pipeline);
-
-    res.json({
-      success: true,
-      leaderboard: rows,
-      page: Number(page),
-      limit: Number(limit),
-    });
-  } catch (err) {
-    console.error("❌ getPKLeaderboard error:", err.message);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to load PK leaderboard" });
-  }
-};
 
 
 /**
