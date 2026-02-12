@@ -7,5 +7,5 @@ const router = express.Router();
 // GET USER LEVEL (PROFILE / APP)
 // ===============================
 // GET /api/level
-router.get("/get-Level", authMiddleware, levelController.getUserLevel);
+router.get("/get-level", authMiddleware, levelController.getUserLevel);
 module.exports = router;
