@@ -137,7 +137,7 @@ exports.getGiftDetails = async (req, res) => {
 
     const gift = await StoreGift.findById(giftId).populate(
       "category",
-      "name type"
+      "name type",
     );
 
     if (!gift) {
@@ -195,7 +195,7 @@ exports.deleteGift = async (req, res) => {
 
 exports.createGift = async (req, res) => {
   try {
-    const { name, price, category } = req.body;
+    const { name, price, category, description, effectType, rarity } = req.body;
 
     // Validation
     if (!name || !price || !category) {
@@ -206,15 +206,31 @@ exports.createGift = async (req, res) => {
     }
 
     let icon = "";
+    let animationUrl = null;
+
     if (req.file) {
-      icon = req.file.path;
+      const fileUrl = req.file.path; // Cloudinary URL
+      const mimeType = req.file.mimetype; // e.g. image/png, image/gif, application/pdf
+
+      if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
+        // Normal image → icon
+        icon = fileUrl;
+      } else {
+        // gif / pdf / others → animation or asset
+        animationUrl = fileUrl;
+        icon = fileUrl; // optional: also use as preview
+      }
     }
 
     const gift = await StoreGift.create({
       name,
       price,
-      category, // string now
+      category,
+      description: description || "",
       icon,
+      animationUrl,
+      effectType: effectType || "NONE",
+      rarity: rarity || "common",
     });
 
     return res.status(201).json({
