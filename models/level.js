@@ -25,7 +25,10 @@ const levelSchema = new mongoose.Schema(
       lastReset: { type: Date, default: Date.now },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
+
+// ✅ ADD THIS LINE (IMPORTANT)
+levelSchema.index({ userId: 1 }, { unique: true });
 
 module.exports = mongoose.model("Level", levelSchema);

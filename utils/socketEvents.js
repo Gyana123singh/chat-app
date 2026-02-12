@@ -389,6 +389,34 @@ module.exports = (io) => {
           );
 
           await session.commitTransaction();
+
+          // =========================
+          // 🎯 ADD EXP FOR GIFT SEND (WAFA STYLE)
+          // =========================
+          const giftExp = Math.floor(totalCoins / 25); // 25 coins = 1 EXP (tweak if needed)
+
+          if (giftExp > 0) {
+            await levelController.addPersonalExp(senderId, giftExp, io);
+
+            io.to(senderId.toString()).emit("level:exp", {
+              type: "personal",
+              exp: giftExp,
+              message: `+${giftExp} EXP (Gift sent)`,
+            });
+
+            // Optional: also add ROOM EXP
+            const roomExp = Math.floor(totalCoins / 10);
+            if (roomExp > 0) {
+              await levelController.addRoomExp(senderId, roomExp, io);
+
+              io.to(senderId.toString()).emit("level:exp", {
+                type: "room",
+                exp: roomExp,
+                message: `+${roomExp} Room EXP (Gift sent)`,
+              });
+            }
+          }
+
           // 🏆 Update Trophy / Leaderboard (AFTER COMMIT ONLY)
           const {
             updateLeaderboardOnGift,
@@ -778,7 +806,6 @@ module.exports = (io) => {
             ],
             { session },
           );
-
           // =========================
           // 🧮 UPDATE PK SCORE
           // =========================
@@ -808,6 +835,20 @@ module.exports = (io) => {
           await pk.save({ session });
 
           await session.commitTransaction();
+          // =========================
+          // 🎯 ADD EXP FOR PK GIFT SEND
+          // =========================
+          const giftExp = Math.floor(totalCoins / 25);
+
+          if (giftExp > 0) {
+            await levelController.addPersonalExp(senderId, giftExp, io);
+
+            io.to(senderId.toString()).emit("level:exp", {
+              type: "personal",
+              exp: giftExp,
+              message: `+${giftExp} EXP (PK Gift sent)`,
+            });
+          }
 
           // =========================
           // 📢 EMITS

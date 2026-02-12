@@ -7,6 +7,13 @@ exports.PERSONAL_LEVEL_EXP = {
   6: 500,
   7: 700,
   8: 1000,
+  9: 1500,
+  10: 2200,
+  11: 3000,
+  12: 4000,
+  13: 5500,
+  14: 7500,
+  15: 10000,
 };
 
 exports.ROOM_LEVEL_EXP = {
@@ -16,6 +23,10 @@ exports.ROOM_LEVEL_EXP = {
   3: 260,
   4: 400,
   5: 600,
+  6: 900,
+  7: 1300,
+  8: 1800,
+  9: 2500,
 };
 
 exports.DAILY_PERSONAL_LIMIT = 300;
