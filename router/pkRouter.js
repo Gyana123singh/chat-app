@@ -9,6 +9,6 @@ const { authMiddleware } = require("../middleware/auth"); // your JWT middleware
 // ==========================
 // Only room host can start PK
 // POST /api/pk/create
-router.post("/create-pk", createPK);
+router.post("/create-pk", authMiddleware, createPK);
 
 module.exports = router;
