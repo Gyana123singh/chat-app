@@ -10,9 +10,68 @@ const GiftTransaction = require("../models/giftTransaction");
 const Transaction = require("../models/transaction");
 const User = require("../models/users");
 const PKBattle = require("../models/pkBattle");
-const { clearPKTimer } = require("../utils/pkScheduler");
 
 const mongoose = require("mongoose");
+
+async function distributePKRewards(pk, roomId, io) {
+  try {
+    if (!pk?._id) return;
+
+    const fresh = await PKBattle.findById(pk._id);
+    if (!fresh || fresh.rewardsDistributed) return;
+
+    fresh.rewardsDistributed = true;
+    await fresh.save();
+
+    const WIN_REWARD = 100;
+    const LOSE_REWARD = 20;
+    const DRAW_REWARD = 50;
+
+    if (fresh.winner) {
+      const winnerId = fresh.winner?.toString();
+      const leftId = fresh.leftUser.userId?.toString();
+      const rightId = fresh.rightUser.userId?.toString();
+      const loserId = winnerId === leftId ? rightId : leftId;
+
+      if (winnerId) {
+        await User.findByIdAndUpdate(winnerId, {
+          $inc: { coins: WIN_REWARD, totalEarned: WIN_REWARD },
+        });
+        io.to(winnerId).emit("coins:update:inc", { coins: WIN_REWARD });
+      }
+
+      if (loserId) {
+        await User.findByIdAndUpdate(loserId, {
+          $inc: { coins: LOSE_REWARD, totalEarned: LOSE_REWARD },
+        });
+        io.to(loserId).emit("coins:update:inc", { coins: LOSE_REWARD });
+      }
+    } else {
+      const leftId = fresh.leftUser.userId?.toString();
+      const rightId = fresh.rightUser.userId?.toString();
+
+      if (leftId) {
+        await User.findByIdAndUpdate(leftId, {
+          $inc: { coins: DRAW_REWARD, totalEarned: DRAW_REWARD },
+        });
+        io.to(leftId).emit("coins:update:inc", { coins: DRAW_REWARD });
+      }
+
+      if (rightId) {
+        await User.findByIdAndUpdate(rightId, {
+          $inc: { coins: DRAW_REWARD, totalEarned: DRAW_REWARD },
+        });
+        io.to(rightId).emit("coins:update:inc", { coins: DRAW_REWARD });
+      }
+    }
+
+    io.to(`room:${roomId}`).emit("pk:rewards:distributed", {
+      pkId: fresh._id,
+    });
+  } catch (err) {
+    console.error("❌ PK reward distribution error:", err.message);
+  }
+}
 
 module.exports = (io) => {
   const onlineUsers = new Map();
@@ -20,6 +79,8 @@ module.exports = (io) => {
   const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
+  const pkTimers = new Map(); // pkId -> timeoutId
+
   // ===============================
   // WAFA LEVEL TIMERS (SAFE)
   // ===============================
@@ -343,7 +404,7 @@ module.exports = (io) => {
             sender: {
               id: sender._id,
               username: sender.username,
-              avatar: sender.profile.avatar,
+              avatar: sender.profile?.avatar || null,
             },
             gift: {
               id: gift._id,
@@ -378,176 +439,426 @@ module.exports = (io) => {
       },
     );
 
-    /* =========================
-        🔥 PK EVENTS
-========================= */
-    socket.on("gift:send:pk", async ({ roomId, pkId, toUserId, giftId }) => {
-      const session = await mongoose.startSession();
-      session.startTransaction();
-
+    // =========================
+    // 🆚 PK START (HOST ONLY)
+    // =========================
+    socket.on("pk:start", async ({ roomId, pkId }) => {
       try {
-        const senderId = socket.data.userId;
-        const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
-        const isInRoom = roomSockets.some(
-          (s) => s.data.userId?.toString() === senderId.toString(),
-        );
+        const pk = await PKBattle.findById(pkId);
+        if (!pk) return;
 
-        if (!isInRoom) throw new Error("User not in room");
+        const room = await Room.findOne({ roomId }).select("host");
+        if (!room) return;
 
-        if (!mongoose.Types.ObjectId.isValid(pkId)) {
-          throw new Error("Invalid PK ID");
+        // ✅ Only host can start PK
+        if (
+          !socket.data.userId ||
+          room.host.toString() !== socket.data.userId.toString()
+        ) {
+          console.log("❌ Non-host tried to start PK");
+          return;
         }
 
-        const pk = await PKBattle.findOne({
-          _id: pkId,
-          roomId,
-          status: "running",
-        }).session(session);
+        // ❌ If already running, ignore
+        if (pk.status === "running") return;
 
-        if (!pk) throw new Error("PK not active");
+        pk.status = "running";
+        pk.startedAt = new Date();
+        await pk.save();
 
-        // ❌ self vote
-        if (senderId.toString() === toUserId.toString())
-          throw new Error("Self vote blocked");
+        await Room.findOneAndUpdate({ roomId }, { $set: { activePK: pk._id } });
 
-        const gift = await Gift.findById(giftId).session(session);
-        if (!gift) throw new Error("Gift not found");
+        io.to(`room:${roomId}`).emit("pk:started", {
+          pkId: pk._id,
+          leftUser: pk.leftUser,
+          rightUser: pk.rightUser,
+          mode: pk.mode,
+          duration: pk.duration,
+          startedAt: pk.startedAt,
+        });
 
-        const sender = await User.findOneAndUpdate(
-          { _id: senderId, coins: { $gte: gift.price } },
-          { $inc: { coins: -gift.price, totalSpent: gift.price } },
-          { new: true, session },
-        );
-
-        if (!sender) throw new Error("INSUFFICIENT_COINS");
-
-        // 🎯 scoring
-        let scoreValue = gift.price;
-        if (pk.mode === "votes") scoreValue = 1;
-        if (pk.mode === "earning") scoreValue = Math.floor(gift.price * 0.7);
-
-        if (pk.leftUser.userId.toString() === toUserId) {
-          pk.leftUser.score += scoreValue;
-        } else if (pk.rightUser.userId.toString() === toUserId) {
-          pk.rightUser.score += scoreValue;
-        } else {
-          throw new Error("Invalid PK side");
+        // ⛔ Clear old timer if exists
+        if (pkTimers.has(pkId)) {
+          clearTimeout(pkTimers.get(pkId));
+          pkTimers.delete(pkId);
         }
 
-        pk.contributions.push({
-          fromUser: senderId,
-          toUser: toUserId,
-          giftId,
-          value: scoreValue,
-        });
+        // ⏱ Auto end PK (SINGLE TIMER)
+        const timer = setTimeout(async () => {
+          const freshPK = await PKBattle.findById(pkId);
+          if (!freshPK || freshPK.status !== "running") return;
 
-        await pk.save({ session });
+          freshPK.status = "ended";
+          freshPK.endedAt = new Date();
 
-        await session.commitTransaction();
+          if (freshPK.leftUser.score > freshPK.rightUser.score) {
+            freshPK.winner = freshPK.leftUser.userId;
+          } else if (freshPK.rightUser.score > freshPK.leftUser.score) {
+            freshPK.winner = freshPK.rightUser.userId;
+          } else {
+            freshPK.winner = null;
+          }
 
-        io.to(`room:${roomId}`).emit("pk:score:update", {
-          leftScore: pk.leftUser.score,
-          rightScore: pk.rightUser.score,
-        });
+          await freshPK.save();
+          await Room.findOneAndUpdate({ roomId }, { $set: { activePK: null } });
 
-        io.to(senderId.toString()).emit("coins:update", {
-          coins: sender.coins,
-        });
+          await distributePKRewards(freshPK, roomId, io);
+
+          io.to(`room:${roomId}`).emit("pk:ended", {
+            pkId: freshPK._id,
+            winner: freshPK.winner,
+            leftScore: freshPK.leftUser.score,
+            rightScore: freshPK.rightUser.score,
+          });
+
+          // 🧹 Clean timer
+          pkTimers.delete(pkId);
+        }, pk.duration * 1000);
+
+        // ✅ Store timer
+        pkTimers.set(pkId, timer);
       } catch (err) {
-        await session.abortTransaction();
-
-        if (err.message === "INSUFFICIENT_COINS") {
-          socket.emit("gift:recharge");
-        }
-      } finally {
-        session.endSession();
+        console.error("❌ pk:start error:", err);
       }
     });
 
-    // 🔁 reconnect sync
-    socket.on("pk:getActive", async ({ roomId }) => {
+    // =========================
+    // 🔴 PK STOP (HOST ONLY)
+    // =========================
+    socket.on("pk:stop", async ({ roomId, pkId }) => {
       try {
-        const PKBattle = require("../models/pkBattle");
+        const pk = await PKBattle.findById(pkId);
+        if (!pk || pk.status !== "running") return;
 
-        const pk = await PKBattle.findOne({
-          roomId,
-          status: "running",
-        })
-          .populate("leftUser.userId", "username profile.avatar")
-          .populate("rightUser.userId", "username profile.avatar");
+        const room = await Room.findOne({ roomId }).select("host");
+        if (!room) return;
 
-        if (!pk) return; // ✅ IMPORTANT FIX
-
-        const remainingMs = pk.startedAt
-          ? Math.max(
-              0,
-              pk.duration * 1000 -
-                (Date.now() - new Date(pk.startedAt).getTime()),
-            )
-          : 0;
-
-        socket.emit("pk:started", {
-          ...pk.toObject(),
-          remainingMs,
-        });
-      } catch (err) {
-        console.error("❌ pk:getActive:", err.message);
-      }
-    });
-
-    // ❌ cancel by host
-    socket.on("pk:cancel", async ({ roomId }) => {
-      const PKBattle = require("../models/pkBattle");
-
-      const pk = await PKBattle.findOne({
-        roomId,
-        status: "running",
-      });
-      await Room.findOneAndUpdate({ roomId }, { activePK: null });
-
-      if (!pk || pk.hostId.toString() !== socket.data.userId.toString()) return;
-
-      pk.status = "ended";
-      pk.endedAt = new Date();
-      await pk.save();
-      clearPKTimer(pk._id); // ✅ ADD THIS
-      io.to(`room:${roomId}`).emit("pk:ended", pk);
-    });
-
-    socket.on("pk:end", async ({ roomId }) => {
-      try {
-        const PKBattle = require("../models/pkBattle");
-
-        const pk = await PKBattle.findOne({
-          roomId,
-          status: "running",
-        });
-        await Room.findOneAndUpdate({ roomId }, { activePK: null });
-        if (!pk || pk.status === "ended") return;
+        // Only host
+        if (room.host.toString() !== socket.data.userId.toString()) return;
 
         pk.status = "ended";
-
         pk.endedAt = new Date();
-        await pk.save();
-        clearPKTimer(pk._id); // ✅ ADD THIS
-        // 🏆 DECIDE WINNER
-        let winnerId = null;
 
+        // Decide winner
         if (pk.leftUser.score > pk.rightUser.score) {
-          winnerId = pk.leftUser.userId;
+          pk.winner = pk.leftUser.userId;
         } else if (pk.rightUser.score > pk.leftUser.score) {
-          winnerId = pk.rightUser.userId;
+          pk.winner = pk.rightUser.userId;
+        } else {
+          pk.winner = null; // draw
+        }
+        if (pkTimers.has(pkId)) {
+          clearTimeout(pkTimers.get(pkId));
+          pkTimers.delete(pkId);
         }
 
+        await pk.save();
+
+        // Clear room activePK
+        await Room.findOneAndUpdate({ roomId }, { $set: { activePK: null } });
+
+        // 🏆 Distribute rewards
+        await distributePKRewards(pk, roomId, io);
+
         io.to(`room:${roomId}`).emit("pk:ended", {
-          pk,
-          winnerId,
+          pkId: pk._id,
+          winner: pk.winner,
+          leftScore: pk.leftUser.score,
+          rightScore: pk.rightUser.score,
+          reason: "stopped_by_host",
         });
       } catch (err) {
-        console.error("❌ pk:end error:", err.message);
+        console.error("❌ pk:stop error:", err);
+      }
+    });
+    // =========================
+    // 🔁 PK RESTART (HOST ONLY)
+    // =========================
+    socket.on("pk:restart", async ({ roomId, pkId }) => {
+      try {
+        const pk = await PKBattle.findById(pkId);
+        if (!pk) return;
+
+        const room = await Room.findOne({ roomId }).select("host");
+        if (!room) return;
+
+        // Only host
+        if (room.host.toString() !== socket.data.userId.toString()) return;
+
+        // ⛔ Clear old timer if exists
+        if (pkTimers.has(pkId)) {
+          clearTimeout(pkTimers.get(pkId));
+          pkTimers.delete(pkId);
+        }
+
+        // Reset scores & state
+        pk.leftUser.score = 0;
+        pk.rightUser.score = 0;
+        pk.status = "running";
+        pk.startedAt = new Date();
+        pk.endedAt = null;
+        pk.winner = null;
+        pk.contributions = [];
+        pk.rewardsDistributed = false; // ✅ IMPORTANT
+
+        await pk.save();
+
+        io.to(`room:${roomId}`).emit("pk:restarted", {
+          pkId: pk._id,
+          leftUser: pk.leftUser,
+          rightUser: pk.rightUser,
+          mode: pk.mode,
+          duration: pk.duration,
+          startedAt: pk.startedAt,
+        });
+
+        // ⏱ Auto end again (SINGLE TIMER)
+        const timer = setTimeout(async () => {
+          const freshPK = await PKBattle.findById(pkId);
+          if (!freshPK || freshPK.status !== "running") return;
+
+          freshPK.status = "ended";
+          freshPK.endedAt = new Date();
+
+          if (freshPK.leftUser.score > freshPK.rightUser.score) {
+            freshPK.winner = freshPK.leftUser.userId;
+          } else if (freshPK.rightUser.score > freshPK.leftUser.score) {
+            freshPK.winner = freshPK.rightUser.userId;
+          } else {
+            freshPK.winner = null;
+          }
+
+          await freshPK.save();
+          await Room.findOneAndUpdate({ roomId }, { $set: { activePK: null } });
+
+          await distributePKRewards(freshPK, roomId, io);
+
+          io.to(`room:${roomId}`).emit("pk:ended", {
+            pkId: freshPK._id,
+            winner: freshPK.winner,
+            leftScore: freshPK.leftUser.score,
+            rightScore: freshPK.rightUser.score,
+            reason: "timer_end",
+          });
+
+          // 🧹 Clean timer
+          pkTimers.delete(pkId);
+        }, pk.duration * 1000);
+
+        // ✅ Store timer
+        pkTimers.set(pkId, timer);
+      } catch (err) {
+        console.error("❌ pk:restart error:", err);
       }
     });
 
+    // =========================
+    // 🆚 PK GIFT SEND (SEPARATE & SAFE)
+    // =========================
+    socket.on(
+      "pk:gift:send",
+      async ({ roomId, pkId, giftId, toUserId, quantity = 1 }) => {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+          const senderId = socket.data.userId;
+          if (senderId.toString() === toUserId.toString()) {
+            await session.abortTransaction();
+            socket.emit("pk:gift:error", {
+              message: "You cannot gift yourself",
+            });
+            return;
+          }
+
+          if (!senderId || !roomId || !pkId || !giftId || !toUserId) {
+            await session.abortTransaction();
+            return;
+          }
+
+          // 🔎 Validate PK
+          const pk = await PKBattle.findById(pkId).session(session);
+          if (!pk || pk.status !== "running") {
+            await session.abortTransaction();
+            socket.emit("pk:gift:error", { message: "PK not active" });
+            return;
+          }
+          const room = await Room.findOne({ roomId })
+            .select("activePK")
+            .session(session);
+          if (!room || room.activePK?.toString() !== pkId.toString()) {
+            await session.abortTransaction();
+            socket.emit("pk:gift:error", {
+              message: "This PK is not active in room",
+            });
+            return;
+          }
+
+          // 🎁 Validate Gift
+          const gift = await Gift.findOne({
+            _id: giftId,
+            isAvailable: true,
+          }).session(session);
+
+          if (!gift) {
+            await session.abortTransaction();
+            socket.emit("pk:gift:error", { message: "Gift not found" });
+            return;
+          }
+
+          // 🔢 Quantity limit
+          const qty = Math.max(1, Math.min(Number(quantity), 499));
+
+          // 💰 Total cost (PK gift is for ONE target user)
+          const totalCoins = gift.price * qty;
+
+          // 🔥 Deduct coins atomically
+          const sender = await User.findOneAndUpdate(
+            { _id: senderId, coins: { $gte: totalCoins } },
+            {
+              $inc: {
+                coins: -totalCoins,
+                totalSpent: totalCoins,
+              },
+            },
+            { new: true, session },
+          );
+
+          if (!sender) {
+            await session.abortTransaction();
+            const balance = await User.findById(senderId).select("coins");
+            socket.emit("pk:gift:recharge", {
+              requiredCoins: totalCoins,
+              currentCoins: balance?.coins || 0,
+            });
+            return;
+          }
+
+          // 🧾 Save Gift Transaction (PK tagged)
+          await GiftTransaction.create(
+            [
+              {
+                roomId,
+                senderId,
+                giftId,
+                giftName: gift.name,
+                giftIcon: gift.icon,
+                giftPrice: gift.price,
+                giftCategory: gift.category,
+                giftRarity: gift.rarity,
+                sendType: "pk",
+                quantity: qty,
+                recipientCount: 1,
+                recipientIds: [toUserId],
+                totalCoinsDeducted: totalCoins,
+                status: "completed",
+                meta: { pkId },
+              },
+            ],
+            { session },
+          );
+
+          // 💳 Wallet transaction
+          await Transaction.create(
+            [
+              {
+                userId: senderId,
+                type: "COIN_SPENT",
+                transactionType: "pk_gift",
+                gift: gift._id,
+                giftName: gift.name,
+                coinsUsed: totalCoins,
+                sender: senderId,
+                room: roomId,
+                paymentMethod: "gift",
+                status: "SUCCESS",
+                completedAt: new Date(),
+                message: `Sent PK gift ${gift.name} x${qty}`,
+              },
+            ],
+            { session },
+          );
+
+          // =========================
+          // 🧮 UPDATE PK SCORE
+          // =========================
+          let scoreAdd = totalCoins;
+          if (pk.mode === "votes") scoreAdd = 1;
+
+          const leftId = pk.leftUser.userId?.toString();
+          const rightId = pk.rightUser.userId?.toString();
+
+          if (toUserId.toString() === leftId) {
+            pk.leftUser.score += scoreAdd;
+          } else if (toUserId.toString() === rightId) {
+            pk.rightUser.score += scoreAdd;
+          } else {
+            await session.abortTransaction();
+            socket.emit("pk:gift:error", { message: "Target not in PK" });
+            return;
+          }
+
+          pk.contributions.push({
+            fromUser: senderId,
+            toUser: toUserId,
+            giftId,
+            value: scoreAdd,
+          });
+
+          await pk.save({ session });
+
+          await session.commitTransaction();
+
+          // =========================
+          // 📢 EMITS
+          // =========================
+
+          // 🎬 Optional: show gift animation in room
+          io.to(`room:${roomId}`).emit("gift:animation", {
+            sender: {
+              id: sender._id,
+              username: sender.username,
+              avatar: sender.profile?.avatar || null,
+            },
+            gift: {
+              id: gift._id,
+              name: gift.name,
+              icon: gift.icon,
+              rarity: gift.rarity,
+              effectType: gift.effectType,
+              animationUrl: gift.animationUrl,
+            },
+            recipients: [toUserId],
+            quantity: qty,
+            totalCoinsDeducted: totalCoins,
+            count: 1,
+            sendType: "pk",
+          });
+
+          // 🔴 PK score update
+          io.to(`room:${roomId}`).emit("pk:score:update", {
+            pkId: pk._id,
+            leftScore: pk.leftUser.score,
+            rightScore: pk.rightUser.score,
+          });
+
+          // 💰 Sender wallet update
+          io.to(senderId.toString()).emit("coins:update", {
+            coins: sender.coins,
+          });
+        } catch (err) {
+          await session.abortTransaction();
+          console.error("❌ PK gift send error:", err);
+          socket.emit("pk:gift:error", {
+            message: "Failed to send PK gift",
+          });
+        } finally {
+          session.endSession();
+        }
+      },
+    );
+
+    // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
       const { userId, username, avatar } = socket.data;
 

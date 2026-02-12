@@ -34,11 +34,9 @@ const pkRoutes = require("./router/pkRouter");
 const chatUploadRouter = require("./router/chatUploadRouter");
 const privateImageUpload = require("./router/privateImageUpload");
 const MusicState = require("./models/musicState");
-const { recoverRunningPKs } = require("./utils/pkRecovery");
 
 const app = express();
 connectMongose();
-recoverRunningPKs(); // 🔥 ADD THIS AFTER DB CONNECT
 // 🔥 Start trophy cron jobs
 require("./utils/trophyCron");
 
