@@ -1,42 +1,5 @@
 const Leaderboard = require("../models/trophyLeaderBoard");
 const User = require("../models/users");
-const GiftTransaction = require("../models/giftTransaction");
-
-/**
- * ⏰ Utility: Get period boundaries
- */
-const getPeriodBoundaries = () => {
-  const now = new Date();
-
-  // Start of today (00:00:00)
-  const startOfDay = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0,
-    0,
-    0,
-    0,
-  );
-
-  // Start of this week (Sunday 00:00:00)
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay());
-  startOfWeek.setHours(0, 0, 0, 0);
-
-  // Start of this month (1st day 00:00:00)
-  const startOfMonth = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    1,
-    0,
-    0,
-    0,
-    0,
-  );
-
-  return { now, startOfDay, startOfWeek, startOfMonth };
-};
 
 /**
  * 🏆 GET LEADERBOARD - Main trophy page function
@@ -250,6 +213,9 @@ exports.updateLeaderboardOnGift = async (userId, totalCoinsSpent) => {
 
   // 1️⃣ Read previous trophy data FIRST (for streak calc)
   const prevUser = await User.findById(userId).select("trophy");
+
+  // ✅ SAFETY GUARD: If user not found (deleted / DB glitch), stop safely
+  if (!prevUser) return;
 
   // 2️⃣ Increment leaderboard totals atomically
   const inc = {

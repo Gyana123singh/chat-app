@@ -1,78 +1,129 @@
 const cron = require("node-cron");
+const Leaderboard = require("../models/trophyLeaderBoard");
 const trophyController = require("../controllers/trophyController");
 
 /**
- * 🕐 CRON JOBS - Scheduled tasks for trophy system
- * These run automatically at specified intervals
+ * 🕐 TROPHY CRON JOBS
  */
 
 let cronJobs = [];
 
 /**
- * ✅ FIX: Schedule rank updates every hour (instead of after every gift)
- * This prevents performance issues from constant rank recalculation
- *
- * Cron syntax: "minute hour day month dayOfWeek"
- * "0 * * * *" = every hour at minute 0
+ * 🔄 Update ranks every hour
  */
 const scheduleRankUpdate = () => {
-  const rankUpdateJob = cron.schedule("0 * * * *", async () => {
+  const job = cron.schedule("0 * * * *", async () => {
     try {
-      console.log("📊 [CRON] Starting hourly rank update...");
+      console.log("📊 [CRON] Updating ranks...");
       await trophyController.updateAllRanks();
-      console.log("✅ [CRON] Rank update completed");
+      console.log("✅ [CRON] Rank update done");
     } catch (error) {
       console.error("❌ [CRON] Rank update failed:", error.message);
     }
   });
 
-  cronJobs.push(rankUpdateJob);
-  console.log("📅 Scheduled: Rank updates every hour");
+  cronJobs.push(job);
 };
 
 /**
- * ✅ BONUS: Schedule daily reset check at midnight
- * Ensures daily leaderboard stats reset properly
- * Runs at 00:00 (midnight) every day
+ * 🧹 Reset DAILY leaderboard (every day at 00:00)
  */
 const scheduleDailyReset = () => {
-  const dailyResetJob = cron.schedule("0 0 * * *", async () => {
+  const job = cron.schedule("0 0 * * *", async () => {
     try {
-      console.log("📊 [CRON] Midnight reset check - daily stats ready");
-      // Stats reset happens naturally when updateLeaderboardOnGift is called
-      // This is just a log entry for monitoring
+      console.log("🧹 [CRON] Resetting DAILY leaderboard...");
+
+      await Leaderboard.updateMany({}, {
+        $set: {
+          "daily.coins": 0,
+          "daily.giftsReceived": 0,
+          "daily.totalValue": 0,
+          "rank.daily": 0,
+        },
+      });
+
+      console.log("✅ [CRON] Daily reset done");
     } catch (error) {
-      console.error("❌ [CRON] Daily reset check failed:", error.message);
+      console.error("❌ [CRON] Daily reset failed:", error.message);
     }
   });
 
-  cronJobs.push(dailyResetJob);
-  console.log("📅 Scheduled: Daily reset check at midnight");
+  cronJobs.push(job);
 };
 
 /**
- * 🏆 Main function: Start all cron jobs
+ * 🧹 Reset WEEKLY leaderboard (every Sunday 00:00)
+ */
+const scheduleWeeklyReset = () => {
+  const job = cron.schedule("0 0 * * 0", async () => {
+    try {
+      console.log("🧹 [CRON] Resetting WEEKLY leaderboard...");
+
+      await Leaderboard.updateMany({}, {
+        $set: {
+          "weekly.coins": 0,
+          "weekly.giftsReceived": 0,
+          "weekly.totalValue": 0,
+          "rank.weekly": 0,
+        },
+      });
+
+      console.log("✅ [CRON] Weekly reset done");
+    } catch (error) {
+      console.error("❌ [CRON] Weekly reset failed:", error.message);
+    }
+  });
+
+  cronJobs.push(job);
+};
+
+/**
+ * 🧹 Reset MONTHLY leaderboard (1st day of month 00:00)
+ */
+const scheduleMonthlyReset = () => {
+  const job = cron.schedule("0 0 1 * *", async () => {
+    try {
+      console.log("🧹 [CRON] Resetting MONTHLY leaderboard...");
+
+      await Leaderboard.updateMany({}, {
+        $set: {
+          "monthly.coins": 0,
+          "monthly.giftsReceived": 0,
+          "monthly.totalValue": 0,
+          "rank.monthly": 0,
+        },
+      });
+
+      console.log("✅ [CRON] Monthly reset done");
+    } catch (error) {
+      console.error("❌ [CRON] Monthly reset failed:", error.message);
+    }
+  });
+
+  cronJobs.push(job);
+};
+
+/**
+ * ▶️ Start all cron jobs
  */
 const startCronJobs = () => {
   try {
-    console.log("\n🕐 Starting scheduled cron jobs...\n");
+    console.log("🕐 Starting trophy cron jobs...");
     scheduleRankUpdate();
     scheduleDailyReset();
-    console.log(`✅ ${cronJobs.length} cron jobs initialized\n`);
+    scheduleWeeklyReset();
+    scheduleMonthlyReset();
+    console.log(`✅ ${cronJobs.length} cron jobs started`);
   } catch (error) {
     console.error("❌ Failed to start cron jobs:", error.message);
   }
 };
 
 /**
- * 🛑 Stop all cron jobs (cleanup on server shutdown)
+ * ⏹ Stop all cron jobs
  */
 const stopCronJobs = () => {
-  cronJobs.forEach((job) => {
-    if (job) {
-      job.stop();
-    }
-  });
+  cronJobs.forEach((job) => job && job.stop());
   console.log("🛑 All cron jobs stopped");
 };
 

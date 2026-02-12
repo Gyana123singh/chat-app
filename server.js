@@ -37,8 +37,6 @@ const MusicState = require("./models/musicState");
 
 const app = express();
 connectMongose();
-// 🔥 Start trophy cron jobs
-require("./utils/trophyCron");
 
 const PORT = Number(process.env.PORT || 5004);
 

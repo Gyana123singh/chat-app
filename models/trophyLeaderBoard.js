@@ -7,14 +7,6 @@ const leaderboardSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    username: {
-      type: String,
-      default: "Unknown",
-    },
-    avatar: {
-      type: String,
-      default: null,
-    },
 
     // 📊 Daily Stats
     daily: {
