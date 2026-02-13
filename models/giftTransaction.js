@@ -2,16 +2,12 @@ const mongoose = require("mongoose");
 
 const giftTransactionSchema = new mongoose.Schema(
   {
-    // roomId: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "Room",
-    //   required: true,
-    // },
     roomId: {
-      type: String, // ✅ CHANGE THIS
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Room",
       required: true,
-      index: true,
     },
+  
     roomName: {
       type: String, // snapshot (keep this)
     },
