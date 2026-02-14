@@ -4,73 +4,48 @@ const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
 const levelController = require("../controllers/levelController");
-const Room = require("../models/room");
-const Gift = require("../models/gifts");
-const GiftTransaction = require("../models/giftTransaction");
-const Transaction = require("../models/transaction");
-const User = require("../models/users");
 const PKBattle = require("../models/pkBattle");
+const Room = require("../models/room"); // or your room model path
+const pkTimers = new Map(); // pkId -> timeoutId
+async function endPKInternal(pkId, io) {
+  const pk = await PKBattle.findById(pkId);
+  if (!pk || pk.status !== "running") return;
 
-const mongoose = require("mongoose");
+  pk.status = "ended";
+  pk.endedAt = new Date();
 
-async function distributePKRewards(pk, roomId, io) {
-  try {
-    if (!pk?._id) return;
-
-    const fresh = await PKBattle.findById(pk._id);
-    if (!fresh || fresh.rewardsDistributed) return;
-
-    fresh.rewardsDistributed = true;
-    await fresh.save();
-
-    const WIN_REWARD = 100;
-    const LOSE_REWARD = 20;
-    const DRAW_REWARD = 50;
-
-    if (fresh.winner) {
-      const winnerId = fresh.winner?.toString();
-      const leftId = fresh.leftUser.userId?.toString();
-      const rightId = fresh.rightUser.userId?.toString();
-      const loserId = winnerId === leftId ? rightId : leftId;
-
-      if (winnerId) {
-        await User.findByIdAndUpdate(winnerId, {
-          $inc: { coins: WIN_REWARD, totalEarned: WIN_REWARD },
-        });
-        io.to(winnerId).emit("coins:update:inc", { coins: WIN_REWARD });
-      }
-
-      if (loserId) {
-        await User.findByIdAndUpdate(loserId, {
-          $inc: { coins: LOSE_REWARD, totalEarned: LOSE_REWARD },
-        });
-        io.to(loserId).emit("coins:update:inc", { coins: LOSE_REWARD });
-      }
-    } else {
-      const leftId = fresh.leftUser.userId?.toString();
-      const rightId = fresh.rightUser.userId?.toString();
-
-      if (leftId) {
-        await User.findByIdAndUpdate(leftId, {
-          $inc: { coins: DRAW_REWARD, totalEarned: DRAW_REWARD },
-        });
-        io.to(leftId).emit("coins:update:inc", { coins: DRAW_REWARD });
-      }
-
-      if (rightId) {
-        await User.findByIdAndUpdate(rightId, {
-          $inc: { coins: DRAW_REWARD, totalEarned: DRAW_REWARD },
-        });
-        io.to(rightId).emit("coins:update:inc", { coins: DRAW_REWARD });
-      }
-    }
-
-    io.to(`room:${roomId}`).emit("pk:rewards:distributed", {
-      pkId: fresh._id,
-    });
-  } catch (err) {
-    console.error("❌ PK reward distribution error:", err.message);
+  // Decide winner
+  if (pk.leftUser.score > pk.rightUser.score) {
+    pk.winner = pk.leftUser.userId;
+  } else if (pk.rightUser.score > pk.leftUser.score) {
+    pk.winner = pk.rightUser.userId;
+  } else {
+    pk.winner = null; // draw
   }
+
+  await pk.save();
+
+  // Clear room activePK
+  const room = await Room.findOne({ roomId: pk.roomId });
+  if (room) {
+    room.activePK = null;
+    await room.save();
+  }
+
+  // Clear timer
+  const timer = pkTimers.get(pkId.toString());
+  if (timer) {
+    clearTimeout(timer);
+    pkTimers.delete(pkId.toString());
+  }
+
+  // Emit result
+  io.to(`room:${pk.roomId}`).emit("pk:ended", {
+    pkId: pk._id,
+    leftScore: pk.leftUser.score,
+    rightScore: pk.rightUser.score,
+    winner: pk.winner,
+  });
 }
 
 module.exports = (io) => {
@@ -79,7 +54,6 @@ module.exports = (io) => {
   const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
-  const pkTimers = new Map(); // pkId -> timeoutId
 
   // ===============================
   // WAFA LEVEL TIMERS (SAFE)
@@ -247,613 +221,113 @@ module.exports = (io) => {
         console.error("❌ room:join error:", err);
       }
     });
-    // =========================
-    // 🎁 GIFT SEND (FINAL & SAFE)
-    // =========================
 
     socket.on(
-      "gift:send",
-      async ({ roomId, giftId, sendType, quantity = 1 }) => {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-
+      "pk:start",
+      async ({ roomId, leftUserId, rightUserId, mode, duration }) => {
         try {
-          const senderId = socket.data.userId;
-          if (!senderId || !roomId || !giftId) {
-            await session.abortTransaction();
-            return;
+          const { userId } = socket.data;
+          if (!roomId || !leftUserId || !rightUserId || !duration) return;
+
+          const room = await Room.findOne({ roomId });
+          if (!room) {
+            return socket.emit("pk:error", { message: "Room not found" });
           }
 
-          // 🎁 Validate Gift (SESSION SAFE)
-          const gift = await Gift.findOne({
-            _id: giftId,
-            isAvailable: true,
-          }).session(session);
-
-          if (!gift) {
-            await session.abortTransaction();
-            socket.emit("gift:error", { code: "GIFT_NOT_FOUND" });
-            return;
-          }
-
-          const roomName = `room:${roomId}`;
-          const sockets = await io.in(roomName).fetchSockets();
-
-          // 🎯 Collect recipients (exclude sender)
-          let recipients = sockets
-            .map((s) => s.data.userId)
-            .filter(Boolean)
-            .filter((id) => id.toString() !== senderId.toString());
-
-          // 🎤 MIC FILTER
-          if (sendType === "all_on_mic") {
-            recipients = recipients.filter((uid) => {
-              const mic = micStates.get(uid.toString());
-              return mic?.muted === false;
+          // Only host can start
+          if (room.host && room.host.toString() !== userId.toString()) {
+            return socket.emit("pk:error", {
+              message: "Only host can start PK",
             });
           }
 
-          if (recipients.length === 0) {
-            await session.abortTransaction();
-            socket.emit("gift:error", {
-              code: "NO_RECIPIENT",
-              message: "No users available",
-            });
-            return;
+          if (room.activePK) {
+            return socket.emit("pk:error", { message: "PK already running" });
           }
 
-          // 🔢 MULTIPLIER (x1, x9, x49, x99, x499)
-          const qty = Math.max(1, Math.min(Number(quantity), 499));
-
-          // 💰 TOTAL COST
-          const totalCoins = gift.price * qty * recipients.length;
-
-          // 🔥 ATOMIC COIN DEDUCTION
-          const sender = await User.findOneAndUpdate(
-            { _id: senderId, coins: { $gte: totalCoins } },
-            {
-              $inc: {
-                coins: -totalCoins,
-                totalSpent: totalCoins,
-              },
-            },
-            { new: true, session },
-          );
-
-          // ❌ INSUFFICIENT COINS
-          if (!sender) {
-            await session.abortTransaction();
-
-            const balance = await User.findById(senderId).select("coins");
-
-            socket.emit("gift:recharge", {
-              requiredCoins: totalCoins,
-              currentCoins: balance?.coins || 0,
-            });
-            return;
-          }
-
-          // 🎁 RECEIVERS STATS (NO COINS)
-          await User.updateMany(
-            { _id: { $in: recipients } },
-            {
-              $inc: {
-                "stats.giftsReceived": qty,
-              },
-            },
-            { session },
-          );
-
-          // 🧾 GIFT TRANSACTION
-          const [giftTx] = await GiftTransaction.create(
-            [
-              {
-                roomId,
-                senderId,
-                giftId,
-                giftName: gift.name,
-                giftIcon: gift.icon,
-                giftPrice: gift.price,
-                giftCategory: gift.category,
-                giftRarity: gift.rarity,
-                sendType, // individual | all_in_room | all_on_mic
-                quantity: qty,
-                recipientCount: recipients.length,
-                recipientIds: recipients,
-                totalCoinsDeducted: totalCoins,
-                status: "completed",
-              },
-            ],
-            { session },
-          );
-
-          // 💳 WALLET TRANSACTION (AUDIT SAFE)
-          await Transaction.create(
-            [
-              {
-                userId: senderId,
-                type: "COIN_SPENT",
-                transactionType: "gift",
-                gift: gift._id,
-                giftName: gift.name,
-                coinsUsed: totalCoins,
-                sender: senderId,
-                room: roomId,
-                paymentMethod: "gift",
-                status: "SUCCESS",
-                completedAt: new Date(),
-                message: `Sent ${gift.name} x${qty}`,
-              },
-            ],
-            { session },
-          );
-
-          await session.commitTransaction();
-          // 🏆 Update Trophy / Leaderboard (AFTER COMMIT ONLY)
-          const {
-            updateLeaderboardOnGift,
-          } = require("../controllers/trophyController"); // adjust path
-
-          // totalCoins already computed as: gift.price * qty * recipients.length
-          updateLeaderboardOnGift(senderId, totalCoins).catch((e) =>
-            console.error("Trophy update failed:", e.message),
-          );
-
-          // 🎬 BROADCAST GIFT ANIMATION
-          io.to(roomName).emit("gift:animation", {
-            sender: {
-              id: sender._id,
-              username: sender.username,
-              avatar: sender.profile?.avatar || null,
-            },
-            gift: {
-              id: gift._id,
-              name: gift.name,
-              icon: gift.icon,
-              rarity: gift.rarity,
-              effectType: gift.effectType,
-              animationUrl: gift.animationUrl,
-            },
-            recipients,
-            quantity: qty,
-            totalCoinsDeducted: totalCoins,
-            count: recipients.length,
-            sendType,
-            txId: giftTx._id,
+          const pk = await PKBattle.create({
+            roomId,
+            hostId: userId,
+            leftUser: { userId: leftUserId, score: 0 },
+            rightUser: { userId: rightUserId, score: 0 },
+            mode: mode || "coins",
+            duration,
+            status: "running",
+            startedAt: new Date(),
           });
 
-          // 💰 REALTIME WALLET UPDATE
-          io.to(senderId.toString()).emit("coins:update", {
-            coins: sender.coins,
-          });
+          room.activePK = pk._id;
+          await room.save();
+
+          // ✅ Notify correct socket room
+          io.to(`room:${roomId}`).emit("pk:started", pk);
+
+          // ✅ Auto end timer
+          const timer = setTimeout(async () => {
+            await endPKInternal(pk._id, io);
+          }, duration * 1000);
+
+          pkTimers.set(pk._id.toString(), timer);
         } catch (err) {
-          await session.abortTransaction();
-          console.error("🎁 Gift send error:", err);
-          socket.emit("gift:error", {
-            code: "GIFT_FAILED",
-            message: "Something went wrong",
-          });
-        } finally {
-          session.endSession();
+          console.error("❌ pk:start error:", err);
+          socket.emit("pk:error", { message: "Failed to start PK" });
         }
       },
     );
 
-    // =========================
-    // 🆚 PK START (HOST ONLY)
-    // =========================
-    socket.on("pk:start", async ({ roomId, pkId }) => {
+    socket.on("pk:end", async ({ pkId }) => {
       try {
-        const pk = await PKBattle.findById(pkId);
-        if (!pk) return;
-
-        const room = await Room.findOne({ roomId }).select("host");
-        if (!room) return;
-
-        // ✅ Only host can start PK
-        if (
-          !socket.data.userId ||
-          room.host.toString() !== socket.data.userId.toString()
-        ) {
-          console.log("❌ Non-host tried to start PK");
-          return;
-        }
-
-        // ❌ If already running, ignore
-        if (pk.status === "running") return;
-
-        pk.status = "running";
-        pk.startedAt = new Date();
-        await pk.save();
-
-        await Room.findOneAndUpdate({ roomId }, { $set: { activePK: pk._id } });
-
-        io.to(`room:${roomId}`).emit("pk:started", {
-          pkId: pk._id,
-          leftUser: pk.leftUser,
-          rightUser: pk.rightUser,
-          mode: pk.mode,
-          duration: pk.duration,
-          startedAt: pk.startedAt,
-        });
-
-        // ⛔ Clear old timer if exists
-        if (pkTimers.has(pkId)) {
-          clearTimeout(pkTimers.get(pkId));
-          pkTimers.delete(pkId);
-        }
-
-        // ⏱ Auto end PK (SINGLE TIMER)
-        const timer = setTimeout(async () => {
-          const freshPK = await PKBattle.findById(pkId);
-          if (!freshPK || freshPK.status !== "running") return;
-
-          freshPK.status = "ended";
-          freshPK.endedAt = new Date();
-
-          if (freshPK.leftUser.score > freshPK.rightUser.score) {
-            freshPK.winner = freshPK.leftUser.userId;
-          } else if (freshPK.rightUser.score > freshPK.leftUser.score) {
-            freshPK.winner = freshPK.rightUser.userId;
-          } else {
-            freshPK.winner = null;
-          }
-
-          await freshPK.save();
-          await Room.findOneAndUpdate({ roomId }, { $set: { activePK: null } });
-
-          await distributePKRewards(freshPK, roomId, io);
-
-          io.to(`room:${roomId}`).emit("pk:ended", {
-            pkId: freshPK._id,
-            winner: freshPK.winner,
-            leftScore: freshPK.leftUser.score,
-            rightScore: freshPK.rightUser.score,
-          });
-
-          // 🧹 Clean timer
-          pkTimers.delete(pkId);
-        }, pk.duration * 1000);
-
-        // ✅ Store timer
-        pkTimers.set(pkId, timer);
+        await endPKInternal(pkId, io);
       } catch (err) {
-        console.error("❌ pk:start error:", err);
+        console.error("❌ pk:end error:", err);
+      }
+    });
+    socket.on("pk:forceEnd", async ({ pkId }) => {
+      try {
+        await endPKInternal(pkId, io);
+      } catch (err) {
+        console.error("❌ pk:forceEnd error:", err);
       }
     });
 
-    // =========================
-    // 🔴 PK STOP (HOST ONLY)
-    // =========================
-    socket.on("pk:stop", async ({ roomId, pkId }) => {
-      try {
-        const pk = await PKBattle.findById(pkId);
-        if (!pk || pk.status !== "running") return;
-
-        const room = await Room.findOne({ roomId }).select("host");
-        if (!room) return;
-
-        // Only host
-        if (room.host.toString() !== socket.data.userId.toString()) return;
-
-        pk.status = "ended";
-        pk.endedAt = new Date();
-
-        // Decide winner
-        if (pk.leftUser.score > pk.rightUser.score) {
-          pk.winner = pk.leftUser.userId;
-        } else if (pk.rightUser.score > pk.leftUser.score) {
-          pk.winner = pk.rightUser.userId;
-        } else {
-          pk.winner = null; // draw
-        }
-        if (pkTimers.has(pkId)) {
-          clearTimeout(pkTimers.get(pkId));
-          pkTimers.delete(pkId);
-        }
-
-        await pk.save();
-
-        // Clear room activePK
-        await Room.findOneAndUpdate({ roomId }, { $set: { activePK: null } });
-
-        // 🏆 Distribute rewards
-        await distributePKRewards(pk, roomId, io);
-
-        io.to(`room:${roomId}`).emit("pk:ended", {
-          pkId: pk._id,
-          winner: pk.winner,
-          leftScore: pk.leftUser.score,
-          rightScore: pk.rightUser.score,
-          reason: "stopped_by_host",
-        });
-      } catch (err) {
-        console.error("❌ pk:stop error:", err);
-      }
-    });
-    // =========================
-    // 🔁 PK RESTART (HOST ONLY)
-    // =========================
-    socket.on("pk:restart", async ({ roomId, pkId }) => {
-      try {
-        const pk = await PKBattle.findById(pkId);
-        if (!pk) return;
-
-        const room = await Room.findOne({ roomId }).select("host");
-        if (!room) return;
-
-        // Only host
-        if (room.host.toString() !== socket.data.userId.toString()) return;
-
-        // ⛔ Clear old timer if exists
-        if (pkTimers.has(pkId)) {
-          clearTimeout(pkTimers.get(pkId));
-          pkTimers.delete(pkId);
-        }
-
-        // Reset scores & state
-        pk.leftUser.score = 0;
-        pk.rightUser.score = 0;
-        pk.status = "running";
-        pk.startedAt = new Date();
-        pk.endedAt = null;
-        pk.winner = null;
-        pk.contributions = [];
-        pk.rewardsDistributed = false; // ✅ IMPORTANT
-
-        await pk.save();
-
-        io.to(`room:${roomId}`).emit("pk:restarted", {
-          pkId: pk._id,
-          leftUser: pk.leftUser,
-          rightUser: pk.rightUser,
-          mode: pk.mode,
-          duration: pk.duration,
-          startedAt: pk.startedAt,
-        });
-
-        // ⏱ Auto end again (SINGLE TIMER)
-        const timer = setTimeout(async () => {
-          const freshPK = await PKBattle.findById(pkId);
-          if (!freshPK || freshPK.status !== "running") return;
-
-          freshPK.status = "ended";
-          freshPK.endedAt = new Date();
-
-          if (freshPK.leftUser.score > freshPK.rightUser.score) {
-            freshPK.winner = freshPK.leftUser.userId;
-          } else if (freshPK.rightUser.score > freshPK.leftUser.score) {
-            freshPK.winner = freshPK.rightUser.userId;
-          } else {
-            freshPK.winner = null;
-          }
-
-          await freshPK.save();
-          await Room.findOneAndUpdate({ roomId }, { $set: { activePK: null } });
-
-          await distributePKRewards(freshPK, roomId, io);
-
-          io.to(`room:${roomId}`).emit("pk:ended", {
-            pkId: freshPK._id,
-            winner: freshPK.winner,
-            leftScore: freshPK.leftUser.score,
-            rightScore: freshPK.rightUser.score,
-            reason: "timer_end",
-          });
-
-          // 🧹 Clean timer
-          pkTimers.delete(pkId);
-        }, pk.duration * 1000);
-
-        // ✅ Store timer
-        pkTimers.set(pkId, timer);
-      } catch (err) {
-        console.error("❌ pk:restart error:", err);
-      }
-    });
-
-    // =========================
-    // 🆚 PK GIFT SEND (SEPARATE & SAFE)
-    // =========================
     socket.on(
-      "pk:gift:send",
-      async ({ roomId, pkId, giftId, toUserId, quantity = 1 }) => {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-
+      "pk:contribute",
+      async ({ pkId, toUserId, value = 1, giftId = null }) => {
         try {
-          const senderId = socket.data.userId;
-          if (senderId.toString() === toUserId.toString()) {
-            await session.abortTransaction();
-            socket.emit("pk:gift:error", {
-              message: "You cannot gift yourself",
-            });
-            return;
-          }
+          const fromUserId = socket.data.userId;
+          if (!pkId || !toUserId) return;
 
-          if (!senderId || !roomId || !pkId || !giftId || !toUserId) {
-            await session.abortTransaction();
-            return;
-          }
-
-          // 🔎 Validate PK
-          const pk = await PKBattle.findById(pkId).session(session);
+          const pk = await PKBattle.findById(pkId);
           if (!pk || pk.status !== "running") {
-            await session.abortTransaction();
-            socket.emit("pk:gift:error", { message: "PK not active" });
-            return;
-          }
-          const room = await Room.findOne({ roomId })
-            .select("activePK")
-            .session(session);
-          if (!room || room.activePK?.toString() !== pkId.toString()) {
-            await session.abortTransaction();
-            socket.emit("pk:gift:error", {
-              message: "This PK is not active in room",
-            });
-            return;
-          }
-
-          // 🎁 Validate Gift
-          const gift = await Gift.findOne({
-            _id: giftId,
-            isAvailable: true,
-          }).session(session);
-
-          if (!gift) {
-            await session.abortTransaction();
-            socket.emit("pk:gift:error", { message: "Gift not found" });
-            return;
-          }
-
-          // 🔢 Quantity limit
-          const qty = Math.max(1, Math.min(Number(quantity), 499));
-
-          // 💰 Total cost (PK gift is for ONE target user)
-          const totalCoins = gift.price * qty;
-
-          // 🔥 Deduct coins atomically
-          const sender = await User.findOneAndUpdate(
-            { _id: senderId, coins: { $gte: totalCoins } },
-            {
-              $inc: {
-                coins: -totalCoins,
-                totalSpent: totalCoins,
-              },
-            },
-            { new: true, session },
-          );
-
-          if (!sender) {
-            await session.abortTransaction();
-            const balance = await User.findById(senderId).select("coins");
-            socket.emit("pk:gift:recharge", {
-              requiredCoins: totalCoins,
-              currentCoins: balance?.coins || 0,
-            });
-            return;
-          }
-
-          // 🧾 Save Gift Transaction (PK tagged)
-          await GiftTransaction.create(
-            [
-              {
-                roomId,
-                senderId,
-                giftId,
-                giftName: gift.name,
-                giftIcon: gift.icon,
-                giftPrice: gift.price,
-                giftCategory: gift.category,
-                giftRarity: gift.rarity,
-                sendType: "pk",
-                quantity: qty,
-                recipientCount: 1,
-                recipientIds: [toUserId],
-                totalCoinsDeducted: totalCoins,
-                status: "completed",
-                meta: { pkId },
-              },
-            ],
-            { session },
-          );
-
-          // 💳 Wallet transaction
-          await Transaction.create(
-            [
-              {
-                userId: senderId,
-                type: "COIN_SPENT",
-                transactionType: "pk_gift",
-                gift: gift._id,
-                giftName: gift.name,
-                coinsUsed: totalCoins,
-                sender: senderId,
-                room: roomId,
-                paymentMethod: "gift",
-                status: "SUCCESS",
-                completedAt: new Date(),
-                message: `Sent PK gift ${gift.name} x${qty}`,
-              },
-            ],
-            { session },
-          );
-
-          // =========================
-          // 🧮 UPDATE PK SCORE
-          // =========================
-          let scoreAdd = totalCoins;
-          if (pk.mode === "votes") scoreAdd = 1;
-
-          const leftId = pk.leftUser.userId?.toString();
-          const rightId = pk.rightUser.userId?.toString();
-
-          if (toUserId.toString() === leftId) {
-            pk.leftUser.score += scoreAdd;
-          } else if (toUserId.toString() === rightId) {
-            pk.rightUser.score += scoreAdd;
-          } else {
-            await session.abortTransaction();
-            socket.emit("pk:gift:error", { message: "Target not in PK" });
-            return;
+            return socket.emit("pk:error", { message: "PK not running" });
           }
 
           pk.contributions.push({
-            fromUser: senderId,
+            fromUser: fromUserId,
             toUser: toUserId,
             giftId,
-            value: scoreAdd,
+            value,
           });
 
-          await pk.save({ session });
+          if (pk.leftUser.userId.toString() === toUserId.toString()) {
+            pk.leftUser.score += value;
+          } else if (pk.rightUser.userId.toString() === toUserId.toString()) {
+            pk.rightUser.score += value;
+          } else {
+            return socket.emit("pk:error", { message: "Invalid target user" });
+          }
 
-          await session.commitTransaction();
+          await pk.save();
 
-          // =========================
-          // 📢 EMITS
-          // =========================
-
-          // 🎬 Optional: show gift animation in room
-          io.to(`room:${roomId}`).emit("gift:animation", {
-            sender: {
-              id: sender._id,
-              username: sender.username,
-              avatar: sender.profile?.avatar || null,
-            },
-            gift: {
-              id: gift._id,
-              name: gift.name,
-              icon: gift.icon,
-              rarity: gift.rarity,
-              effectType: gift.effectType,
-              animationUrl: gift.animationUrl,
-            },
-            recipients: [toUserId],
-            quantity: qty,
-            totalCoinsDeducted: totalCoins,
-            count: 1,
-            sendType: "pk",
-          });
-
-          // 🔴 PK score update
-          io.to(`room:${roomId}`).emit("pk:score:update", {
+          // ✅ Emit to correct socket room
+          io.to(`room:${pk.roomId}`).emit("pk:update", {
             pkId: pk._id,
             leftScore: pk.leftUser.score,
             rightScore: pk.rightUser.score,
           });
-
-          // 💰 Sender wallet update
-          io.to(senderId.toString()).emit("coins:update", {
-            coins: sender.coins,
-          });
         } catch (err) {
-          await session.abortTransaction();
-          console.error("❌ PK gift send error:", err);
-          socket.emit("pk:gift:error", {
-            message: "Failed to send PK gift",
-          });
-        } finally {
-          session.endSession();
+          console.error("❌ pk:contribute error:", err);
+          socket.emit("pk:error", { message: "Contribution failed" });
         }
       },
     );

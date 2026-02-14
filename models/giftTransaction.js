@@ -7,7 +7,8 @@ const giftTransactionSchema = new mongoose.Schema(
       ref: "Room",
       required: true,
     },
-  
+    roomIdString: { type: String }, // for socket/PK
+
     roomName: {
       type: String, // snapshot (keep this)
     },
