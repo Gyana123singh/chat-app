@@ -124,7 +124,7 @@ exports.endPK = async (req, res) => {
     const io = req.app.get("io");
 
     // 🔔 Ask socket layer to end PK
-    io.emit("pk:forceEnd", { pkId });
+    io.to(`room:${roomId}`).emit("pk:forceEnd", { pkId });
 
     return res.json({ success: true, message: "PK end requested" });
   } catch (err) {
