@@ -112,8 +112,7 @@ exports.contributePK = async (req, res) => {
 // =========================
 // MANUAL END (OPTIONAL)
 // =========================
-// ⚠️ Recommended: Let SOCKET handle real end + timers.
-// This just notifies socket layer.
+// ⚠️ This tells socket layer to end PK properly
 exports.endPK = async (req, res) => {
   try {
     const { pkId } = req.params;
@@ -121,10 +120,15 @@ exports.endPK = async (req, res) => {
       return res.status(400).json({ success: false, message: "pkId required" });
     }
 
+    const pk = await PKBattle.findById(pkId);
+    if (!pk) {
+      return res.status(404).json({ success: false, message: "PK not found" });
+    }
+
     const io = req.app.get("io");
 
-    // 🔔 Ask socket layer to end PK
-    io.to(`room:${roomId}`).emit("pk:forceEnd", { pkId });
+    // ✅ Emit to the correct room
+    io.to(`room:${pk.roomId}`).emit("pk:forceEnd", { pkId });
 
     return res.json({ success: true, message: "PK end requested" });
   } catch (err) {
