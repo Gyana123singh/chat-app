@@ -819,8 +819,8 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
-    // ❌ Prevent host from leaving (optional but recommended)
-    if (room.host?.toString() === userId) {
+    // ❌ Prevent host from leaving (optional rule)
+    if (room.host?.toString() === userId.toString()) {
       return res.status(400).json({
         success: false,
         message: "Host cannot leave the room",
@@ -831,7 +831,7 @@ exports.leaveRoom = async (req, res) => {
 
     // ✅ Remove user safely
     room.participants = room.participants.filter(
-      (p) => p.user.toString() !== userId,
+      (p) => p.user.toString() !== userId.toString(),
     );
 
     if (beforeCount === room.participants.length) {
@@ -841,9 +841,11 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
-    // ❌ Do NOT use stats.activeUsers (not in schema)
-
     await room.save();
+
+    // 🔔 Notify others via socket
+    const io = req.app.get("io");
+    io.to(`room:${room.roomId}`).emit("room:userLeft", { userId });
 
     return res.status(200).json({
       success: true,

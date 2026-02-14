@@ -2,15 +2,11 @@ const mongoose = require("mongoose");
 
 const giftTransactionSchema = new mongoose.Schema(
   {
-    roomId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Room",
-      required: true,
-    },
-    roomIdString: { type: String }, // for socket/PK
-
-    roomName: {
-      type: String, // snapshot (keep this)
+    // 🔁 Use STRING roomId (UUID), not required
+    roomIdString: {
+      type: String,
+      default: null,
+      index: true,
     },
 
     senderId: {
@@ -21,7 +17,7 @@ const giftTransactionSchema = new mongoose.Schema(
 
     giftId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Gift",
+      ref: "StoreGift",
       required: true,
     },
 
@@ -34,12 +30,6 @@ const giftTransactionSchema = new mongoose.Schema(
     sendType: {
       type: String,
       enum: ["individual", "all_in_room", "all_on_mic", "pk"],
-
-      required: true,
-    },
-
-    recipientCount: {
-      type: Number,
       required: true,
     },
 
@@ -50,14 +40,21 @@ const giftTransactionSchema = new mongoose.Schema(
       },
     ],
 
+    recipientCount: {
+      type: Number,
+      required: true,
+    },
+
     totalCoinsDeducted: {
       type: Number,
       required: true,
     },
+
     quantity: {
       type: Number,
       default: 1,
     },
+
     status: {
       type: String,
       enum: ["completed", "failed"],
@@ -69,7 +66,7 @@ const giftTransactionSchema = new mongoose.Schema(
 
 // indexes
 giftTransactionSchema.index({ senderId: 1, createdAt: -1 });
-giftTransactionSchema.index({ roomId: 1, createdAt: -1 });
+giftTransactionSchema.index({ roomIdString: 1, createdAt: -1 });
 giftTransactionSchema.index({ recipientIds: 1 });
 
 module.exports = mongoose.model("GiftTransaction", giftTransactionSchema);
