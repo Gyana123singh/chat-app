@@ -222,58 +222,7 @@ module.exports = (io) => {
       }
     });
 
-    socket.on(
-      "pk:start",
-      async ({ roomId, leftUserId, rightUserId, mode, duration }) => {
-        try {
-          const { userId } = socket.data;
-          if (!roomId || !leftUserId || !rightUserId || !duration) return;
 
-          const room = await Room.findOne({ roomId });
-          if (!room) {
-            return socket.emit("pk:error", { message: "Room not found" });
-          }
-
-          // Only host can start
-          if (room.host && room.host.toString() !== userId.toString()) {
-            return socket.emit("pk:error", {
-              message: "Only host can start PK",
-            });
-          }
-
-          if (room.activePK) {
-            return socket.emit("pk:error", { message: "PK already running" });
-          }
-
-          const pk = await PKBattle.create({
-            roomId,
-            hostId: userId,
-            leftUser: { userId: leftUserId, score: 0 },
-            rightUser: { userId: rightUserId, score: 0 },
-            mode: mode || "coins",
-            duration,
-            status: "running",
-            startedAt: new Date(),
-          });
-
-          room.activePK = pk._id;
-          await room.save();
-
-          // ✅ Notify correct socket room
-          io.to(`room:${roomId}`).emit("pk:started", pk);
-
-          // ✅ Auto end timer
-          const timer = setTimeout(async () => {
-            await endPKInternal(pk._id, io);
-          }, duration * 1000);
-
-          pkTimers.set(pk._id.toString(), timer);
-        } catch (err) {
-          console.error("❌ pk:start error:", err);
-          socket.emit("pk:error", { message: "Failed to start PK" });
-        }
-      },
-    );
 
     socket.on("pk:end", async ({ pkId }) => {
       try {
