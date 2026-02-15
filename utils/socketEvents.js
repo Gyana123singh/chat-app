@@ -155,9 +155,26 @@ module.exports = (io) => {
 
       const roomName = `room:${roomId}`;
       socket.join(roomName);
-
       socket.data.roomId = roomId;
       socket.data.user = user;
+      // ===============================
+      // 🥊 SEND ACTIVE PK STATE (IF ANY)
+      // ===============================
+      try {
+        const roomDoc = await Room.findOne({ roomId });
+
+        if (roomDoc && roomDoc.activePK) {
+          const pk = await PKBattle.findById(roomDoc.activePK);
+
+          if (pk && pk.status === "running") {
+            console.log("🔥 Sending active PK to joining user:", pk._id);
+            socket.emit("pk:started", pk);
+          }
+        }
+      } catch (e) {
+        console.error("❌ Failed to send active PK on join:", e.message);
+      }
+
       // 🔥 Init music state safely (no overwrite if already playing)
       // ✅ CORRECT MUSIC STATE HANDLING
       roomManager.initRoom(roomId);
