@@ -797,7 +797,7 @@ exports.joinRoom = async (req, res) => {
 };
 
 // controllers/roomController.js
-exports.leaveRoom = async (req, res) => {
+exports.leaveRoom = async (req, res) => { 
   try {
     const userId = req.user?.id;
     const roomId = req.params.roomId || req.params.id;

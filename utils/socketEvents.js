@@ -7,6 +7,7 @@ const levelController = require("../controllers/levelController");
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room"); // or your room model path
 const pkTimers = new Map(); // pkId -> timeoutId
+
 async function endPKInternal(pkId, io) {
   const pk = await PKBattle.findById(pkId);
   if (!pk || pk.status !== "running") return;
