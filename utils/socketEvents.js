@@ -4,18 +4,80 @@ const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
 const levelController = require("../controllers/levelController");
+const Gift = require("../models/gifts");
+const GiftTransaction = require("../models/giftTransaction");
+const User = require("../models/users"); // adjust path if needed
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room"); // or your room model path
-const pkTimers = new Map(); // pkId -> timeoutId
+// pkId -> timeoutId
+const pkTimers = new Map();
 
+// ===============================
+// ⏱️ START PK TIMER (AUTO END)
+// ===============================
+function startPKTimer(pk, io) {
+  // Clear old timer if exists
+  if (pkTimers.has(pk._id.toString())) {
+    clearTimeout(pkTimers.get(pk._id.toString()));
+    pkTimers.delete(pk._id.toString());
+  }
+
+  const timer = setTimeout(() => {
+    endPKInternal(pk._id, io);
+  }, pk.duration * 1000);
+
+  pkTimers.set(pk._id.toString(), timer);
+}
+
+// ===============================
+// 🎁 DISTRIBUTE PK REWARDS (PK ONLY)
+// ===============================
+async function distributePKRewards(pk, io) {
+  if (!pk || pk.rewardsDistributed) return;
+
+  const WIN_REWARD = 100;
+  const LOSE_REWARD = 20;
+  const DRAW_REWARD = 50;
+
+  if (pk.winner) {
+    const winnerId = pk.winner.toString();
+    const loserId =
+      pk.leftUser.userId.toString() === winnerId
+        ? pk.rightUser.userId.toString()
+        : pk.leftUser.userId.toString();
+
+    await levelController.addRoomExp(winnerId, WIN_REWARD, io);
+    await levelController.addRoomExp(loserId, LOSE_REWARD, io);
+  } else {
+    // Draw
+    await levelController.addRoomExp(
+      pk.leftUser.userId.toString(),
+      DRAW_REWARD,
+      io,
+    );
+    await levelController.addRoomExp(
+      pk.rightUser.userId.toString(),
+      DRAW_REWARD,
+      io,
+    );
+  }
+
+  pk.rewardsDistributed = true;
+  await pk.save();
+}
+
+// ===============================
+// 🏁 END PK (WINNER + CLEANUP)
+// ===============================
 async function endPKInternal(pkId, io) {
   const pk = await PKBattle.findById(pkId);
   if (!pk || pk.status !== "running") return;
 
+  // End PK
   pk.status = "ended";
   pk.endedAt = new Date();
 
-  // Decide winner
+  // Winner calculation
   if (pk.leftUser.score > pk.rightUser.score) {
     pk.winner = pk.leftUser.userId;
   } else if (pk.rightUser.score > pk.leftUser.score) {
@@ -26,21 +88,24 @@ async function endPKInternal(pkId, io) {
 
   await pk.save();
 
-  // Clear room activePK
+  // 🎁 Distribute rewards (PK ONLY)
+  await distributePKRewards(pk, io);
+
+  // 🧹 Clear room.activePK
   const room = await Room.findOne({ roomId: pk.roomId });
   if (room) {
     room.activePK = null;
     await room.save();
   }
 
-  // Clear timer
+  // ⏱️ Clear timer
   const timer = pkTimers.get(pkId.toString());
   if (timer) {
     clearTimeout(timer);
     pkTimers.delete(pkId.toString());
   }
 
-  // Emit result
+  // 📢 Notify clients
   io.to(`room:${pk.roomId}`).emit("pk:ended", {
     pkId: pk._id,
     leftScore: pk.leftUser.score,
@@ -223,7 +288,211 @@ module.exports = (io) => {
       }
     });
 
+    socket.on("gift:send", async (payload) => {
+      try {
+        const fromUserId = socket.data.userId;
+        const {
+          roomId,
+          giftId,
+          sendType,
+          toUserId,
+          pkId,
+          comboCount = 1, // 👈 NEW: frontend sends 1 / 9 / 49 / 99 for normal gifts
+        } = payload;
 
+        if (!fromUserId || !roomId || !giftId || !sendType) {
+          return socket.emit("gift:error", { message: "Missing fields" });
+        }
+
+        const gift = await Gift.findById(giftId);
+        if (!gift || !gift.isAvailable) {
+          return socket.emit("gift:error", { message: "Gift not available" });
+        }
+
+        const room = await Room.findOne({ roomId });
+        if (!room) {
+          return socket.emit("gift:error", { message: "Room not found" });
+        }
+
+        // =========================
+        // 0️⃣ Combo Logic (ONLY for normal gifts)
+        // =========================
+        const allowedCombos = [1, 9, 49, 99];
+
+        let quantity = 1;
+
+        if (sendType !== "pk") {
+          const parsed = Number(comboCount);
+          if (allowedCombos.includes(parsed)) {
+            quantity = parsed;
+          }
+        } else {
+          // ⚔️ PK gifts always x1
+          quantity = 1;
+        }
+
+        // =========================
+        // 1️⃣ Build Recipients List
+        // =========================
+        let recipientIds = [];
+
+        if (sendType === "individual") {
+          if (!toUserId) {
+            return socket.emit("gift:error", { message: "toUserId required" });
+          }
+          recipientIds = [toUserId];
+        }
+
+        if (sendType === "all_in_room") {
+          recipientIds = room.participants.map((p) => p.user.toString());
+        }
+
+        if (sendType === "all_on_mic") {
+          recipientIds = room.participants
+            .filter((p) => {
+              const state = micStates.get(p.user.toString());
+              return state && state.muted === false;
+            })
+            .map((p) => p.user.toString());
+        }
+
+        if (sendType === "pk") {
+          if (!pkId || !toUserId) {
+            return socket.emit("gift:error", {
+              message: "pkId and toUserId required",
+            });
+          }
+          recipientIds = [toUserId];
+        }
+
+        // Remove sender from recipients (no self gift)
+        recipientIds = recipientIds.filter(
+          (id) => id.toString() !== fromUserId.toString(),
+        );
+
+        if (recipientIds.length === 0) {
+          return socket.emit("gift:error", { message: "No valid recipients" });
+        }
+
+        // =========================
+        // 2️⃣ Calculate Cost
+        // =========================
+        const totalCost = gift.price * quantity * recipientIds.length;
+
+        const sender = await User.findById(fromUserId);
+        if (!sender) {
+          return socket.emit("gift:error", { message: "Sender not found" });
+        }
+
+        if (sender.coins < totalCost) {
+          return socket.emit("gift:error", { message: "Not enough coins" });
+        }
+
+        // =========================
+        // 3️⃣ Deduct Coins
+        // =========================
+        sender.coins -= totalCost;
+        await sender.save();
+
+        // =========================
+        // 4️⃣ Save Transaction
+        // =========================
+        const tx = await GiftTransaction.create({
+          roomIdString: roomId,
+          senderId: fromUserId,
+          giftId: gift._id,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          sendType,
+          recipientIds,
+          recipientCount: recipientIds.length,
+          totalCoinsDeducted: totalCost,
+          quantity, // 👈 combo stored here
+          status: "completed",
+        });
+
+        // =========================
+        // 5️⃣ If PK Gift → Update PK (ALWAYS x1)
+        // =========================
+        if (sendType === "pk") {
+          const pk = await PKBattle.findById(pkId);
+          if (pk && pk.status === "running") {
+            // Safety: ensure target is in this PK
+            if (
+              pk.leftUser.userId.toString() !== toUserId.toString() &&
+              pk.rightUser.userId.toString() !== toUserId.toString()
+            ) {
+              return socket.emit("gift:error", {
+                message: "User not in this PK",
+              });
+            }
+
+            const scoreValue = gift.price * 1; // ⚔️ force x1
+
+            if (pk.leftUser.userId.toString() === toUserId.toString()) {
+              pk.leftUser.score += scoreValue;
+            } else if (pk.rightUser.userId.toString() === toUserId.toString()) {
+              pk.rightUser.score += scoreValue;
+            }
+
+            pk.contributions.push({
+              fromUser: fromUserId,
+              toUser: toUserId,
+              giftId: gift._id,
+              value: scoreValue,
+            });
+
+            await pk.save();
+
+            // 🔴 Live PK update
+            io.to(`room:${pk.roomId}`).emit("pk:update", {
+              pkId: pk._id,
+              leftScore: pk.leftUser.score,
+              rightScore: pk.rightUser.score,
+            });
+          }
+        }
+
+        // =========================
+        // 6️⃣ Broadcast Gift Animation
+        // =========================
+        io.to(`room:${roomId}`).emit("gift:received", {
+          fromUserId,
+          fromUsername: socket.data.username,
+          fromAvatar: socket.data.avatar,
+          recipientIds,
+          gift: {
+            _id: gift._id,
+            name: gift.name,
+            icon: gift.icon,
+            animationUrl: gift.animationUrl,
+            price: gift.price,
+            rarity: gift.rarity,
+            effectType: gift.effectType,
+          },
+          quantity, // 👈 1 / 9 / 49 / 99 for normal, always 1 for PK
+          sendType,
+          pkId: sendType === "pk" ? pkId : null,
+        });
+
+        // =========================
+        // 7️⃣ Confirm to Sender
+        // =========================
+        socket.emit("gift:success", {
+          balance: sender.coins,
+          transactionId: tx._id,
+        });
+      } catch (err) {
+        console.error("❌ gift:send error:", err);
+        socket.emit("gift:error", { message: "Gift send failed" });
+      }
+    });
+    // ===============================
+    // PK MANUAL END EVENTS
+    // ===============================
 
     socket.on("pk:end", async ({ pkId }) => {
       try {
@@ -232,6 +501,7 @@ module.exports = (io) => {
         console.error("❌ pk:end error:", err);
       }
     });
+
     socket.on("pk:forceEnd", async ({ pkId }) => {
       try {
         await endPKInternal(pkId, io);
@@ -239,48 +509,6 @@ module.exports = (io) => {
         console.error("❌ pk:forceEnd error:", err);
       }
     });
-
-    socket.on(
-      "pk:contribute",
-      async ({ pkId, toUserId, value = 1, giftId = null }) => {
-        try {
-          const fromUserId = socket.data.userId;
-          if (!pkId || !toUserId) return;
-
-          const pk = await PKBattle.findById(pkId);
-          if (!pk || pk.status !== "running") {
-            return socket.emit("pk:error", { message: "PK not running" });
-          }
-
-          pk.contributions.push({
-            fromUser: fromUserId,
-            toUser: toUserId,
-            giftId,
-            value,
-          });
-
-          if (pk.leftUser.userId.toString() === toUserId.toString()) {
-            pk.leftUser.score += value;
-          } else if (pk.rightUser.userId.toString() === toUserId.toString()) {
-            pk.rightUser.score += value;
-          } else {
-            return socket.emit("pk:error", { message: "Invalid target user" });
-          }
-
-          await pk.save();
-
-          // ✅ Emit to correct socket room
-          io.to(`room:${pk.roomId}`).emit("pk:update", {
-            pkId: pk._id,
-            leftScore: pk.leftUser.score,
-            rightScore: pk.rightUser.score,
-          });
-        } catch (err) {
-          console.error("❌ pk:contribute error:", err);
-          socket.emit("pk:error", { message: "Contribution failed" });
-        }
-      },
-    );
 
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
@@ -743,3 +971,4 @@ module.exports = (io) => {
     getRoomManager: () => roomManager,
   };
 };
+module.exports.startPKTimer = startPKTimer;

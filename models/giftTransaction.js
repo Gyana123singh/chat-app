@@ -17,7 +17,7 @@ const giftTransactionSchema = new mongoose.Schema(
 
     giftId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "StoreGift",
+      ref: "Gift",
       required: true,
     },
 

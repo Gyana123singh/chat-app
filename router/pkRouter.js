@@ -3,7 +3,6 @@ const router = express.Router();
 
 const {
   createPK,
-  contributePK,
   endPK,
 } = require("../controllers/pkController");
 const { authMiddleware } = require("../middleware/auth"); // your JWT middleware
@@ -14,7 +13,7 @@ const { authMiddleware } = require("../middleware/auth"); // your JWT middleware
 // Only room host can start PK
 // POST /api/pk/create
 router.post("/create-pk", authMiddleware, createPK);
-router.post("/contribute-pk", authMiddleware, contributePK);
+
 // End PK manually (optional)
 router.post("/end/:pkId", authMiddleware, endPK);
 
