@@ -169,6 +169,15 @@ const userSchema = new mongoose.Schema(
       },
     },
     // Add to user schema in models/users.js
+    // in models/users.js
+
+    pkStats: {
+      wins: { type: Number, default: 0 },
+      losses: { type: Number, default: 0 },
+      draws: { type: Number, default: 0 },
+      totalSupportSent: { type: Number, default: 0 },
+      totalSupportReceived: { type: Number, default: 0 },
+    },
 
     trophy: {
       totalContributions: { type: Number, default: 0 },

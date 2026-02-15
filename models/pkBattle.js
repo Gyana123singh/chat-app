@@ -37,6 +37,8 @@ const pkBattleSchema = new mongoose.Schema(
 
     startedAt: Date,
     endedAt: Date,
+
+    
     // ADD inside pkBattleSchema
     contributions: [
       {
@@ -49,6 +51,29 @@ const pkBattleSchema = new mongoose.Schema(
     ],
 
     winner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    contributions: [
+      {
+        fromUser: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        toUser: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        giftId: { type: mongoose.Schema.Types.ObjectId, ref: "Gift" },
+        value: Number,
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+
+    topSupporters: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        total: Number,
+      },
+    ],
+
+    mvpSupporter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,

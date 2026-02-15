@@ -84,3 +84,47 @@ exports.endPK = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+// =========================
+// PK HISTORY
+// =========================
+exports.getPKHistory = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const list = await PKBattle.find({ roomId, status: "ended" })
+      .sort({ endedAt: -1 })
+      .limit(50)
+      .lean();
+
+    return res.json({ success: true, data: list });
+  } catch (err) {
+    console.error("Get PK history error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// =========================
+// PK LEADERBOARD
+// =========================
+exports.getPKLeaderboard = async (req, res) => {
+  try {
+    const type = req.query.type || "wins"; // wins | support | received
+
+    let sort = {};
+    if (type === "wins") sort = { "pkStats.wins": -1 };
+    if (type === "support") sort = { "pkStats.totalSupportSent": -1 };
+    if (type === "received") sort = { "pkStats.totalSupportReceived": -1 };
+
+    const users = await User.find({})
+      .sort(sort)
+      .limit(50)
+      .select("username avatar pkStats")
+      .lean();
+
+    return res.json({ success: true, data: users });
+  } catch (err) {
+    console.error("Get PK leaderboard error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};

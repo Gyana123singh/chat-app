@@ -85,8 +85,72 @@ async function endPKInternal(pkId, io) {
   } else {
     pk.winner = null; // draw
   }
+  if (pk.mvpSupporter) {
+    await levelController.addRoomExp(pk.mvpSupporter.toString(), 50, io);
+
+    io.to(pk.mvpSupporter.toString()).emit("pk:mvp", {
+      message: "🏆 You are the MVP Supporter! +50 EXP",
+    });
+  }
+
+  const supporterMap = new Map();
+
+  pk.contributions.forEach((c) => {
+    const key = c.fromUser.toString();
+    supporterMap.set(key, (supporterMap.get(key) || 0) + c.value);
+  });
+
+  const sorted = Array.from(supporterMap.entries())
+    .map(([userId, total]) => ({ userId, total }))
+    .sort((a, b) => b.total - a.total);
+
+  pk.topSupporters = sorted.slice(0, 10); // top 10
+  pk.mvpSupporter = sorted.length > 0 ? sorted[0].userId : null;
 
   await pk.save();
+  // ===============================
+  // 📊 Update User PK Stats (W/L/D)
+  // ===============================
+  const leftId = pk.leftUser.userId.toString();
+  const rightId = pk.rightUser.userId.toString();
+
+  const leftUser = await User.findById(leftId);
+  const rightUser = await User.findById(rightId);
+
+  if (leftUser && rightUser) {
+    if (pk.winner) {
+      if (pk.winner.toString() === leftId) {
+        leftUser.pkStats.wins += 1;
+        rightUser.pkStats.losses += 1;
+      } else {
+        rightUser.pkStats.wins += 1;
+        leftUser.pkStats.losses += 1;
+      }
+    } else {
+      // Draw
+      leftUser.pkStats.draws += 1;
+      rightUser.pkStats.draws += 1;
+    }
+
+    await leftUser.save();
+    await rightUser.save();
+  }
+
+  // ===============================
+  // 🏆 Reward MVP Supporter
+  // ===============================
+  if (pk.mvpSupporter) {
+    try {
+      await levelController.addRoomExp(pk.mvpSupporter.toString(), 50, io);
+
+      // Notify MVP user
+      io.to(pk.mvpSupporter.toString()).emit("pk:mvp", {
+        message: "🏆 You are the MVP Supporter! +50 EXP",
+      });
+    } catch (e) {
+      console.error("❌ MVP reward error:", e.message);
+    }
+  }
 
   // 🎁 Distribute rewards (PK ONLY)
   await distributePKRewards(pk, io);
@@ -305,6 +369,22 @@ module.exports = (io) => {
       }
     });
 
+    // ===============================
+    // 🥊 PK START (SOCKET BROADCAST)
+    // ===============================
+    socket.on("pk:start", async ({ roomId, pkId }) => {
+      try {
+        const pk = await PKBattle.findById(pkId);
+        if (!pk) return;
+
+        console.log("🔥 Broadcasting PK immediately:", pk._id);
+
+        io.to(`room:${roomId}`).emit("pk:started", pk);
+      } catch (e) {
+        console.error("❌ pk:start socket error:", e.message);
+      }
+    });
+
     socket.on("gift:send", async (payload) => {
       try {
         const fromUserId = socket.data.userId;
@@ -361,16 +441,22 @@ module.exports = (io) => {
         }
 
         if (sendType === "all_in_room") {
-          recipientIds = room.participants.map((p) => p.user.toString());
+          const roomName = `room:${roomId}`;
+          const sockets = await io.in(roomName).fetchSockets();
+
+          recipientIds = sockets.map((s) => s.data.userId).filter(Boolean);
         }
 
         if (sendType === "all_on_mic") {
-          recipientIds = room.participants
-            .filter((p) => {
-              const state = micStates.get(p.user.toString());
+          const roomName = `room:${roomId}`;
+          const sockets = await io.in(roomName).fetchSockets();
+
+          recipientIds = sockets
+            .map((s) => s.data.userId)
+            .filter((uid) => {
+              const state = micStates.get(uid);
               return state && state.muted === false;
-            })
-            .map((p) => p.user.toString());
+            });
         }
 
         if (sendType === "pk") {
@@ -383,12 +469,14 @@ module.exports = (io) => {
         }
 
         // Remove sender from recipients (no self gift)
+
         recipientIds = recipientIds.filter(
           (id) => id.toString() !== fromUserId.toString(),
         );
 
+        // ✅ DEV fallback: if alone, allow self gift
         if (recipientIds.length === 0) {
-          return socket.emit("gift:error", { message: "No valid recipients" });
+          recipientIds = [fromUserId];
         }
 
         // =========================
@@ -410,6 +498,20 @@ module.exports = (io) => {
         // =========================
         sender.coins -= totalCost;
         await sender.save();
+
+        // Track supporter stats
+        const senderUser = await User.findById(fromUserId);
+        const targetUser = await User.findById(toUserId);
+
+        if (senderUser) {
+          senderUser.pkStats.totalSupportSent += gift.price;
+          await senderUser.save();
+        }
+
+        if (targetUser) {
+          targetUser.pkStats.totalSupportReceived += gift.price;
+          await targetUser.save();
+        }
 
         // =========================
         // 4️⃣ Save Transaction
@@ -507,6 +609,33 @@ module.exports = (io) => {
         socket.emit("gift:error", { message: "Gift send failed" });
       }
     });
+
+    socket.on("pk:vote", async ({ roomId, pkId, toUserId }) => {
+      try {
+        const pk = await PKBattle.findById(pkId);
+        if (!pk || pk.status !== "running") return;
+        if (pk.mode !== "votes") return;
+
+        if (pk.leftUser.userId.toString() === toUserId.toString()) {
+          pk.leftUser.score += 1;
+        } else if (pk.rightUser.userId.toString() === toUserId.toString()) {
+          pk.rightUser.score += 1;
+        } else {
+          return;
+        }
+
+        await pk.save();
+
+        io.to(`room:${roomId}`).emit("pk:update", {
+          pkId: pk._id,
+          leftScore: pk.leftUser.score,
+          rightScore: pk.rightUser.score,
+        });
+      } catch (e) {
+        console.error("❌ pk:vote error:", e.message);
+      }
+    });
+
     // ===============================
     // PK MANUAL END EVENTS
     // ===============================
