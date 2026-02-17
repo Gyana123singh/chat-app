@@ -388,13 +388,14 @@ module.exports = (io) => {
     socket.on("gift:send", async (payload) => {
       try {
         const fromUserId = socket.data.userId;
+
         const {
           roomId,
           giftId,
           sendType,
-          toUserId,
-          pkId,
-          comboCount = 1, // 👈 NEW: frontend sends 1 / 9 / 49 / 99 for normal gifts
+          toUserId = null,
+          pkId = null,
+          comboCount = 1,
         } = payload;
 
         if (!fromUserId || !roomId || !giftId || !sendType) {
@@ -412,10 +413,9 @@ module.exports = (io) => {
         }
 
         // =========================
-        // 0️⃣ Combo Logic (ONLY for normal gifts)
+        // 1️⃣ Combo Logic
         // =========================
         const allowedCombos = [1, 9, 49, 99];
-
         let quantity = 1;
 
         if (sendType !== "pk") {
@@ -423,13 +423,10 @@ module.exports = (io) => {
           if (allowedCombos.includes(parsed)) {
             quantity = parsed;
           }
-        } else {
-          // ⚔️ PK gifts always x1
-          quantity = 1;
         }
 
         // =========================
-        // 1️⃣ Build Recipients List
+        // 2️⃣ Build Recipients
         // =========================
         let recipientIds = [];
 
@@ -441,16 +438,12 @@ module.exports = (io) => {
         }
 
         if (sendType === "all_in_room") {
-          const roomName = `room:${roomId}`;
-          const sockets = await io.in(roomName).fetchSockets();
-
+          const sockets = await io.in(`room:${roomId}`).fetchSockets();
           recipientIds = sockets.map((s) => s.data.userId).filter(Boolean);
         }
 
         if (sendType === "all_on_mic") {
-          const roomName = `room:${roomId}`;
-          const sockets = await io.in(roomName).fetchSockets();
-
+          const sockets = await io.in(`room:${roomId}`).fetchSockets();
           recipientIds = sockets
             .map((s) => s.data.userId)
             .filter((uid) => {
@@ -468,19 +461,17 @@ module.exports = (io) => {
           recipientIds = [toUserId];
         }
 
-        // Remove sender from recipients (no self gift)
-
+        // Remove sender
         recipientIds = recipientIds.filter(
-          (id) => id.toString() !== fromUserId.toString(),
+          (id) => id?.toString() !== fromUserId.toString(),
         );
 
-        // ✅ DEV fallback: if alone, allow self gift
         if (recipientIds.length === 0) {
           recipientIds = [fromUserId];
         }
 
         // =========================
-        // 2️⃣ Calculate Cost
+        // 3️⃣ Cost Calculation
         // =========================
         const totalCost = gift.price * quantity * recipientIds.length;
 
@@ -494,62 +485,19 @@ module.exports = (io) => {
         }
 
         // =========================
-        // 3️⃣ Deduct Coins
+        // 4️⃣ Deduct Coins
         // =========================
         sender.coins -= totalCost;
         await sender.save();
 
-        // Track supporter stats
-        const senderUser = await User.findById(fromUserId);
-        const targetUser = await User.findById(toUserId);
-
-        if (senderUser) {
-          senderUser.pkStats.totalSupportSent += gift.price;
-          await senderUser.save();
-        }
-
-        if (targetUser) {
-          targetUser.pkStats.totalSupportReceived += gift.price;
-          await targetUser.save();
-        }
-
         // =========================
-        // 4️⃣ Save Transaction
+        // 5️⃣ PK Logic (SAFE)
         // =========================
-        const tx = await GiftTransaction.create({
-          roomIdString: roomId,
-          senderId: fromUserId,
-          giftId: gift._id,
-          giftName: gift.name,
-          giftIcon: gift.icon,
-          giftPrice: gift.price,
-          giftCategory: gift.category,
-          giftRarity: gift.rarity,
-          sendType,
-          recipientIds,
-          recipientCount: recipientIds.length,
-          totalCoinsDeducted: totalCost,
-          quantity, // 👈 combo stored here
-          status: "completed",
-        });
-
-        // =========================
-        // 5️⃣ If PK Gift → Update PK (ALWAYS x1)
-        // =========================
-        if (sendType === "pk") {
+        if (sendType === "pk" && pkId && toUserId) {
           const pk = await PKBattle.findById(pkId);
-          if (pk && pk.status === "running") {
-            // Safety: ensure target is in this PK
-            if (
-              pk.leftUser.userId.toString() !== toUserId.toString() &&
-              pk.rightUser.userId.toString() !== toUserId.toString()
-            ) {
-              return socket.emit("gift:error", {
-                message: "User not in this PK",
-              });
-            }
 
-            const scoreValue = gift.price * 1; // ⚔️ force x1
+          if (pk && pk.status === "running") {
+            const scoreValue = gift.price;
 
             if (pk.leftUser.userId.toString() === toUserId.toString()) {
               pk.leftUser.score += scoreValue;
@@ -566,7 +514,6 @@ module.exports = (io) => {
 
             await pk.save();
 
-            // 🔴 Live PK update
             io.to(`room:${pk.roomId}`).emit("pk:update", {
               pkId: pk._id,
               leftScore: pk.leftUser.score,
@@ -576,7 +523,27 @@ module.exports = (io) => {
         }
 
         // =========================
-        // 6️⃣ Broadcast Gift Animation
+        // 6️⃣ Save Transaction
+        // =========================
+        const tx = await GiftTransaction.create({
+          roomIdString: roomId,
+          senderId: fromUserId,
+          giftId: gift._id,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          sendType,
+          recipientIds,
+          recipientCount: recipientIds.length,
+          totalCoinsDeducted: totalCost,
+          quantity,
+          status: "completed",
+        });
+
+        // =========================
+        // 7️⃣ Broadcast Animation
         // =========================
         io.to(`room:${roomId}`).emit("gift:received", {
           fromUserId,
@@ -592,20 +559,20 @@ module.exports = (io) => {
             rarity: gift.rarity,
             effectType: gift.effectType,
           },
-          quantity, // 👈 1 / 9 / 49 / 99 for normal, always 1 for PK
+          quantity,
           sendType,
           pkId: sendType === "pk" ? pkId : null,
         });
 
         // =========================
-        // 7️⃣ Confirm to Sender
+        // 8️⃣ Success Response
         // =========================
         socket.emit("gift:success", {
           balance: sender.coins,
           transactionId: tx._id,
         });
       } catch (err) {
-        console.error("❌ gift:send error:", err);
+        console.error("❌ gift:send FULL ERROR:", err);
         socket.emit("gift:error", { message: "Gift send failed" });
       }
     });
