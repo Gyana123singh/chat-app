@@ -9,6 +9,8 @@ const GiftTransaction = require("../models/giftTransaction");
 const User = require("../models/users"); // adjust path if needed
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room"); // or your room model path
+const mongoose = require("mongoose");
+
 // pkId -> timeoutId
 const pkTimers = new Map();
 
@@ -215,12 +217,20 @@ module.exports = (io) => {
        ROOM JOIN
     ========================= */
     socket.on("room:join", async ({ roomId, user }) => {
-      if (!roomId || !user) return;
+      if (!roomId) return;
+
+      const safeUser = user || socket.data.user;
+      if (!safeUser || !safeUser.id) {
+        console.error("❌ room:join without user identity", { roomId });
+        return;
+      }
 
       const roomName = `room:${roomId}`;
       socket.join(roomName);
       socket.data.roomId = roomId;
-      socket.data.user = user;
+      socket.data.user = safeUser;
+
+      const userId = safeUser.id;
       // ===============================
       // 🥊 SEND ACTIVE PK STATE (IF ANY)
       // ===============================
@@ -248,9 +258,8 @@ module.exports = (io) => {
       if (!roomUsers.has(roomId)) {
         roomUsers.set(roomId, new Set());
       }
-      roomUsers.get(roomId).add(user.id);
-
-      console.log(`📍 ${user.username} joined ${roomName}`);
+      roomUsers.get(roomId).add(userId);
+      console.log(`📍 ${safeUser.username} joined ${roomName}`);
 
       try {
         /* ===== VIDEO ROOM SYNC ===== */
@@ -258,7 +267,7 @@ module.exports = (io) => {
         if (!videoRoom) {
           videoRoom = await VideoRoom.create({
             roomId,
-            hostId: user.id, // just stored, no restriction
+            hostId: userId, // just stored, no restriction
             video: { isVisible: false },
             audio: { isMixing: false },
             participants: [],
@@ -270,7 +279,7 @@ module.exports = (io) => {
           {
             $addToSet: {
               participants: {
-                userId: user.id,
+                userId: userId,
                 role: "listener", // everyone equal
                 isReceivingVideo: false,
                 videoFPS: 0,
@@ -296,7 +305,7 @@ module.exports = (io) => {
           }));
 
         socket.emit("room:users", usersInRoom);
-        socket.to(roomName).emit("room:userJoined", user);
+        socket.to(roomName).emit("room:userJoined", safeUser);
 
         /* ===== MESSAGES ===== */
         const messages = roomMessages.get(roomId) || [];
@@ -344,13 +353,13 @@ module.exports = (io) => {
         // ===============================
         // ⏱ 5 MIN STAY EXP (PERSONAL)
         // ===============================
-        if (!roomStayTimers.has(user.id)) {
+        if (!roomStayTimers.has(userId)) {
           const stayTimer = setInterval(
             async () => {
               try {
-                await levelController.addPersonalExp(user.id, 10, io);
+                await levelController.addPersonalExp(userId, 10, io);
 
-                io.to(user.id.toString()).emit("level:exp", {
+                io.to(userId.toString()).emit("level:exp", {
                   type: "personal",
                   exp: 10,
                   message: "+10 EXP (5 min stay)",
@@ -362,7 +371,7 @@ module.exports = (io) => {
             5 * 60 * 1000,
           );
 
-          roomStayTimers.set(user.id, stayTimer);
+          roomStayTimers.set(userId, stayTimer);
         }
       } catch (err) {
         console.error("❌ room:join error:", err);
@@ -525,9 +534,12 @@ module.exports = (io) => {
         // =========================
         // 6️⃣ Save Transaction
         // =========================
+        // =========================
+        // 6️⃣ Save Transaction (FIXED ObjectId TYPES)
+        // =========================
         const tx = await GiftTransaction.create({
           roomIdString: roomId,
-          senderId: fromUserId,
+          senderId: new mongoose.Types.ObjectId(fromUserId),
           giftId: gift._id,
           giftName: gift.name,
           giftIcon: gift.icon,
@@ -535,7 +547,9 @@ module.exports = (io) => {
           giftCategory: gift.category,
           giftRarity: gift.rarity,
           sendType,
-          recipientIds,
+          recipientIds: recipientIds.map(
+            (id) => new mongoose.Types.ObjectId(id),
+          ),
           recipientCount: recipientIds.length,
           totalCoinsDeducted: totalCost,
           quantity,

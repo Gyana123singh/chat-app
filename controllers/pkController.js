@@ -31,7 +31,7 @@ exports.createPK = async (req, res) => {
 
     const pk = await PKBattle.create({
       roomId: room.roomId,
-      hostId: room.host,
+      hostId: room.creator || room.host, // ✅ FIX: use existing field
       leftUser: { userId: leftUserId, score: 0 },
       rightUser: { userId: rightUserId, score: 0 },
       mode: mode || "coins",
