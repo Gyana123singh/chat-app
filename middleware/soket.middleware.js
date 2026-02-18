@@ -10,8 +10,8 @@ module.exports = (io) => {
       }
 
       const decoded = verifyToken(token);
+      socket.data.userId = decoded.sub; // 🔥 ADD THIS LINE
 
-      // 🔥 Store user safely inside socket.data (BEST PRACTICE)
       socket.data.user = {
         id: decoded.sub,
         username: decoded.name || decoded.email,
