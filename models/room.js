@@ -129,6 +129,16 @@ const roomSchema = new mongoose.Schema(
         default: 0,
       },
     },
+    admins: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    lockedSeats: {
+      type: [Number], // e.g. [1,2,3,4]
+      default: [],
+    },
   },
   { timestamps: true },
 );

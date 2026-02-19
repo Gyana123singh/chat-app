@@ -14,6 +14,20 @@ const mongoose = require("mongoose");
 // pkId -> timeoutId
 const pkTimers = new Map();
 
+// Permission Helper (Host/Admin Check)
+async function isHostOrAdmin(roomId, userId) {
+  const room = await Room.findOne({ roomId });
+  if (!room) return false;
+
+  if (room.host?.toString() === userId.toString()) return true;
+
+  if (room.admins?.some((id) => id.toString() === userId.toString())) {
+    return true;
+  }
+
+  return false;
+}
+
 // ===============================
 // ⏱️ START PK TIMER (AUTO END)
 // ===============================
@@ -1011,6 +1025,139 @@ module.exports = (io) => {
         allUsers: usersStatus,
         onMicUsers: usersStatus.filter((u) => !u.mic.muted),
         speakingUsers: usersStatus.filter((u) => u.mic.speaking),
+      });
+    });
+
+    // INVITE USER TO ROOM
+    socket.on("room:invite", async ({ roomId, toUserId }) => {
+      const fromUserId = socket.data.userId;
+      if (!fromUserId || !roomId || !toUserId) return;
+
+      const allowed = await isHostOrAdmin(roomId, fromUserId);
+      if (!allowed) return;
+
+      const targetSocket = onlineUsers.get(toUserId);
+      if (targetSocket) {
+        io.to(targetSocket).emit("room:invited", {
+          roomId,
+          fromUserId,
+          fromUsername: socket.data.username,
+        });
+      }
+    });
+
+    // LOCK / UNLOCK SEAT
+    socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return;
+
+      await Room.findOneAndUpdate(
+        { roomId },
+        { $addToSet: { lockedSeats: seatNumber } },
+      );
+
+      io.to(`room:${roomId}`).emit("room:seat:locked", { seatNumber });
+    });
+
+    socket.on("room:seat:unlock", async ({ roomId, seatNumber }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return;
+
+      await Room.findOneAndUpdate(
+        { roomId },
+        { $pull: { lockedSeats: seatNumber } },
+      );
+
+      io.to(`room:${roomId}`).emit("room:seat:unlocked", { seatNumber });
+    });
+
+    // MIC OFF (Force mute one user)
+    socket.on("room:mic:forceOff", async ({ roomId, targetUserId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId || !targetUserId) return;
+
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return;
+
+      micStates.set(targetUserId, { muted: true, speaking: false });
+
+      io.to(`room:${roomId}`).emit("mic:update", {
+        userId: targetUserId,
+        muted: true,
+        speaking: false,
+      });
+
+      const targetSocket = onlineUsers.get(targetUserId);
+      if (targetSocket) {
+        io.to(targetSocket).emit("mic:forceMuted");
+      }
+    });
+
+    // MUTE EVERYONE
+    socket.on("room:mic:muteAll", async ({ roomId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return;
+
+      const sockets = await io.in(`room:${roomId}`).fetchSockets();
+
+      sockets.forEach((s) => {
+        const uid = s.data.userId;
+        if (uid) {
+          micStates.set(uid, { muted: true, speaking: false });
+
+          io.to(`room:${roomId}`).emit("mic:update", {
+            userId: uid,
+            muted: true,
+            speaking: false,
+          });
+        }
+      });
+
+      io.to(`room:${roomId}`).emit("room:mic:mutedAll");
+    });
+
+    // LOCK ALL SEATS
+    socket.on("room:seats:lockAll", async ({ roomId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return;
+
+      const allSeats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+      await Room.findOneAndUpdate({ roomId }, { lockedSeats: allSeats });
+
+      io.to(`room:${roomId}`).emit("room:seats:lockedAll");
+    });
+
+    // GIVE ADMIN (ONLY HOST CAN DO THIS)
+    socket.on("room:giveAdmin", async ({ roomId, targetUserId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId || !targetUserId) return;
+
+      const room = await Room.findOne({ roomId });
+      if (!room) return;
+
+      // Only HOST can give admin
+      if (room.host?.toString() !== userId.toString()) return;
+
+      await Room.findOneAndUpdate(
+        { roomId },
+        { $addToSet: { admins: targetUserId } },
+      );
+
+      io.to(`room:${roomId}`).emit("room:adminAdded", {
+        userId: targetUserId,
       });
     });
 
