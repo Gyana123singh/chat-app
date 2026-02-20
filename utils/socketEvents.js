@@ -15,14 +15,31 @@ const mongoose = require("mongoose");
 const pkTimers = new Map();
 
 // Permission Helper (Host/Admin Check)
+// Permission Helper (Host/Admin Check) - FIXED
+
 async function isHostOrAdmin(roomId, userId) {
   const room = await Room.findOne({ roomId });
+
+  console.log("🔍 isHostOrAdmin check:", {
+    roomId,
+    userId,
+    foundRoom: !!room,
+    roomHost: room?.host,
+    roomAdmins: room?.admins,
+  });
+
   if (!room) return false;
 
-  if (room.host?.toString() === userId.toString()) return true;
+  const uid = userId.toString();
 
-  if (room.admins?.some((id) => id.toString() === userId.toString())) {
-    return true;
+  // ✅ Host check (uses `host` from your schema)
+  if (room.host && room.host.toString() === uid) return true;
+
+  // ✅ Admin check
+  if (Array.isArray(room.admins)) {
+    if (room.admins.some((id) => id.toString() === uid)) {
+      return true;
+    }
   }
 
   return false;
@@ -1046,13 +1063,16 @@ module.exports = (io) => {
       }
     });
 
-    // LOCK / UNLOCK SEAT
+    // LOCK SEAT
     socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return;
+      if (!allowed) {
+        socket.emit("error:permission", { message: "Not host or admin" });
+        return;
+      }
 
       await Room.findOneAndUpdate(
         { roomId },
@@ -1062,12 +1082,16 @@ module.exports = (io) => {
       io.to(`room:${roomId}`).emit("room:seat:locked", { seatNumber });
     });
 
+    // UNLOCK SEAT
     socket.on("room:seat:unlock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return;
+      if (!allowed) {
+        socket.emit("error:permission", { message: "Not host or admin" });
+        return;
+      }
 
       await Room.findOneAndUpdate(
         { roomId },
@@ -1080,23 +1104,40 @@ module.exports = (io) => {
     // MIC OFF (Force mute one user)
     socket.on("room:mic:forceOff", async ({ roomId, targetUserId }) => {
       const userId = socket.data.userId;
-      if (!userId || !roomId || !targetUserId) return;
+
+      console.log("🎯 FORCE OFF REQUEST:", { roomId, userId, targetUserId });
+
+      if (!userId || !roomId || !targetUserId) {
+        console.log("❌ Missing fields in forceOff");
+        return;
+      }
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return;
+      console.log("✅ Allowed?", allowed);
 
+      if (!allowed) {
+        console.log("⛔ Permission denied for forceOff");
+        socket.emit("error:permission", { message: "Not host or admin" });
+        return;
+      }
+
+      // Update mic state
       micStates.set(targetUserId, { muted: true, speaking: false });
 
+      // Notify room
       io.to(`room:${roomId}`).emit("mic:update", {
         userId: targetUserId,
         muted: true,
         speaking: false,
       });
 
+      // Notify target user directly
       const targetSocket = onlineUsers.get(targetUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("mic:forceMuted");
       }
+
+      console.log("🔇 Force muted user:", targetUserId);
     });
 
     // MUTE EVERYONE
@@ -1105,7 +1146,10 @@ module.exports = (io) => {
       if (!userId || !roomId) return;
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return;
+      if (!allowed) {
+        socket.emit("error:permission", { message: "Not host or admin" });
+        return;
+      }
 
       const sockets = await io.in(`room:${roomId}`).fetchSockets();
 
@@ -1131,7 +1175,10 @@ module.exports = (io) => {
       if (!userId || !roomId) return;
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return;
+      if (!allowed) {
+        socket.emit("error:permission", { message: "Not host or admin" });
+        return;
+      }
 
       const allSeats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
@@ -1149,7 +1196,12 @@ module.exports = (io) => {
       if (!room) return;
 
       // Only HOST can give admin
-      if (room.host?.toString() !== userId.toString()) return;
+      if (!room.host || room.host.toString() !== userId.toString()) {
+        socket.emit("error:permission", {
+          message: "Only host can give admin",
+        });
+        return;
+      }
 
       await Room.findOneAndUpdate(
         { roomId },
