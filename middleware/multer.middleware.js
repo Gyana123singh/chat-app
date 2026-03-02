@@ -5,9 +5,21 @@ const cloudinary = require("../config/cloudinary");
 const storage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
+    let resourceType = "image";
+
+    // 🔥 Force video for mp4
+    if (file.mimetype === "video/mp4") {
+      resourceType = "video";
+    }
+
+    // 🔥 Force raw for pdf
+    if (file.mimetype === "application/pdf") {
+      resourceType = "raw";
+    }
+
     return {
       folder: "chat-gifts",
-      resource_type: "auto", // auto detects image, video, pdf
+      resource_type: resourceType, // ❌ no more auto
       public_id: `${Date.now()}-${file.originalname.split(".")[0]}`,
     };
   },
@@ -25,7 +37,7 @@ const upload = multer({
       "image/jpg",
       "image/gif",
       "application/pdf",
-      "video/mp4", // ✅ Added MP4 support
+      "video/mp4",
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
