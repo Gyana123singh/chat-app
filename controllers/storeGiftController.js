@@ -197,7 +197,6 @@ exports.createGift = async (req, res) => {
   try {
     const { name, price, category, description, effectType, rarity } = req.body;
 
-    // Validation
     if (!name || !price || !category) {
       return res.status(400).json({
         success: false,
@@ -209,16 +208,30 @@ exports.createGift = async (req, res) => {
     let animationUrl = null;
 
     if (req.file) {
-      const fileUrl = req.file.path; // Cloudinary URL
-      const mimeType = req.file.mimetype; // e.g. image/png, image/gif, application/pdf
+      const fileUrl = req.file.path;
+      const mimeType = req.file.mimetype;
 
+      // IMAGE (jpg, png)
       if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
-        // Normal image → icon
         icon = fileUrl;
-      } else {
-        // gif / pdf / others → animation or asset
+      }
+
+      // GIF
+      else if (mimeType === "image/gif") {
         animationUrl = fileUrl;
-        icon = fileUrl; // optional: also use as preview
+        icon = fileUrl;
+      }
+
+      // MP4 VIDEO
+      else if (mimeType === "video/mp4") {
+        animationUrl = fileUrl;
+        icon = fileUrl; // can replace later with thumbnail
+      }
+
+      // PDF
+      else if (mimeType === "application/pdf") {
+        animationUrl = fileUrl;
+        icon = fileUrl;
       }
     }
 

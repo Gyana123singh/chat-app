@@ -7,7 +7,7 @@ const storage = new CloudinaryStorage({
   params: async (req, file) => {
     return {
       folder: "chat-gifts",
-      resource_type: "auto", // 🔥 IMPORTANT: allows image, gif, pdf, video, etc.
+      resource_type: "auto", // auto detects image, video, pdf
       public_id: `${Date.now()}-${file.originalname.split(".")[0]}`,
     };
   },
@@ -16,7 +16,7 @@ const storage = new CloudinaryStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // ✅ 50 MB
+    fileSize: 50 * 1024 * 1024, // 50MB
   },
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = [
@@ -25,12 +25,18 @@ const upload = multer({
       "image/jpg",
       "image/gif",
       "application/pdf",
+      "video/mp4", // ✅ Added MP4 support
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error("Only JPG, PNG, GIF, and PDF files are allowed"), false);
+      cb(
+        new Error(
+          "Only JPG, PNG, GIF, PDF, and MP4 files are allowed"
+        ),
+        false
+      );
     }
   },
 });
