@@ -2,6 +2,7 @@ const Friend = require("../models/friend");
 const FriendRequest = require("../models/friendRequest");
 const User = require("../models/users");
 const mongoose = require("mongoose");
+
 /* ======================
    SEND FRIEND REQUEST
 ====================== */
@@ -10,11 +11,33 @@ exports.sendRequest = async (req, res) => {
     const from = req.user.id;
     const { to } = req.body;
 
+    if (!mongoose.Types.ObjectId.isValid(to)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     if (from === to) {
       return res
         .status(400)
         .json({ message: "Cannot send request to yourself" });
     }
+
+    // ✅ Check if target user exists
+    const targetUser = await User.findById(to);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // ✅ Check if already friends
+    const alreadyFriend = await Friend.findOne({
+      userId: from,
+      friendId: to,
+    });
+
+    if (alreadyFriend) {
+      return res.status(400).json({ message: "Already friends" });
+    }
+
+    // ✅ Check if request already exists
     const exists = await FriendRequest.findOne({
       $or: [
         { from, to },
@@ -23,12 +46,12 @@ exports.sendRequest = async (req, res) => {
     });
 
     if (exists) {
-      return res.status(400).json({ message: "Request already sent" });
+      return res.status(400).json({ message: "Request already exists" });
     }
 
     const request = await FriendRequest.create({ from, to });
 
-    // 🔔 SOCKET NOTIFICATION (ADD HERE)
+    // 🔔 SOCKET NOTIFICATION
     const io = req.app.get("io");
     const socketId = io.getSocketId(to);
 
@@ -39,7 +62,11 @@ exports.sendRequest = async (req, res) => {
       });
     }
 
-    res.status(201).json({ message: "Friend request sent", request });
+    res.status(201).json({
+      success: true,
+      message: "Friend request sent",
+      requestId: request._id,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -49,6 +76,9 @@ exports.sendRequest = async (req, res) => {
    ACCEPT FRIEND REQUEST
 ====================== */
 exports.acceptRequest = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const userId = req.user.id;
     const { requestId } = req.body;
@@ -57,30 +87,36 @@ exports.acceptRequest = async (req, res) => {
       _id: requestId,
       to: userId,
       status: "pending",
-    });
+    }).session(session);
 
     if (!request) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ message: "Request not found" });
     }
+
+    // Prevent duplicate friendship
     const alreadyFriend = await Friend.findOne({
       userId: request.from,
       friendId: request.to,
-    });
+    }).session(session);
 
-    if (alreadyFriend) {
-      return res.json({ message: "Already friends" });
+    if (!alreadyFriend) {
+      await Friend.create(
+        [
+          { userId: request.from, friendId: request.to },
+          { userId: request.to, friendId: request.from },
+        ],
+        { session },
+      );
     }
 
-    // create friends
-    await Friend.create([
-      { userId: request.from, friendId: request.to },
-      { userId: request.to, friendId: request.from },
-    ]);
+    await FriendRequest.deleteOne({ _id: requestId }).session(session);
 
-    // 🔥 clean DB
-    await FriendRequest.deleteOne({ _id: requestId });
+    await session.commitTransaction();
+    session.endSession();
 
-    // realtime
+    // 🔔 Notify sender
     const io = req.app.get("io");
     const socketId = io.getSocketId(request.from.toString());
 
@@ -91,8 +127,13 @@ exports.acceptRequest = async (req, res) => {
       });
     }
 
-    res.json({ message: "Friend request accepted" });
+    res.json({
+      success: true,
+      message: "Friend request accepted",
+    });
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     res.status(500).json({ error: err.message });
   }
 };
@@ -115,17 +156,19 @@ exports.rejectRequest = async (req, res) => {
       return res.status(404).json({ message: "Request not found" });
     }
 
-    request.status = "rejected";
-    await request.save();
+    await FriendRequest.deleteOne({ _id: requestId });
 
-    res.json({ message: "Friend request rejected" });
+    res.json({
+      success: true,
+      message: "Friend request rejected",
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 /* ======================
-   GET ALL REQUESTS
+   GET FRIEND REQUESTS
 ====================== */
 exports.getRequests = async (req, res) => {
   try {
@@ -134,42 +177,72 @@ exports.getRequests = async (req, res) => {
     const requests = await FriendRequest.find({
       to: userId,
       status: "pending",
-    }).populate("from", "username avatar");
+    })
+      .populate("from", "_id username profile.avatar level")
+      .lean();
 
-    res.json(requests);
+    const formatted = requests.map((r) => ({
+      requestId: r._id,
+      _id: r.from._id,
+      username: r.from.username,
+      avatar: r.from.profile?.avatar,
+      level: r.from.level,
+    }));
+
+    res.json({
+      success: true,
+      requests: formatted,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 /* ======================
-   FRIEND LIST
+   FRIEND LIST (CLEAN USER RESPONSE)
 ====================== */
 exports.getFriends = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const friends = await Friend.find({ userId }).populate(
-      "friendId",
-      "username profile.avatar lastSeen",
-    );
+    const friends = await Friend.find({ userId })
+      .populate({
+        path: "friendId",
+        select: "_id username profile.avatar lastSeen level stats",
+      })
+      .lean();
 
-    res.json(friends);
+    const formatted = friends.map((f) => ({
+      _id: f.friendId._id,
+      username: f.friendId.username,
+      avatar: f.friendId.profile?.avatar,
+      lastSeen: f.friendId.lastSeen,
+      level: f.friendId.level,
+      stats: f.friendId.stats,
+    }));
+
+    res.json({
+      success: true,
+      friends: formatted,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+/* ======================
+   FRIEND SUGGESTIONS
+====================== */
 exports.getFriendSuggestions = async (req, res) => {
   try {
     const userId = req.user.id;
     const myId = new mongoose.Types.ObjectId(userId);
 
-    // 1️⃣ My friends
+    // My friends
     const myFriends = await Friend.find({ userId }).select("friendId");
     const friendIds = myFriends.map((f) => f.friendId);
 
-    // 2️⃣ Requests
+    // Existing requests
     const requests = await FriendRequest.find({
       $or: [{ from: userId }, { to: userId }],
     });
@@ -178,13 +251,9 @@ exports.getFriendSuggestions = async (req, res) => {
       r.from.toString() === userId ? r.to : r.from,
     );
 
-    // 3️⃣ Friends of friends
+    // Friends of friends
     const mutuals = await Friend.aggregate([
-      {
-        $match: {
-          userId: { $in: friendIds },
-        },
-      },
+      { $match: { userId: { $in: friendIds } } },
       {
         $group: {
           _id: "$friendId",
@@ -197,15 +266,13 @@ exports.getFriendSuggestions = async (req, res) => {
 
     const mutualIds = mutuals.map((m) => m._id);
 
-    // 4️⃣ Exclude
     const exclude = [myId, ...friendIds, ...requestIds];
 
-    // 5️⃣ Final suggestions
     const users = await User.find({
       _id: { $in: mutualIds, $nin: exclude },
       isActive: true,
     })
-      .select("username profile.avatar stats.followers lastSeen")
+      .select("_id username profile.avatar stats.followers lastSeen")
       .limit(20);
 
     res.json({

@@ -1,40 +1,31 @@
 const Message = require("../models/privateMessage");
 const Conversation = require("../models/conversation");
 const Notification = require("../models/notification");
+const mongoose = require("mongoose");
 
 module.exports = (io) => {
-  const onlineUsers = new Map(); // userId -> socketId (legacy, not relied on)
-  const typingUsers = new Map(); // conversationId -> Set of userIds
-  const userSockets = new Map(); // userId -> Set of socketIds (multi-device safe)
+  const userSockets = new Map(); // userId -> Set(socketIds)
+  const typingUsers = new Map(); // conversationId -> Set(userIds)
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
 
     /* =========================
-       USER CONNECT  (🔥 UPDATED)
+       USER CONNECT
     ========================= */
     socket.on("private:user:connect", async ({ userId, username, avatar }) => {
-      if (!userId) {
-        console.warn("❌ User ID is required for connection");
-        return;
-      }
+      if (!userId) return;
 
       socket.data.userId = userId;
       socket.data.username = username;
       socket.data.avatar = avatar;
 
-      // ✅ JOIN NOTIFICATION ROOM (SAFE ADD)
       socket.join(`notify:${userId}`);
 
-      // Multi-device safe tracking
       if (!userSockets.has(userId)) {
         userSockets.set(userId, new Set());
       }
       userSockets.get(userId).add(socket.id);
-
-      onlineUsers.set(userId, socket.id); // keep for compatibility
-
-      console.log(`🟢 User connected: ${username} (${userId})`);
 
       io.emit("private:user:online", {
         userId,
@@ -43,270 +34,176 @@ module.exports = (io) => {
         isOnline: true,
       });
 
-      // 🔥 AUTO-JOIN ALL ACTIVE CONVERSATIONS (CRITICAL FIX)
-      try {
-        const conversations = await Conversation.find({
-          participants: userId,
-          isActive: true,
-        }).select("_id");
+      // Auto join conversations
+      const conversations = await Conversation.find({
+        participants: userId,
+        isActive: true,
+      }).select("_id");
 
-        conversations.forEach((conv) => {
-          const room = `private:${conv._id}`;
-          socket.join(room);
-          console.log(`🔗 Auto-joined room ${room} for user ${userId}`);
-        });
-      } catch (err) {
-        console.error("❌ Auto-join conversations error:", err.message);
-      }
+      conversations.forEach((conv) => {
+        socket.join(`private:${conv._id}`);
+      });
     });
 
     /* =========================
-       JOIN CONVERSATION (🔒 SECURED)
+       JOIN CONVERSATION
     ========================= */
     socket.on("private:conversation:join", async ({ conversationId }) => {
       const userId = socket.data.userId;
-      const username = socket.data.username;
+      if (!conversationId || !userId) return;
 
-      if (!conversationId || !userId) {
-        console.warn("❌ Missing data for joining conversation");
-        return;
-      }
+      if (!mongoose.Types.ObjectId.isValid(conversationId)) return;
 
-      try {
-        const conversation = await Conversation.findById(conversationId);
+      const conversation = await Conversation.findById(conversationId);
+      if (!conversation) return;
 
-        if (!conversation) {
-          console.warn("❌ Conversation not found:", conversationId);
-          return;
-        }
+      const isParticipant = conversation.participants.some(
+        (p) => p.toString() === userId.toString(),
+      );
 
-        const isParticipant = conversation.participants.some(
-          (p) => p.toString() === userId.toString(),
-        );
+      if (!isParticipant) return;
 
-        if (!isParticipant) {
-          console.warn(
-            `❌ User ${userId} tried to join unauthorized conversation ${conversationId}`,
-          );
-          return;
-        }
-
-        const room = `private:${conversationId}`;
-        socket.join(room);
-
-        console.log(`🔗 User ${userId} joined room ${room}`);
-
-        socket.to(room).emit("private:user:active", {
-          userId,
-          username,
-          conversationId,
-        });
-      } catch (err) {
-        console.error("❌ Error joining conversation:", err.message);
-      }
+      socket.join(`private:${conversationId}`);
     });
 
     /* =========================
-       SEND MESSAGE
+       SEND MESSAGE (🔥 SECURE)
     ========================= */
     socket.on(
       "private:message:send",
       async ({ conversationId, recipientId, text, attachment }) => {
         const senderId = socket.data.userId;
 
-        console.log("📤 private:message:send", {
+        if (!conversationId || !recipientId || !senderId) return;
+        if (!text && !attachment) return;
+
+        if (
+          !mongoose.Types.ObjectId.isValid(conversationId) ||
+          !mongoose.Types.ObjectId.isValid(recipientId)
+        ) {
+          socket.emit("private:message:error", { error: "Invalid ID format" });
+          return;
+        }
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+          socket.emit("private:message:error", {
+            error: "Conversation not found",
+          });
+          return;
+        }
+
+        const isParticipant = conversation.participants.some(
+          (p) => p.toString() === senderId.toString(),
+        );
+
+        if (!isParticipant) {
+          socket.emit("private:message:error", { error: "Unauthorized" });
+          return;
+        }
+
+        const isRecipientValid = conversation.participants.some(
+          (p) => p.toString() === recipientId.toString(),
+        );
+
+        if (!isRecipientValid) {
+          socket.emit("private:message:error", { error: "Invalid recipient" });
+          return;
+        }
+
+        const message = await Message.create({
           conversationId,
-          senderId,
-          recipientId,
+          sender: senderId,
+          recipient: recipientId,
+          text: text ? text.trim() : "",
+          attachment: attachment || null,
         });
 
-        // ✅ REQUIRED FIELDS
-        if (!conversationId || !recipientId || !senderId) {
-          socket.emit("private:message:error", {
-            error: "Missing required fields",
-          });
-          return;
-        }
+        await Conversation.findByIdAndUpdate(conversationId, {
+          lastMessage: message._id,
+          lastMessageTime: new Date(),
+        });
 
-        // ✅ allow text OR image
-        if (!text && !attachment) {
-          socket.emit("private:message:error", {
-            error: "Message cannot be empty",
-          });
-          return;
-        }
+        const populated = await message
+          .populate("sender", "username profile.avatar")
+          .populate("recipient", "username profile.avatar");
 
-        try {
-          if (text && text.trim().length > 1000) {
-            socket.emit("private:message:error", {
-              error: "Message too long",
-            });
-            return;
-          }
+        io.to(`private:${conversationId}`).emit(
+          "private:message:receive",
+          populated,
+        );
 
-          const message = await Message.create({
-            conversationId,
-            sender: senderId,
-            recipient: recipientId,
-            text: text ? text.trim() : "",
-            attachment: attachment || null,
+        // Notification
+        if (recipientId.toString() !== senderId.toString()) {
+          const notification = await Notification.create({
+            user: recipientId,
+            type: "private_message",
+            title: "New message",
+            body: attachment
+              ? "📷 Photo"
+              : text.length > 40
+                ? text.slice(0, 40) + "..."
+                : text,
+            data: { conversationId, senderId },
           });
 
-          await Conversation.findByIdAndUpdate(conversationId, {
-            lastMessage: message._id,
-            lastMessageTime: new Date(),
-          });
-
-          const populated = await message
-            .populate("sender", "username avatar")
-            .populate("recipient", "username avatar");
-
-          const room = `private:${conversationId}`;
-
-          io.to(room).emit("private:message:receive", populated);
-
-          // 🔔 notification
-          if (recipientId.toString() !== senderId.toString()) {
-            const notification = await Notification.create({
-              user: recipientId,
-              type: "private_message",
-              title: "New message",
-              body: attachment
-                ? "📷 Photo"
-                : text.length > 40
-                  ? text.slice(0, 40) + "..."
-                  : text,
-              data: { conversationId, senderId },
-            });
-
-            io.to(`notify:${recipientId}`).emit(
-              "notification:new",
-              notification,
-            );
-          }
-
-          console.log(`✅ Message emitted to room ${room}`);
-        } catch (error) {
-          console.error("❌ Error sending message:", error);
-          socket.emit("private:message:error", {
-            error: "Failed to send message",
-          });
+          io.to(`notify:${recipientId}`).emit("notification:new", notification);
         }
       },
     );
 
     /* =========================
-       NOTIFICATION READ
-    ========================= */
-    socket.on("notification:read", async ({ notificationId }) => {
-      if (!notificationId) return;
-
-      await Notification.findByIdAndUpdate(notificationId, {
-        isRead: true,
-        readAt: new Date(),
-      });
-    });
-    /* =========================
-       NOTIFICATION UNREAD
-    ========================= */
-    socket.on("notification:get:unread", async () => {
-      const userId = socket.data.userId;
-      if (!userId) return;
-
-      const count = await Notification.countDocuments({
-        user: userId,
-        isRead: false,
-      });
-
-      socket.emit("notification:unread", count);
-    });
-
-    /* =========================
-       TYPING INDICATOR
-    ========================= */
-    socket.on("private:typing", ({ conversationId, isTyping }) => {
-      const userId = socket.data.userId;
-      const username = socket.data.username;
-
-      if (!conversationId || !userId) return;
-
-      if (!typingUsers.has(conversationId)) {
-        typingUsers.set(conversationId, new Set());
-      }
-
-      const typingSet = typingUsers.get(conversationId);
-
-      if (isTyping) typingSet.add(userId);
-      else typingSet.delete(userId);
-
-      socket.to(`private:${conversationId}`).emit("private:typing", {
-        userId,
-        username,
-        isTyping,
-        typingUsers: Array.from(typingSet),
-      });
-    });
-
-    /* =========================
-       READ RECEIPT
+       READ RECEIPT (🔥 SECURE)
     ========================= */
     socket.on("private:message:read", async ({ messageId, conversationId }) => {
       const userId = socket.data.userId;
-
-      console.log("👁 private:message:read", { messageId, userId });
-
       if (!messageId || !conversationId) return;
 
-      try {
-        const message = await Message.findByIdAndUpdate(
-          messageId,
-          { isRead: true, readAt: new Date() },
-          { new: true },
-        );
+      if (!mongoose.Types.ObjectId.isValid(messageId)) return;
 
-        if (!message) return;
+      const message = await Message.findById(messageId);
+      if (!message) return;
 
-        io.to(`private:${conversationId}`).emit("private:message:read", {
-          messageId,
-          isRead: true,
-          readAt: message.readAt,
-          readBy: userId,
-        });
-      } catch (error) {
-        console.error("❌ Error marking message as read:", error);
-      }
+      // Only recipient can mark read
+      if (message.recipient.toString() !== userId.toString()) return;
+
+      message.isRead = true;
+      message.readAt = new Date();
+      await message.save();
+
+      io.to(`private:${conversationId}`).emit("private:message:read", {
+        messageId,
+        isRead: true,
+        readAt: message.readAt,
+        readBy: userId,
+      });
     });
 
     /* =========================
-       EDIT MESSAGE
+       EDIT MESSAGE (🔥 FIXED)
     ========================= */
     socket.on(
       "private:message:edit",
       async ({ messageId, conversationId, newText }) => {
         const userId = socket.data.userId;
+        if (!messageId || !newText) return;
 
-        console.log("✏️ private:message:edit", { messageId, userId });
+        const message = await Message.findById(messageId);
+        if (!message) return;
 
-        if (!messageId || !conversationId || !newText) return;
+        if (message.sender.toString() !== userId.toString()) return;
 
-        try {
-          const message = await Message.findById(messageId);
-          if (!message) return;
+        message.text = newText.trim();
+        message.edited = true;
+        message.editedAt = new Date();
+        await message.save();
 
-          if (message.sender.toString() !== userId) return;
-
-          await message.editText(newText.trim());
-
-          io.to(`private:${conversationId}`).emit("private:message:edited", {
-            messageId,
-            text: newText.trim(),
-            edited: true,
-            editedAt: message.editedAt,
-            editedBy: userId,
-          });
-        } catch (error) {
-          console.error("❌ Error editing message:", error);
-        }
+        io.to(`private:${conversationId}`).emit("private:message:edited", {
+          messageId,
+          text: message.text,
+          edited: true,
+          editedAt: message.editedAt,
+        });
       },
     );
 
@@ -317,70 +214,39 @@ module.exports = (io) => {
       "private:message:delete",
       async ({ messageId, conversationId }) => {
         const userId = socket.data.userId;
+        if (!messageId) return;
 
-        console.log("🗑 private:message:delete", { messageId, userId });
+        const message = await Message.findById(messageId);
+        if (!message) return;
 
-        if (!messageId || !conversationId) return;
+        if (message.sender.toString() !== userId.toString()) return;
 
-        try {
-          const message = await Message.findById(messageId);
-          if (!message) return;
+        await Message.findByIdAndDelete(messageId);
 
-          if (message.sender.toString() !== userId) return;
-
-          await Message.findByIdAndDelete(messageId);
-
-          io.to(`private:${conversationId}`).emit("private:message:deleted", {
-            messageId,
-            deletedBy: userId,
-          });
-        } catch (error) {
-          console.error("❌ Error deleting message:", error);
-        }
+        io.to(`private:${conversationId}`).emit("private:message:deleted", {
+          messageId,
+        });
       },
     );
-
-    /* =========================
-       LEAVE CONVERSATION
-    ========================= */
-    socket.on("private:conversation:leave", ({ conversationId }) => {
-      if (!conversationId) return;
-
-      socket.leave(`private:${conversationId}`);
-
-      socket.to(`private:${conversationId}`).emit("private:user:inactive", {
-        userId: socket.data.userId,
-        conversationId,
-      });
-
-      console.log(`👤 User left room private:${conversationId}`);
-    });
 
     /* =========================
        DISCONNECT
     ========================= */
     socket.on("disconnect", () => {
-      const { userId, username } = socket.data;
+      const userId = socket.data.userId;
+      if (!userId) return;
 
-      if (userId) {
-        const sockets = userSockets.get(userId);
+      const sockets = userSockets.get(userId);
+      if (!sockets) return;
 
-        if (sockets) {
-          sockets.delete(socket.id);
+      sockets.delete(socket.id);
 
-          if (sockets.size === 0) {
-            userSockets.delete(userId);
-            onlineUsers.delete(userId);
-
-            io.emit("private:user:online", {
-              userId,
-              username,
-              isOnline: false,
-            });
-
-            console.log(`❌ User offline: ${username} (${userId})`);
-          }
-        }
+      if (sockets.size === 0) {
+        userSockets.delete(userId);
+        io.emit("private:user:online", {
+          userId,
+          isOnline: false,
+        });
       }
 
       console.log("❌ Socket disconnected:", socket.id);
