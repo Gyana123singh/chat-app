@@ -7,11 +7,15 @@ const VideoRoom = require("../models/videoRoom");
 exports.createRoom = async (req, res) => {
   try {
     if (!req.user?.id) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
     }
 
     const userId = req.user.id;
-    const { mode } = req.body;
+
+    const { mode, title, category, description } = req.body;
 
     if (!mode) {
       return res.status(400).json({
@@ -33,10 +37,37 @@ exports.createRoom = async (req, res) => {
 
     const roomId = uuidv4();
 
+    // Normalize category safely
+    const allowedCategories = [
+      "Gaming",
+      "Music",
+      "Sports",
+      "Entertainment",
+      "Education",
+      "Other",
+    ];
+
+    let safeCategory = "Other";
+
+    if (category) {
+      const formatted =
+        category.charAt(0).toUpperCase() +
+        category.slice(1).toLowerCase();
+
+      if (allowedCategories.includes(formatted)) {
+        safeCategory = formatted;
+      }
+    }
+
     const room = await Room.create({
       roomId,
       mode,
-      title: `${mode} Room`,
+
+      // ✅ USE USER INPUT OR FALLBACK
+      title: title || `${mode} Room`,
+      category: safeCategory,
+      description: description || "",
+
       host: userId,
       creator: userId,
       creatorName: user.username || user.email,
@@ -46,22 +77,20 @@ exports.createRoom = async (req, res) => {
       participants: [
         {
           user: userId,
-          username: user.username,
-          avatar: user.profile?.avatar || "/avatar.png",
           role: "host",
+          avatar: user.profile?.avatar || "/avatar.png",
           joinedAt: new Date(),
         },
       ],
 
       stats: {
         totalJoins: 1,
-        activeUsers: 1,
       },
 
       isActive: true,
     });
 
-    // ✅ CREATE VIDEO ROOM STATE
+    // ✅ CREATE VIDEO ROOM
     await VideoRoom.create({
       roomId,
       hostId: userId,
@@ -85,6 +114,7 @@ exports.createRoom = async (req, res) => {
       roomId: room.roomId,
       room,
     });
+
   } catch (err) {
     console.error("CREATE ROOM ERROR →", err);
     return res.status(500).json({
