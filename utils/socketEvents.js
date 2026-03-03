@@ -10,6 +10,7 @@ const User = require("../models/users"); // adjust path if needed
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room"); // or your room model path
 const mongoose = require("mongoose");
+const registerStoreGiftSocket = require("../utils/giftSocketEvents");
 
 // pkId -> timeoutId
 const pkTimers = new Map();
@@ -381,6 +382,15 @@ module.exports = (io) => {
           },
         });
 
+        // ✅ FIX #3 — Only trigger entrance for THIS joining user
+        const userDoc = await User.findById(userId);
+
+        if (userDoc?.profile?.entranceEffect) {
+          socket.to(`room:${roomId}`).emit("room:entranceEffect", {
+            userId,
+            animationUrl: userDoc.profile.entranceEffect,
+          });
+        }
         // ===============================
         // ⏱ 5 MIN STAY EXP (PERSONAL)
         // ===============================
@@ -1289,7 +1299,7 @@ module.exports = (io) => {
       }
     });
   });
-
+  registerStoreGiftSocket(io);
   return {
     getMicStates: () => micStates,
     getRoomUsers: () => roomUsers,
