@@ -382,13 +382,20 @@ module.exports = (io) => {
           },
         });
 
-        // ✅ FIX #3 — Only trigger entrance for THIS joining user
-        const userDoc = await User.findById(userId);
+        // 🎬 Cinematic entrance when user joins room
+        const userDoc = await User.findById(userId).select(
+          "username profile.avatar level profile.entranceEffect",
+        );
 
         if (userDoc?.profile?.entranceEffect) {
-          socket.to(`room:${roomId}`).emit("room:entranceEffect", {
+          io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
             userId,
+            username: userDoc.username || "User",
+            avatar: userDoc.profile?.avatar || null,
+            level: userDoc.level || 1,
             animationUrl: userDoc.profile.entranceEffect,
+            soundUrl: null,
+            rarity: "normal",
           });
         }
         // ===============================

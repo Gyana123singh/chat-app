@@ -56,7 +56,6 @@ module.exports = (io) => {
 
         const expiresAt = new Date(Date.now() + duration * 86400000);
 
-        // Deactivate old same effect
         await StoreGiftInventory.updateMany(
           {
             userId: receiverId,
@@ -67,7 +66,6 @@ module.exports = (io) => {
           { session },
         );
 
-        // Add inventory
         await StoreGiftInventory.create(
           [
             {
@@ -84,7 +82,6 @@ module.exports = (io) => {
           { session },
         );
 
-        // Update profile
         const update = {};
 
         if (gift.effectType === "FRAME") update["profile.frame"] = gift.icon;
@@ -103,7 +100,6 @@ module.exports = (io) => {
           );
         }
 
-        // Save transaction
         await StoreGiftTransaction.create(
           [
             {
@@ -128,15 +124,23 @@ module.exports = (io) => {
         await session.commitTransaction();
         session.endSession();
 
-        // 🔥 Immediate entrance animation if receiver already in room
+        // 🎬 CINEMATIC FULL-SCREEN ENTRANCE
         if (roomId && gift.effectType === "ENTRANCE") {
-          io.to(`room:${roomId}`).emit("room:entranceEffect", {
+          const userData = await User.findById(receiverId).select(
+            "username profile.avatar level",
+          );
+
+          io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
             userId: receiverId,
+            username: userData?.username || "User",
+            avatar: userData?.profile?.avatar || null,
+            level: userData?.level || 1,
             animationUrl: gift.animationUrl,
+            soundUrl: gift.soundUrl || null,
+            rarity: gift.rarity || "normal",
           });
         }
 
-        // Notify receiver privately
         io.to(receiverId.toString()).emit("store:gift:received", {
           giftId: gift._id,
           name: gift.name,
@@ -196,7 +200,6 @@ module.exports = (io) => {
           });
         }
 
-        // 💰 Deduct coins
         user.coins -= gift.price;
         user.totalSpent += gift.price;
         await user.save({ session });
@@ -267,11 +270,20 @@ module.exports = (io) => {
         await session.commitTransaction();
         session.endSession();
 
-        // 🔥 Immediate entrance animation if user already in room
+        // 🎬 CINEMATIC FULL-SCREEN ENTRANCE
         if (roomId && gift.effectType === "ENTRANCE") {
-          io.to(`room:${roomId}`).emit("room:entranceEffect", {
+          const userData = await User.findById(userId).select(
+            "username profile.avatar level",
+          );
+
+          io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
             userId: userId,
+            username: userData?.username || "User",
+            avatar: userData?.profile?.avatar || null,
+            level: userData?.level || 1,
             animationUrl: gift.animationUrl,
+            soundUrl: gift.soundUrl || null,
+            rarity: gift.rarity || "normal",
           });
         }
 
