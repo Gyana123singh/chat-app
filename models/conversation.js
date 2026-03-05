@@ -9,19 +9,24 @@ const conversationSchema = new mongoose.Schema(
         required: true,
       },
     ],
+
     participantsHash: {
       type: String,
-      unique: true, // 🔥 prevents duplicate 1-to-1 chats
+      required: true,
+      unique: true,
     },
+
     lastMessage: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PrivateMessage",
       default: null,
     },
+
     lastMessageTime: {
       type: Date,
       default: null,
     },
+
     isActive: {
       type: Boolean,
       default: true,
@@ -30,10 +35,8 @@ const conversationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-
 conversationSchema.index({ participants: 1 });
 conversationSchema.index({ lastMessageTime: -1 });
-// Faster conversation lookup
 conversationSchema.index({ participantsHash: 1, isActive: 1 });
 
 module.exports = mongoose.model("Conversation", conversationSchema);

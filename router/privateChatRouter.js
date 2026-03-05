@@ -8,7 +8,7 @@ const { authMiddleware } = require("../middleware/auth");
 router.get(
   "/get-all-conversations",
   authMiddleware,
-  privateChatController.getConversations
+  privateChatController.getConversations,
 );
 
 /**
@@ -18,7 +18,7 @@ router.get(
 router.get(
   "/get-conversations-byId/:conversationId",
   authMiddleware,
-  privateChatController.getConversationById
+  privateChatController.getConversationById,
 );
 
 // * ✅ GET or CREATE conversation between two users
@@ -29,7 +29,7 @@ router.get(
 router.post(
   "/get-or-create-conversations/:userId",
   authMiddleware,
-  privateChatController.getOrCreateConversation
+  privateChatController.getOrCreateConversation,
 );
 
 // * ✅ GET messages for a conversation with pagination
@@ -37,52 +37,56 @@ router.post(
 router.get(
   "/conversations/:conversationId/messages",
   authMiddleware,
-  privateChatController.getMessagesForConversation
+  privateChatController.getMessagesForConversation,
 );
 
 //  * ✅ SEND message via REST API
-router.post("/send-messages", authMiddleware, privateChatController.sendMessage);
+router.post(
+  "/send-messages",
+  authMiddleware,
+  privateChatController.sendMessage,
+);
 
 //  * ✅ EDIT message
 router.put(
   "/edit-message/:messageId",
   authMiddleware,
-  privateChatController.editMessage
+  privateChatController.editMessage,
 );
 
 //  * ✅ DELETE message
 router.delete(
   "/delete-message/:messageId",
   authMiddleware,
-  privateChatController.deleteMessage
+  privateChatController.deleteMessage,
 );
 
 //  * ✅ MARK message as read
 router.put(
   "/mark-as-read/:messageId",
   authMiddleware,
-  privateChatController.markMessageAsRead
+  privateChatController.markMessageAsRead,
 );
 
 //  * ✅ MARK all messages in a conversation as read
 router.put(
   "/mark-all-as-read/:conversationId",
   authMiddleware,
-  privateChatController.markConversationAsRead
+  privateChatController.markConversationAsRead,
 );
 
 //  * ✅ DELETE conversation (soft delete - just mark as inactive)?
 router.delete(
   "/delete-conversation/:conversationId",
   authMiddleware,
-  privateChatController.deleteConversation
+  privateChatController.deleteConversation,
 );
 
 //  * ✅ GET unread message count
 router.get(
   "/unread-message-count",
   authMiddleware,
-  privateChatController.getUnreadMessageCount
+  privateChatController.getUnreadMessageCount,
 );
 
 module.exports = router;

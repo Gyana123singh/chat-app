@@ -98,6 +98,7 @@ exports.getOrCreateConversation = async (req, res) => {
     }
 
     const targetUser = await User.findById(otherUserId);
+
     if (!targetUser) {
       return res.status(404).json({
         success: false,
@@ -119,15 +120,20 @@ exports.getOrCreateConversation = async (req, res) => {
         participantsHash: hash,
       });
 
-      conversation = await conversation.populate(
-        "participants",
-        "username profile.avatar",
-      );
+      await conversation.populate("participants", "username profile.avatar");
     }
 
-    res.status(200).json({ success: true, data: conversation });
+    return res.status(200).json({
+      success: true,
+      data: conversation,
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("❌ getOrCreateConversation error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 };
 
@@ -445,7 +451,6 @@ exports.getUnreadMessageCount = async (req, res) => {
   }
 };
 
-
 exports.editMessage = async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -463,7 +468,9 @@ exports.editMessage = async (req, res) => {
     const message = await Message.findById(messageId);
 
     if (!message) {
-      return res.status(404).json({ success: false, message: "Message not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Message not found" });
     }
 
     if (message.sender.toString() !== userId.toString()) {
@@ -476,7 +483,6 @@ exports.editMessage = async (req, res) => {
     await message.save();
 
     res.status(200).json({ success: true, data: message });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -494,7 +500,9 @@ exports.deleteMessage = async (req, res) => {
     const message = await Message.findById(messageId);
 
     if (!message) {
-      return res.status(404).json({ success: false, message: "Message not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Message not found" });
     }
 
     if (message.sender.toString() !== userId.toString()) {
@@ -504,7 +512,6 @@ exports.deleteMessage = async (req, res) => {
     await message.deleteOne();
 
     res.status(200).json({ success: true, message: "Message deleted" });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -522,11 +529,13 @@ exports.deleteConversation = async (req, res) => {
     const conversation = await Conversation.findById(conversationId);
 
     if (!conversation) {
-      return res.status(404).json({ success: false, message: "Conversation not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Conversation not found" });
     }
 
     const isParticipant = conversation.participants.some(
-      (p) => p.toString() === userId.toString()
+      (p) => p.toString() === userId.toString(),
     );
 
     if (!isParticipant) {
@@ -537,7 +546,6 @@ exports.deleteConversation = async (req, res) => {
     await conversation.save();
 
     res.status(200).json({ success: true, message: "Conversation deleted" });
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
