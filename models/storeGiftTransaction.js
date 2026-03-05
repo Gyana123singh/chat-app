@@ -31,7 +31,6 @@ const storeGiftTransactionSchema = new mongoose.Schema(
     sendType: {
       type: String,
       enum: ["individual", "all_in_room", "all_on_mic"],
-      required: true,
     },
     quantitySent: {
       type: Number,
