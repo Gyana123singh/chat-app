@@ -30,14 +30,6 @@ const conversationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Sort participants before save
-conversationSchema.pre("validate", function (next) {
-  if (this.participants.length === 2) {
-    const sorted = this.participants.map((id) => id.toString()).sort();
-    this.participantsHash = sorted.join("_");
-  }
-  next();
-});
 
 conversationSchema.index({ participants: 1 });
 conversationSchema.index({ lastMessageTime: -1 });
