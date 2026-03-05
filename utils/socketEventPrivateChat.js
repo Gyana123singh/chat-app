@@ -164,19 +164,24 @@ module.exports = (io) => {
           );
 
           /* =========================
-             CREATE NOTIFICATION
-          ========================= */
+   CREATE NOTIFICATION
+========================= */
           if (recipientId.toString() !== senderId.toString()) {
             const notification = await Notification.create({
               user: recipientId,
-              type: "private_message",
+              type: "message",
               title: "New message",
               body: attachment
                 ? "📷 Photo"
-                : text.length > 40
-                  ? text.slice(0, 40) + "..."
-                  : text,
-              data: { conversationId, senderId },
+                : text
+                  ? text.length > 40
+                    ? text.slice(0, 40) + "..."
+                    : text
+                  : "New message",
+              data: {
+                conversationId,
+                senderId,
+              },
             });
 
             io.to(`notify:${recipientId}`).emit(
