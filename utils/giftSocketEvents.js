@@ -10,12 +10,7 @@ module.exports = (io) => {
        🎁 SEND STORE GIFT TO ANOTHER USER
     ========================================================== */
     socket.on("store:gift:send", async (payload) => {
-      let session;
-
       try {
-        session = await mongoose.startSession();
-        session.startTransaction();
-
         const senderId = socket.data.userId;
         const { giftId, receiverId, roomId = null, duration = 1 } = payload;
 
@@ -29,32 +24,55 @@ module.exports = (io) => {
           });
         }
 
-        const gift = await StoreGift.findById(giftId);
-        const sender = await User.findById(senderId);
-        const receiver = await User.findById(receiverId);
+        /* ===============================
+           🎁 Find Gift
+        =============================== */
 
-        if (!gift || !gift.isAvailable) {
+        const gift = await StoreGift.findOne({
+          _id: giftId,
+          isAvailable: true,
+        });
+
+        if (!gift) {
           return socket.emit("store:gift:error", {
             message: "Gift not available",
           });
         }
 
-        if (!sender || !receiver) {
-          return socket.emit("store:gift:error", { message: "User not found" });
+        const receiver = await User.findById(receiverId);
+
+        if (!receiver) {
+          return socket.emit("store:gift:error", {
+            message: "Receiver not found",
+          });
         }
 
-        if (sender.coins < gift.price) {
+        /* ===============================
+           💰 Deduct Coins (Atomic)
+        =============================== */
+
+        const sender = await User.findOneAndUpdate(
+          { _id: senderId, coins: { $gte: gift.price } },
+          {
+            $inc: {
+              coins: -gift.price,
+              totalSpent: gift.price,
+            },
+          },
+          { new: true },
+        );
+
+        if (!sender) {
           return socket.emit("store:gift:error", {
             message: "Insufficient coins",
           });
         }
 
-        // 💰 Deduct coins
-        sender.coins -= gift.price;
-        sender.totalSpent += gift.price;
-        await sender.save({ session });
-
         const expiresAt = new Date(Date.now() + duration * 86400000);
+
+        /* ===============================
+           🧹 Disable previous same effect
+        =============================== */
 
         await StoreGiftInventory.updateMany(
           {
@@ -63,24 +81,26 @@ module.exports = (io) => {
             isActive: true,
           },
           { $set: { isActive: false } },
-          { session },
         );
 
-        await StoreGiftInventory.create(
-          [
-            {
-              userId: receiverId,
-              giftId: gift._id,
-              effectType: gift.effectType,
-              icon: gift.icon,
-              animationUrl: gift.animationUrl,
-              duration,
-              expiresAt,
-              isActive: true,
-            },
-          ],
-          { session },
-        );
+        /* ===============================
+           📦 Add inventory
+        =============================== */
+
+        await StoreGiftInventory.create({
+          userId: receiverId,
+          giftId: gift._id,
+          effectType: gift.effectType,
+          icon: gift.icon,
+          animationUrl: gift.animationUrl,
+          duration,
+          expiresAt,
+          isActive: true,
+        });
+
+        /* ===============================
+           👤 Apply profile effects
+        =============================== */
 
         const update = {};
 
@@ -93,38 +113,33 @@ module.exports = (io) => {
           update["profile.theme"] = gift.name.toLowerCase();
 
         if (Object.keys(update).length > 0) {
-          await User.findByIdAndUpdate(
-            receiverId,
-            { $set: update },
-            { session },
-          );
+          await User.findByIdAndUpdate(receiverId, { $set: update });
         }
 
-        await StoreGiftTransaction.create(
-          [
-            {
-              senderId,
-              receiverIds: [receiverId],
-              giftId: gift._id,
-              giftName: gift.name,
-              giftIcon: gift.icon,
-              giftPrice: gift.price,
-              giftCategory: gift.category,
-              giftRarity: gift.rarity,
-              quantitySent: 1,
-              totalCoinsDeducted: gift.price,
-              recipientCount: 1,
-              status: "completed",
-              completedAt: new Date(),
-            },
-          ],
-          { session },
-        );
+        /* ===============================
+           🧾 Save transaction
+        =============================== */
 
-        await session.commitTransaction();
-        session.endSession();
+        await StoreGiftTransaction.create({
+          senderId,
+          receiverIds: [receiverId],
+          giftId: gift._id,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          quantitySent: 1,
+          totalCoinsDeducted: gift.price,
+          recipientCount: 1,
+          status: "completed",
+          completedAt: new Date(),
+        });
 
-        // 🎬 CINEMATIC FULL-SCREEN ENTRANCE
+        /* ===============================
+           🎬 Cinematic Entrance
+        =============================== */
+
         if (roomId && gift.effectType === "ENTRANCE") {
           const userData = await User.findById(receiverId).select(
             "username profile.avatar level",
@@ -141,6 +156,10 @@ module.exports = (io) => {
           });
         }
 
+        /* ===============================
+           📩 Notify receiver
+        =============================== */
+
         io.to(receiverId.toString()).emit("store:gift:received", {
           giftId: gift._id,
           name: gift.name,
@@ -154,11 +173,6 @@ module.exports = (io) => {
           balance: sender.coins,
         });
       } catch (err) {
-        if (session) {
-          await session.abortTransaction().catch(() => {});
-          session.endSession();
-        }
-
         console.error("❌ Store gift send error:", err);
         socket.emit("store:gift:error", { message: "Store gift failed" });
       }
@@ -167,13 +181,9 @@ module.exports = (io) => {
     /* =========================================================
        🛒 BUY STORE GIFT FOR SELF
     ========================================================== */
+
     socket.on("store:gift:buy", async (payload) => {
-      let session;
-
       try {
-        session = await mongoose.startSession();
-        session.startTransaction();
-
         const userId = socket.data.userId;
         const { giftId, roomId = null, duration = 1 } = payload;
 
@@ -181,28 +191,37 @@ module.exports = (io) => {
           return socket.emit("store:gift:error", { message: "Missing fields" });
         }
 
-        const gift = await StoreGift.findById(giftId);
-        const user = await User.findById(userId);
+        const gift = await StoreGift.findOne({
+          _id: giftId,
+          isAvailable: true,
+        });
 
-        if (!gift || !gift.isAvailable) {
+        if (!gift) {
           return socket.emit("store:gift:error", {
             message: "Gift not available",
           });
         }
 
-        if (!user) {
-          return socket.emit("store:gift:error", { message: "User not found" });
-        }
+        /* ===============================
+           💰 Deduct Coins
+        =============================== */
 
-        if (user.coins < gift.price) {
+        const user = await User.findOneAndUpdate(
+          { _id: userId, coins: { $gte: gift.price } },
+          {
+            $inc: {
+              coins: -gift.price,
+              totalSpent: gift.price,
+            },
+          },
+          { new: true },
+        );
+
+        if (!user) {
           return socket.emit("store:gift:error", {
             message: "Insufficient coins",
           });
         }
-
-        user.coins -= gift.price;
-        user.totalSpent += gift.price;
-        await user.save({ session });
 
         const expiresAt = new Date(Date.now() + duration * 86400000);
 
@@ -213,24 +232,22 @@ module.exports = (io) => {
             isActive: true,
           },
           { $set: { isActive: false } },
-          { session },
         );
 
-        await StoreGiftInventory.create(
-          [
-            {
-              userId,
-              giftId: gift._id,
-              effectType: gift.effectType,
-              icon: gift.icon,
-              animationUrl: gift.animationUrl,
-              duration,
-              expiresAt,
-              isActive: true,
-            },
-          ],
-          { session },
-        );
+        await StoreGiftInventory.create({
+          userId,
+          giftId: gift._id,
+          effectType: gift.effectType,
+          icon: gift.icon,
+          animationUrl: gift.animationUrl,
+          duration,
+          expiresAt,
+          isActive: true,
+        });
+
+        /* ===============================
+           👤 Apply profile effects
+        =============================== */
 
         const update = {};
 
@@ -243,49 +260,28 @@ module.exports = (io) => {
           update["profile.theme"] = gift.name.toLowerCase();
 
         if (Object.keys(update).length > 0) {
-          await User.findByIdAndUpdate(userId, { $set: update }, { session });
+          await User.findByIdAndUpdate(userId, { $set: update });
         }
 
-        await StoreGiftTransaction.create(
-          [
-            {
-              senderId: userId,
-              receiverIds: [userId],
-              giftId: gift._id,
-              giftName: gift.name,
-              giftIcon: gift.icon,
-              giftPrice: gift.price,
-              giftCategory: gift.category,
-              giftRarity: gift.rarity,
-              quantitySent: 1,
-              totalCoinsDeducted: gift.price,
-              recipientCount: 1,
-              status: "completed",
-              completedAt: new Date(),
-            },
-          ],
-          { session },
-        );
+        /* ===============================
+           🧾 Save transaction
+        =============================== */
 
-        await session.commitTransaction();
-        session.endSession();
-
-        // 🎬 CINEMATIC FULL-SCREEN ENTRANCE
-        if (roomId && gift.effectType === "ENTRANCE") {
-          const userData = await User.findById(userId).select(
-            "username profile.avatar level",
-          );
-
-          io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
-            userId: userId,
-            username: userData?.username || "User",
-            avatar: userData?.profile?.avatar || null,
-            level: userData?.level || 1,
-            animationUrl: gift.animationUrl,
-            soundUrl: gift.soundUrl || null,
-            rarity: gift.rarity || "normal",
-          });
-        }
+        await StoreGiftTransaction.create({
+          senderId: userId,
+          receiverIds: [userId],
+          giftId: gift._id,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          quantitySent: 1,
+          totalCoinsDeducted: gift.price,
+          recipientCount: 1,
+          status: "completed",
+          completedAt: new Date(),
+        });
 
         socket.emit("store:gift:bought", {
           giftId: gift._id,
@@ -297,11 +293,6 @@ module.exports = (io) => {
           balance: user.coins,
         });
       } catch (err) {
-        if (session) {
-          await session.abortTransaction().catch(() => {});
-          session.endSession();
-        }
-
         console.error("❌ Store buy error:", err);
         socket.emit("store:gift:error", {
           message: "Store gift purchase failed",
