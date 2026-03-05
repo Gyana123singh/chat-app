@@ -89,6 +89,33 @@ module.exports = (io) => {
         );
 
         /* ===============================
+   🎁 ROOM GIFT ANIMATION
+=============================== */
+
+        if (roomId) {
+          const senderUser = await User.findById(senderId).select(
+            "username profile.avatar",
+          );
+
+          io.to(`room:${roomId}`).emit("gift:received", {
+            fromUserId: senderId,
+            fromUsername: senderUser?.username || "User",
+            fromAvatar: senderUser?.profile?.avatar || null,
+            recipientIds: [receiverId],
+            gift: {
+              _id: gift._id,
+              name: gift.name,
+              icon: gift.icon,
+              animationUrl: gift.animationUrl,
+              price: gift.price,
+              rarity: gift.rarity,
+              effectType: gift.effectType,
+            },
+            quantity: 1,
+            sendType: "store",
+          });
+        }
+        /* ===============================
            📦 Add inventory
         =============================== */
 
