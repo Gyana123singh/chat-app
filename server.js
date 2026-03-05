@@ -1,4 +1,3 @@
-
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
@@ -35,9 +34,17 @@ const pkRoutes = require("./router/pkRouter");
 const chatUploadRouter = require("./router/chatUploadRouter");
 const privateImageUpload = require("./router/privateImageUpload");
 const MusicState = require("./models/musicState");
+const expireStoreGifts = require("./utils/storeGiftExpiryWorker");
 
 const app = express();
 connectMongose();
+// Run every 5 minutes
+setInterval(
+  () => {
+    expireStoreGifts();
+  },
+  5 * 60 * 1000,
+);
 
 const PORT = Number(process.env.PORT || 5004);
 

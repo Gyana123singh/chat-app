@@ -161,7 +161,6 @@ module.exports = (io) => {
               effectType: gift.effectType,
             },
             quantity: 1,
-            sendType: "store",
           });
         }
         /* ===============================
