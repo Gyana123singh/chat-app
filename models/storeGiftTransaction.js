@@ -28,10 +28,7 @@ const storeGiftTransactionSchema = new mongoose.Schema(
     giftPrice: Number,
     giftCategory: String,
     giftRarity: String,
-    sendType: {
-      type: String,
-      enum: ["individual", "all_in_room", "all_on_mic"],
-    },
+
     quantitySent: {
       type: Number,
       default: 1,
