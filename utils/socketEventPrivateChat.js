@@ -264,16 +264,26 @@ module.exports = (io) => {
     );
 
     /* =========================
-       DELETE MESSAGE
-    ========================= */
+   DELETE MESSAGE
+========================= */
     socket.on(
       "private:message:delete",
       async ({ messageId, conversationId }) => {
         try {
           const userId = socket.data.userId;
+
           if (!messageId) return;
 
+          // ✅ Prevent invalid ObjectId crash
+          if (!mongoose.Types.ObjectId.isValid(messageId)) {
+            socket.emit("private:message:error", {
+              error: "Invalid message ID",
+            });
+            return;
+          }
+
           const message = await Message.findById(messageId);
+
           if (!message) return;
 
           if (message.sender.toString() !== userId.toString()) return;
