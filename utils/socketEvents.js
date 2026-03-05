@@ -383,17 +383,29 @@ module.exports = (io) => {
         });
 
         // 🎬 Cinematic entrance when user joins room
+
         const userDoc = await User.findById(userId).select(
           "username profile.avatar level profile.entranceEffect",
         );
 
-        if (userDoc?.profile?.entranceEffect) {
+        // Check active entrance gift in inventory
+        const activeEntrance = await StoreGiftInventory.findOne({
+          userId: userId,
+          effectType: "ENTRANCE",
+          isActive: true,
+          expiresAt: { $gt: new Date() },
+        });
+
+        const animationUrl =
+          activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
+
+        if (animationUrl) {
           io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
             userId,
-            username: userDoc.username || "User",
-            avatar: userDoc.profile?.avatar || null,
-            level: userDoc.level || 1,
-            animationUrl: userDoc.profile.entranceEffect,
+            username: userDoc?.username || "User",
+            avatar: userDoc?.profile?.avatar || null,
+            level: userDoc?.level || 1,
+            animationUrl,
             soundUrl: null,
             rarity: "normal",
           });
