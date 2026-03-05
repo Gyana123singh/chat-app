@@ -48,7 +48,7 @@ module.exports = (io) => {
         }
 
         /* ===============================
-           💰 Deduct Coins (Atomic)
+           💰 Deduct Coins
         =============================== */
 
         const sender = await User.findOneAndUpdate(
@@ -68,7 +68,12 @@ module.exports = (io) => {
           });
         }
 
-        const expiresAt = new Date(Date.now() + duration * 86400000);
+        /* ===============================
+           ⏳ Duration Logic
+        =============================== */
+
+        const finalDuration = gift.effectType === "ENTRANCE" ? 3 : duration;
+        const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
         /* ===============================
            🧹 Disable previous same effect
@@ -93,7 +98,7 @@ module.exports = (io) => {
           effectType: gift.effectType,
           icon: gift.icon,
           animationUrl: gift.animationUrl,
-          duration,
+          duration: finalDuration,
           expiresAt,
           isActive: true,
         });
@@ -166,7 +171,7 @@ module.exports = (io) => {
           icon: gift.icon,
           animationUrl: gift.animationUrl,
           effectType: gift.effectType,
-          duration,
+          duration: finalDuration,
         });
 
         socket.emit("store:gift:success", {
@@ -185,7 +190,7 @@ module.exports = (io) => {
     socket.on("store:gift:buy", async (payload) => {
       try {
         const userId = socket.data.userId;
-        const { giftId, roomId = null, duration = 1 } = payload;
+        const { giftId, duration = 1 } = payload;
 
         if (!userId || !giftId) {
           return socket.emit("store:gift:error", { message: "Missing fields" });
@@ -223,7 +228,12 @@ module.exports = (io) => {
           });
         }
 
-        const expiresAt = new Date(Date.now() + duration * 86400000);
+        /* ===============================
+           ⏳ Duration Logic
+        =============================== */
+
+        const finalDuration = gift.effectType === "ENTRANCE" ? 3 : duration;
+        const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
         await StoreGiftInventory.updateMany(
           {
@@ -240,14 +250,10 @@ module.exports = (io) => {
           effectType: gift.effectType,
           icon: gift.icon,
           animationUrl: gift.animationUrl,
-          duration,
+          duration: finalDuration,
           expiresAt,
           isActive: true,
         });
-
-        /* ===============================
-           👤 Apply profile effects
-        =============================== */
 
         const update = {};
 
@@ -262,10 +268,6 @@ module.exports = (io) => {
         if (Object.keys(update).length > 0) {
           await User.findByIdAndUpdate(userId, { $set: update });
         }
-
-        /* ===============================
-           🧾 Save transaction
-        =============================== */
 
         await StoreGiftTransaction.create({
           senderId: userId,
@@ -289,7 +291,7 @@ module.exports = (io) => {
           icon: gift.icon,
           animationUrl: gift.animationUrl,
           effectType: gift.effectType,
-          duration,
+          duration: finalDuration,
           balance: user.coins,
         });
       } catch (err) {
