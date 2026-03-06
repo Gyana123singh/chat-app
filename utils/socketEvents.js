@@ -11,6 +11,7 @@ const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room"); // or your room model path
 const mongoose = require("mongoose");
 const registerStoreGiftSocket = require("../utils/giftSocketEvents");
+const StoreGiftInventory = require("../models/storeGiftInventory");
 
 // pkId -> timeoutId
 const pkTimers = new Map();
@@ -384,31 +385,49 @@ module.exports = (io) => {
 
         // 🎬 Cinematic entrance when user joins room
 
-        const userDoc = await User.findById(userId).select(
-          "username profile.avatar level profile.entranceEffect",
-        );
+        try {
+          const userDoc = await User.findById(userId).select(
+            "username profile.avatar level profile.entranceEffect",
+          );
 
-        // Check active entrance gift in inventory
-        const activeEntrance = await StoreGiftInventory.findOne({
-          userId: userId,
-          effectType: "ENTRANCE",
-          isActive: true,
-          expiresAt: { $gt: new Date() },
-        });
+          // Check active entrance gift
+          const activeEntrance = await StoreGiftInventory.findOne({
+            userId: userId,
+            effectType: "ENTRANCE",
+            isActive: true,
+            expiresAt: { $gt: new Date() },
+          }).lean();
 
-        const animationUrl =
-          activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
+          const animationUrl =
+            activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
 
-        if (animationUrl) {
-          io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
+          console.log("🎬 Checking entrance animation:", {
             userId,
-            username: userDoc?.username || "User",
-            avatar: userDoc?.profile?.avatar || null,
-            level: userDoc?.level || 1,
             animationUrl,
-            soundUrl: null,
-            rarity: "normal",
           });
+
+          if (animationUrl) {
+            const payload = {
+              type: "ENTRANCE",
+              userId: userId,
+              username: userDoc?.username || "User",
+              avatar: userDoc?.profile?.avatar || null,
+              level: userDoc?.level || 1,
+              animationUrl: animationUrl,
+              soundUrl: null,
+              rarity: "normal",
+              duration: 4,
+            };
+
+            // send entrance to everyone except joining user
+            socket.to(`room:${roomId}`).emit("room:effect", payload);
+
+            console.log("🎬 Entrance emitted:", payload);
+          } else {
+            console.log("⚠️ No entrance animation for user:", userId);
+          }
+        } catch (error) {
+          console.error("❌ Entrance emit error:", error.message);
         }
         // ===============================
         // ⏱ 5 MIN STAY EXP (PERSONAL)

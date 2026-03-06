@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const storeGIftInventorySchema = new mongoose.Schema(
+const storeGiftInventorySchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -18,7 +18,7 @@ const storeGIftInventorySchema = new mongoose.Schema(
     animationUrl: String,
 
     duration: {
-      type: Number, // days
+      type: Number,
       default: 1,
     },
 
@@ -35,4 +35,4 @@ const storeGIftInventorySchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("StoreGIftInventory", storeGIftInventorySchema);
+module.exports = mongoose.model("StoreGiftInventory", storeGiftInventorySchema);

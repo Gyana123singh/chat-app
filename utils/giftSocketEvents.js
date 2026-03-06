@@ -262,8 +262,21 @@ module.exports = (io) => {
         const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
         /* ===============================
-           Save Inventory
-        =============================== */
+   Disable previous same effect
+=============================== */
+
+        await StoreGiftInventory.updateMany(
+          {
+            userId,
+            effectType: gift.effectType,
+            isActive: true,
+          },
+          { $set: { isActive: false } },
+        );
+
+        /* ===============================
+   Save Inventory
+=============================== */
 
         await StoreGiftInventory.create({
           userId,
