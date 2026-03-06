@@ -35,7 +35,11 @@ module.exports = (io) => {
         const gift = await StoreGift.findOne({
           _id: giftId,
           isAvailable: true,
-        });
+        })
+          .select("name icon animationUrl price category rarity effectType")
+          .lean();
+
+        console.log("🎁 Gift fetched from DB:", gift);
 
         if (!gift) {
           return socket.emit("store:gift:error", {
@@ -101,12 +105,17 @@ module.exports = (io) => {
            📦 Add Inventory
         =============================== */
 
+        console.log("📦 Saving inventory gift:", {
+          giftId: gift._id,
+          animationUrl: gift.animationUrl || gift.icon,
+        });
+
         await StoreGiftInventory.create({
           userId: receiverId,
           giftId: gift._id,
           effectType: gift.effectType,
           icon: gift.icon,
-          animationUrl: gift.animationUrl,
+          animationUrl: gift.animationUrl || gift.icon,
           duration: finalDuration,
           expiresAt,
           isActive: true,
@@ -130,7 +139,7 @@ module.exports = (io) => {
         if (gift.effectType === "BUBBLE") update["profile.bubble"] = gift.icon;
 
         if (gift.effectType === "ENTRANCE")
-          update["profile.entranceEffect"] = gift.animationUrl;
+          update["profile.entranceEffect"] = gift.animationUrl || gift.icon;
 
         if (gift.effectType === "THEME")
           update["profile.theme"] = gift.name.toLowerCase();
@@ -173,10 +182,12 @@ module.exports = (io) => {
             giftId: gift._id,
             name: gift.name,
             icon: gift.icon,
-            animationUrl: gift.animationUrl,
+            animationUrl: gift.animationUrl || gift.icon,
             rarity: gift.rarity,
             duration: 4,
           };
+
+          console.log("🚀 Gift payload:", payload);
 
           io.to(`room:${roomId}`).emit("room:effect", payload);
           io.to(`room:${roomId}`).emit("gift:received", payload);
@@ -190,7 +201,7 @@ module.exports = (io) => {
           giftId: gift._id,
           name: gift.name,
           icon: gift.icon,
-          animationUrl: gift.animationUrl,
+          animationUrl: gift.animationUrl || gift.icon,
           effectType: gift.effectType,
           duration: finalDuration,
         });
@@ -220,7 +231,11 @@ module.exports = (io) => {
         const gift = await StoreGift.findOne({
           _id: giftId,
           isAvailable: true,
-        });
+        })
+          .select("name icon animationUrl price category rarity effectType")
+          .lean();
+
+        console.log("🛒 Gift fetched for self buy:", gift);
 
         if (!gift) {
           return socket.emit("store:gift:error", {
@@ -283,7 +298,7 @@ module.exports = (io) => {
           giftId: gift._id,
           effectType: gift.effectType,
           icon: gift.icon,
-          animationUrl: gift.animationUrl,
+          animationUrl: gift.animationUrl || gift.icon,
           duration: finalDuration,
           expiresAt,
           isActive: true,
@@ -303,7 +318,7 @@ module.exports = (io) => {
         }
 
         if (gift.effectType === "ENTRANCE") {
-          update["profile.entranceEffect"] = gift.animationUrl;
+          update["profile.entranceEffect"] = gift.animationUrl || gift.icon;
         }
 
         if (Object.keys(update).length > 0) {
@@ -334,7 +349,7 @@ module.exports = (io) => {
           giftId: gift._id,
           name: gift.name,
           icon: gift.icon,
-          animationUrl: gift.animationUrl,
+          animationUrl: gift.animationUrl || gift.icon,
           effectType: gift.effectType,
           duration: finalDuration,
           balance: user.coins,

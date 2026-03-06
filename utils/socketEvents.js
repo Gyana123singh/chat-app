@@ -386,9 +386,9 @@ module.exports = (io) => {
         // 🎬 Cinematic entrance when user joins room
 
         try {
-          const userDoc = await User.findById(userId).select(
-            "username profile.avatar level profile.entranceEffect",
-          );
+          const userDoc = await User.findById(userId)
+            .select("username profile.avatar level profile.entranceEffect")
+            .lean();
 
           // Check active entrance gift
           const activeEntrance = await StoreGiftInventory.findOne({
@@ -397,6 +397,8 @@ module.exports = (io) => {
             isActive: true,
             expiresAt: { $gt: new Date() },
           }).lean();
+
+          console.log("🎬 Active entrance inventory:", activeEntrance);
 
           const animationUrl =
             activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
