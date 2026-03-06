@@ -210,14 +210,12 @@ exports.createGift = async (req, res) => {
       const fileUrl = req.file.path;
       const mimeType = req.file.mimetype;
 
-      // ✅ All image/video types allowed
-      if (mimeType.startsWith("image/") || mimeType === "video/mp4") {
-        icon = fileUrl;
+      icon = fileUrl;
 
-        // 🔥 If ENTRANCE gift → always use animation
-        if (category === "ENTRANCE") {
-          animationUrl = fileUrl;
-        }
+      const animationTypes = ["image/gif", "video/mp4", "video/webm"];
+
+      if (animationTypes.includes(mimeType)) {
+        animationUrl = fileUrl;
       }
     }
 
