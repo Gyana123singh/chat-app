@@ -317,6 +317,7 @@ module.exports = (io) => {
        ROOM JOIN
     ========================= */
     socket.on("room:join", async ({ roomId, user }) => {
+      socket.data.isWatcher = false;
       if (!roomId) return;
 
       const safeUser = user || socket.data.user;
@@ -556,6 +557,11 @@ module.exports = (io) => {
     });
 
     socket.on("gift:send", async (payload) => {
+      if (socket.data.isWatcher) {
+        return socket.emit("gift:error", {
+          message: "Join room to send gifts",
+        });
+      }
       try {
         const fromUserId = socket.data.userId;
 
@@ -753,6 +759,10 @@ module.exports = (io) => {
     });
 
     socket.on("pk:vote", async ({ roomId, pkId, toUserId }) => {
+      if (socket.data.isWatcher) {
+        return socket.emit("error", { message: "Join room to vote" });
+      }
+
       try {
         const pk = await PKBattle.findById(pkId);
         if (!pk || pk.status !== "running") return;
@@ -800,6 +810,9 @@ module.exports = (io) => {
 
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
+      if (socket.data.isWatcher) {
+        return socket.emit("error", { message: "Join room to send images" });
+      }
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !imageUrl) return;
@@ -830,6 +843,7 @@ module.exports = (io) => {
 ========================= */
 
     socket.on("video:play", ({ roomId, userId }) => {
+      if (socket.data.isWatcher) return;
       if (!roomId) return;
 
       // ✅ socket only broadcasts (no DB write)
@@ -839,6 +853,7 @@ module.exports = (io) => {
     });
 
     socket.on("video:pause", ({ roomId }) => {
+      if (socket.data.isWatcher) return;
       if (!roomId) return;
 
       io.to(`room:${roomId}`).emit("video:paused");
@@ -862,6 +877,7 @@ module.exports = (io) => {
 
     // Host starts video streaming
     socket.on("video:stream:start", ({ roomId }) => {
+      if (socket.data.isWatcher) return;
       if (!roomId) return;
 
       console.log("🎬 Video stream start request:", roomId);
@@ -906,6 +922,7 @@ module.exports = (io) => {
        MIC CONTROLS
     ========================= */
     socket.on("mic:mute", () => {
+      if (socket.data.isWatcher) return;
       const { userId, roomId } = socket.data;
       if (!userId || !roomId) return;
 
@@ -923,6 +940,7 @@ module.exports = (io) => {
     });
 
     socket.on("mic:unmute", () => {
+      if (socket.data.isWatcher) return;
       const { userId, roomId } = socket.data;
       if (!userId || !roomId) return;
 
@@ -940,6 +958,7 @@ module.exports = (io) => {
     });
 
     socket.on("mic:speaking", (speaking) => {
+      if (socket.data.isWatcher) return;
       const { userId, roomId } = socket.data;
       if (!userId || !roomId) return;
 
@@ -989,6 +1008,9 @@ module.exports = (io) => {
        EMOJI
     ========================= */
     socket.on("send_emoji", ({ roomId, userId, emoji }) => {
+      if (socket.data.isWatcher) {
+        return socket.emit("error", { message: "Join room to send emoji" });
+      }
       if (!roomId || !userId || !emoji) return;
 
       io.to(`room:${roomId}`).emit("receive_emoji", {
@@ -1035,6 +1057,9 @@ module.exports = (io) => {
        CHAT
     ========================= */
     socket.on("message:send", ({ roomId, text }) => {
+      if (socket.data.isWatcher) {
+        return socket.emit("error", { message: "Join room to chat" });
+      }
       const { userId, username, avatar } = socket.data;
       if (!roomId || !text || !userId) return;
 
@@ -1056,6 +1081,7 @@ module.exports = (io) => {
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
+      if (socket.data.isWatcher) return;
       const { userId, username } = socket.data;
       if (!roomId || !userId) return;
 
