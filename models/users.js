@@ -1,207 +1,248 @@
-// models/User.js - REFACTORED
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
-  {
-    firebaseUid: String,
+{
+  firebaseUid: String,
 
-    // 🆔 Public Account ID
-    diiId: {
+  // 🆔 Public Account ID
+  diiId: {
+    type: String,
+    unique: true,
+  },
+
+  username: {
+    type: String,
+    unique: true,
+    trim: true,
+    minlength: 3,
+  },
+
+  email: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
+
+  password: {
+    type: String,
+    minlength: 6,
+    select: false,
+  },
+
+  googleId: {
+    type: String,
+    default: null,
+    index: true,
+  },
+
+  phone: {
+    type: String,
+    sparse: true,
+    trim: true,
+    default: undefined,
+  },
+
+  profile: {
+    avatar: {
       type: String,
-      unique: true,
+      default: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
     },
 
-    username: {
+    badge: {
       type: String,
-      unique: true,
-      trim: true,
-      minlength: 3,
-    },
-
-    email: {
-      type: String,
-      unique: true,
-      sparse: true,
-    },
-
-    password: {
-      type: String,
-      minlength: 6,
-      select: false,
-    },
-
-    googleId: {
-      type: String,
-      default: null,
-      index: true,
-    },
-
-    phone: {
-      type: String,
-      sparse: true,
-      trim: true,
-      default: undefined,
-    },
-
-    profile: {
-      avatar: {
-        type: String,
-        default: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
-      },
-      badge: {
-        type: String,
-        default: null, // cp_active
-      },
-
-      avatarSource: {
-        type: String,
-        enum: ["google", "custom"],
-        default: "custom",
-      },
-      bio: { type: String, default: "", maxlength: 250 },
-      language: {
-        type: String,
-        enum: ["English", "Hindi", "Tamil", "Telugu", "Urdu"],
-        default: "English",
-      },
-      frame: { type: String, default: null },
-      ring: { type: String, default: null },
-      bubble: { type: String, default: null },
-      entranceEffect: { type: String, default: null },
-      theme: {
-        type: String,
-        enum: ["light", "dark"],
-        default: "dark",
-      },
-      interests: [String],
-    },
-    coins: {
-      type: Number,
-      default: 0,
-      min: 0, // ← Prevent negative coins
-    },
-    stats: {
-      followers: { type: Number, default: 0 },
-      following: { type: Number, default: 0 },
-      giftsReceived: { type: Number, default: 0 },
-      totalHostingMinutes: { type: Number, default: 0 },
-    },
-
-    isVerified: { type: Boolean, default: false },
-    role: {
-      type: String,
-      enum: ["user", "host", "admin"],
-      default: "user",
-    },
-    isActive: { type: Boolean, default: true },
-
-    lastSeen: {
-      type: Date,
-      default: Date.now,
-    },
-
-    // 🔐 SECURITY
-    lastLogin: {
-      type: Date,
       default: null,
     },
 
-    biometricEnabled: {
-      type: Boolean,
-      default: false,
-    },
-
-    accountProtection: {
+    avatarSource: {
       type: String,
-      enum: ["Low", "Medium", "High"],
-      default: "High",
+      enum: ["google", "custom"],
+      default: "custom",
     },
 
-    // 🔗 THIRD PARTY BIND
-    thirdParty: {
-      google: { type: Boolean, default: false },
-      facebook: { type: Boolean, default: false },
+    bio: {
+      type: String,
+      default: "",
+      maxlength: 250,
     },
 
-    // 🧾 LOGIN HISTORY
-    loginHistory: [
-      {
-        device: String,
-        ip: String,
-        location: String,
-        loggedAt: { type: Date, default: Date.now },
+    language: {
+      type: String,
+      enum: ["English", "Hindi", "Tamil", "Telugu", "Urdu"],
+      default: "English",
+    },
+
+    // ✅ FIXED FRAME STRUCTURE
+    frame: {
+      icon: {
+        type: String,
+        default: null,
       },
-    ],
-
-    authProvider: {
-      type: String,
-      enum: ["email", "firebase-phone", "google"],
-      default: "firebase-phone",
-    },
-
-    country: {
-      type: String,
-      enum: ["IN", "PK", "BD"],
-    },
-    countryCode: {
-      type: String,
-      enum: ["+91", "+92", "+880"],
-    },
-
-    totalSpent: {
-      type: Number,
-      default: 0,
-    },
-    totalEarned: {
-      type: Number,
-      default: 0,
-    },
-    // Add to user schema
-    level: {
-      personal: {
-        level: { type: Number, default: 1 },
-        exp: { type: Number, default: 0 },
-      },
-      room: {
-        level: { type: Number, default: 1 },
-        exp: { type: Number, default: 0 },
+      expiresAt: {
+        type: Date,
+        default: null,
       },
     },
-    // Add to user schema in models/users.js
-    // in models/users.js
 
-    pkStats: {
-      wins: { type: Number, default: 0 },
-      losses: { type: Number, default: 0 },
-      draws: { type: Number, default: 0 },
-      totalSupportSent: { type: Number, default: 0 },
-      totalSupportReceived: { type: Number, default: 0 },
+    ring: {
+      type: String,
+      default: null,
     },
 
-    trophy: {
-      totalContributions: { type: Number, default: 0 },
-      totalCoinsEarned: { type: Number, default: 0 },
-      currentStreak: { type: Number, default: 0 },
-      longestStreak: { type: Number, default: 0 },
-      lastContributionDate: Date,
-      level: { type: Number, default: 1 }, // Bronze, Silver, Gold, Platinum
-      achievements: [
-        {
-          achievementId: String,
-          achievementName: String,
-          unlockedAt: Date,
-        },
-      ],
+    bubble: {
+      type: String,
+      default: null,
+    },
+
+    entranceEffect: {
+      type: String,
+      default: null,
+    },
+
+    theme: {
+      type: String,
+      enum: ["light", "dark"],
+      default: "dark",
+    },
+
+    interests: [String],
+  },
+
+  coins: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+
+  stats: {
+    followers: { type: Number, default: 0 },
+    following: { type: Number, default: 0 },
+    giftsReceived: { type: Number, default: 0 },
+    totalHostingMinutes: { type: Number, default: 0 },
+  },
+
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
+
+  role: {
+    type: String,
+    enum: ["user", "host", "admin"],
+    default: "user",
+  },
+
+  isActive: {
+    type: Boolean,
+    default: true,
+  },
+
+  lastSeen: {
+    type: Date,
+    default: Date.now,
+  },
+
+  lastLogin: {
+    type: Date,
+    default: null,
+  },
+
+  biometricEnabled: {
+    type: Boolean,
+    default: false,
+  },
+
+  accountProtection: {
+    type: String,
+    enum: ["Low", "Medium", "High"],
+    default: "High",
+  },
+
+  thirdParty: {
+    google: { type: Boolean, default: false },
+    facebook: { type: Boolean, default: false },
+  },
+
+  loginHistory: [
+    {
+      device: String,
+      ip: String,
+      location: String,
+      loggedAt: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+  ],
+
+  authProvider: {
+    type: String,
+    enum: ["email", "firebase-phone", "google"],
+    default: "firebase-phone",
+  },
+
+  country: {
+    type: String,
+    enum: ["IN", "PK", "BD"],
+  },
+
+  countryCode: {
+    type: String,
+    enum: ["+91", "+92", "+880"],
+  },
+
+  totalSpent: {
+    type: Number,
+    default: 0,
+  },
+
+  totalEarned: {
+    type: Number,
+    default: 0,
+  },
+
+  level: {
+    personal: {
+      level: { type: Number, default: 1 },
+      exp: { type: Number, default: 0 },
+    },
+    room: {
+      level: { type: Number, default: 1 },
+      exp: { type: Number, default: 0 },
     },
   },
-  { timestamps: true },
+
+  pkStats: {
+    wins: { type: Number, default: 0 },
+    losses: { type: Number, default: 0 },
+    draws: { type: Number, default: 0 },
+    totalSupportSent: { type: Number, default: 0 },
+    totalSupportReceived: { type: Number, default: 0 },
+  },
+
+  trophy: {
+    totalContributions: { type: Number, default: 0 },
+    totalCoinsEarned: { type: Number, default: 0 },
+    currentStreak: { type: Number, default: 0 },
+    longestStreak: { type: Number, default: 0 },
+    lastContributionDate: Date,
+    level: { type: Number, default: 1 },
+
+    achievements: [
+      {
+        achievementId: String,
+        achievementName: String,
+        unlockedAt: Date,
+      },
+    ],
+  },
+
+},
+{ timestamps: true }
 );
 
-// ✅ Index for coin-based queries (leaderboards, etc.)
+// Indexes
 userSchema.index({ "stats.coins": -1 });
-
-// ✅ Index for user activity queries
 userSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("User", userSchema);

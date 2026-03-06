@@ -228,7 +228,7 @@ module.exports = (io) => {
 
   io.on("connection", (socket) => {
     console.log("✅ Socket connected:", socket.id);
-
+    registerStoreGiftSocket(socket, io);
     /* =========================
        USER CONNECT
     ========================= */
@@ -244,6 +244,73 @@ module.exports = (io) => {
       micStates.set(userId, { muted: false, speaking: false });
 
       console.log("🟢 User connected:", { userId, username });
+    });
+
+    /* =========================
+   ROOM WATCH (AUDIENCE MODE)
+========================= */
+    socket.on("room:watch", async ({ roomId }) => {
+      if (!roomId) return;
+
+      const roomName = `room:${roomId}`;
+
+      socket.join(roomName);
+
+      socket.data.roomId = roomId;
+      socket.data.isWatcher = true;
+
+      console.log("👀 User watching room:", roomId);
+
+      try {
+        /* ===== USERS LIST ===== */
+        const sockets = await io.in(roomName).fetchSockets();
+
+        const usersInRoom = sockets
+          .filter((s) => s.data.user && !s.data.isWatcher)
+          .map((s) => ({
+            ...s.data.user,
+            mic: micStates.get(s.data.user.id) || {
+              muted: false,
+              speaking: false,
+            },
+          }));
+
+        socket.emit("room:users", usersInRoom);
+
+        /* ===== MESSAGES ===== */
+        const messages = roomMessages.get(roomId) || [];
+        socket.emit("room:messages", messages);
+
+        /* ===== MUSIC ===== */
+        const currentMusicState = roomManager.getState(roomId);
+        const currentPosition = roomManager.getCurrentPosition(roomId);
+
+        socket.emit("room:musicState", {
+          ...currentMusicState,
+          currentPosition,
+        });
+
+        /* ===== VIDEO ===== */
+        const videoRoom = await VideoRoom.findOne({ roomId });
+
+        if (videoRoom) {
+          socket.emit("room:videoState", {
+            video: videoRoom.video,
+          });
+        }
+
+        /* ===== PK STATE ===== */
+        const roomDoc = await Room.findOne({ roomId });
+
+        if (roomDoc && roomDoc.activePK) {
+          const pk = await PKBattle.findById(roomDoc.activePK);
+          if (pk && pk.status === "running") {
+            socket.emit("pk:started", pk);
+          }
+        }
+      } catch (err) {
+        console.error("❌ room:watch error:", err);
+      }
     });
 
     /* =========================
@@ -327,24 +394,28 @@ module.exports = (io) => {
         /* ===== USERS LIST ===== */
         const sockets = await io.in(roomName).fetchSockets();
 
-        const usersInRoom = await Promise.all(
-          sockets
-            .filter((s) => s.data.user && s.id !== socket.id)
-            .map(async (s) => {
-              const userDoc = await User.findById(s.data.user.id)
-                .select("profile.frame")
-                .lean();
+        const userIds = sockets
+          .filter((s) => s.data.user && s.id !== socket.id)
+          .map((s) => s.data.user.id);
 
-              return {
-                ...s.data.user,
-                frame: userDoc?.profile?.frame || null,
-                mic: micStates.get(s.data.user.id) || {
-                  muted: false,
-                  speaking: false,
-                },
-              };
-            }),
+        const users = await User.find({ _id: { $in: userIds } })
+          .select("profile.frame")
+          .lean();
+
+        const frameMap = new Map(
+          users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null]),
         );
+
+        const usersInRoom = sockets
+          .filter((s) => s.data.user && s.id !== socket.id)
+          .map((s) => ({
+            ...s.data.user,
+            frame: frameMap.get(s.data.user.id) || null,
+            mic: micStates.get(s.data.user.id) || {
+              muted: false,
+              speaking: false,
+            },
+          }));
 
         socket.emit("room:users", usersInRoom);
         socket.to(roomName).emit("room:userJoined", safeUser);
@@ -1348,7 +1419,7 @@ module.exports = (io) => {
       }
     });
   });
-  registerStoreGiftSocket(io);
+
   return {
     getMicStates: () => micStates,
     getRoomUsers: () => roomUsers,
