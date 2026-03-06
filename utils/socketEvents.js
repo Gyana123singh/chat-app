@@ -649,7 +649,7 @@ module.exports = (io) => {
             _id: gift._id,
             name: gift.name,
             icon: gift.icon,
-            animationUrl: gift.animationUrl,
+            animationUrl: gift.animationUrl || gift.icon,
             price: gift.price,
             rarity: gift.rarity,
             effectType: gift.effectType,

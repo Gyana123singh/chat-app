@@ -47,7 +47,7 @@ module.exports = (io) => {
           });
         }
 
-        const receiver = await User.findById(receiverId);
+        const receiver = await User.findById(receiverId).select("_id").lean();
 
         if (!receiver) {
           return socket.emit("store:gift:error", {
@@ -92,14 +92,16 @@ module.exports = (io) => {
            🧹 Disable previous same effect
         =============================== */
 
-        await StoreGiftInventory.updateMany(
-          {
-            userId: receiverId,
-            effectType: gift.effectType,
-            isActive: true,
-          },
-          { $set: { isActive: false } },
-        );
+        if (gift.effectType !== "NONE") {
+          await StoreGiftInventory.updateMany(
+            {
+              userId: receiverId,
+              effectType: gift.effectType,
+              isActive: true,
+            },
+            { $set: { isActive: false } },
+          );
+        }
 
         /* ===============================
            📦 Add Inventory
@@ -280,14 +282,16 @@ module.exports = (io) => {
    Disable previous same effect
 =============================== */
 
-        await StoreGiftInventory.updateMany(
-          {
-            userId,
-            effectType: gift.effectType,
-            isActive: true,
-          },
-          { $set: { isActive: false } },
-        );
+        if (gift.effectType !== "NONE") {
+          await StoreGiftInventory.updateMany(
+            {
+              userId,
+              effectType: gift.effectType,
+              isActive: true,
+            },
+            { $set: { isActive: false } },
+          );
+        }
 
         /* ===============================
    Save Inventory
