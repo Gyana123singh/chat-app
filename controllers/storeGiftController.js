@@ -192,7 +192,6 @@ exports.deleteGift = async (req, res) => {
 /* ===============================
    CREATE GIFT (ADMIN)
 ================================ */
-
 exports.createGift = async (req, res) => {
   try {
     const { name, price, category, description, effectType, rarity } = req.body;
@@ -211,18 +210,35 @@ exports.createGift = async (req, res) => {
       const fileUrl = req.file.path;
       const mimeType = req.file.mimetype;
 
+      // IMAGE
       if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
         icon = fileUrl;
-      } else if (mimeType === "image/gif") {
-        animationUrl = fileUrl;
-        icon = fileUrl;
-      } else if (mimeType === "video/mp4") {
-        animationUrl = fileUrl;
-        icon = fileUrl;
-      } else if (mimeType === "application/pdf") {
+      }
+
+      // GIF
+      else if (mimeType === "image/gif") {
         animationUrl = fileUrl;
         icon = fileUrl;
       }
+
+      // VIDEO
+      else if (mimeType === "video/mp4") {
+        animationUrl = fileUrl;
+        icon = fileUrl;
+      }
+
+      // PDF
+      else if (mimeType === "application/pdf") {
+        animationUrl = fileUrl;
+        icon = fileUrl;
+      }
+    }
+
+    // 🔥 FIX: auto-set effectType
+    let finalEffectType = category;
+
+    if (effectType && effectType !== "NONE") {
+      finalEffectType = effectType;
     }
 
     const gift = await StoreGift.create({
@@ -232,7 +248,7 @@ exports.createGift = async (req, res) => {
       description: description || "",
       icon,
       animationUrl,
-      effectType: effectType || category, // ✅ FIX
+      effectType: finalEffectType,
       rarity: rarity || "common",
     });
 
