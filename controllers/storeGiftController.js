@@ -226,19 +226,17 @@ exports.createGift = async (req, res) => {
         animationUrl = fileUrl;
         icon = fileUrl;
       }
-
-      // PDF
-      else if (mimeType === "application/pdf") {
-        animationUrl = fileUrl;
-        icon = fileUrl;
-      }
     }
 
-    // 🔥 FIX: auto-set effectType
-    let finalEffectType = category;
+    // 🔥 FIX EFFECT TYPE
+    let finalEffectType = effectType || category || "NONE";
 
-    if (effectType && effectType !== "NONE") {
-      finalEffectType = effectType;
+    // 🔥 ENTRANCE must have animation
+    if (finalEffectType === "ENTRANCE" && !animationUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "ENTRANCE gift must include a GIF or MP4 animation",
+      });
     }
 
     const gift = await StoreGift.create({
