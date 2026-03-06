@@ -210,33 +210,15 @@ exports.createGift = async (req, res) => {
       const fileUrl = req.file.path;
       const mimeType = req.file.mimetype;
 
-      // IMAGE
-      if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
+      // ✅ All image/video types allowed
+      if (mimeType.startsWith("image/") || mimeType === "video/mp4") {
         icon = fileUrl;
+
+        // 🔥 If ENTRANCE gift → always use animation
+        if (category === "ENTRANCE") {
+          animationUrl = fileUrl;
+        }
       }
-
-      // GIF
-      else if (mimeType === "image/gif") {
-        animationUrl = fileUrl;
-        icon = fileUrl;
-      }
-
-      // VIDEO
-      else if (mimeType === "video/mp4") {
-        animationUrl = fileUrl;
-        icon = fileUrl;
-      }
-    }
-
-    // 🔥 FIX EFFECT TYPE
-    let finalEffectType = effectType || category || "NONE";
-
-    // 🔥 ENTRANCE must have animation
-    if (finalEffectType === "ENTRANCE" && !animationUrl) {
-      return res.status(400).json({
-        success: false,
-        message: "ENTRANCE gift must include a GIF or MP4 animation",
-      });
     }
 
     const gift = await StoreGift.create({
@@ -246,7 +228,7 @@ exports.createGift = async (req, res) => {
       description: description || "",
       icon,
       animationUrl,
-      effectType: finalEffectType,
+      effectType: effectType || category,
       rarity: rarity || "common",
     });
 
