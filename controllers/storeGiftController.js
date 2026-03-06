@@ -211,25 +211,15 @@ exports.createGift = async (req, res) => {
       const fileUrl = req.file.path;
       const mimeType = req.file.mimetype;
 
-      // IMAGE (jpg, png)
       if (mimeType.startsWith("image/") && mimeType !== "image/gif") {
         icon = fileUrl;
-      }
-
-      // GIF
-      else if (mimeType === "image/gif") {
+      } else if (mimeType === "image/gif") {
         animationUrl = fileUrl;
         icon = fileUrl;
-      }
-
-      // MP4 VIDEO
-      else if (mimeType === "video/mp4") {
+      } else if (mimeType === "video/mp4") {
         animationUrl = fileUrl;
-        icon = fileUrl; // can replace later with thumbnail
-      }
-
-      // PDF
-      else if (mimeType === "application/pdf") {
+        icon = fileUrl;
+      } else if (mimeType === "application/pdf") {
         animationUrl = fileUrl;
         icon = fileUrl;
       }
@@ -242,7 +232,7 @@ exports.createGift = async (req, res) => {
       description: description || "",
       icon,
       animationUrl,
-      effectType: effectType || "NONE",
+      effectType: effectType || category, // ✅ FIX
       rarity: rarity || "common",
     });
 
