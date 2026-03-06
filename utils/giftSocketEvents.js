@@ -150,6 +150,23 @@ module.exports = (io) => {
           await User.findByIdAndUpdate(receiverId, { $set: update });
         }
 
+        // 🔥 Notify room about new frame
+        if (gift.effectType === "FRAME" && roomId) {
+          io.to(`room:${roomId}`).emit("user:frame:update", {
+            userId: receiverId,
+            frame: {
+              icon: gift.icon,
+              expiresAt,
+            },
+          });
+        }
+        // 🔥 Notify room theme change
+        if (gift.effectType === "THEME" && roomId) {
+          io.to(`room:${roomId}`).emit("room:theme:update", {
+            theme: gift.name.toLowerCase(),
+            triggeredBy: senderId,
+          });
+        }
         /* ===============================
            🧾 Save Transaction
         =============================== */

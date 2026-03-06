@@ -327,15 +327,24 @@ module.exports = (io) => {
         /* ===== USERS LIST ===== */
         const sockets = await io.in(roomName).fetchSockets();
 
-        const usersInRoom = sockets
-          .filter((s) => s.data.user && s.id !== socket.id)
-          .map((s) => ({
-            ...s.data.user,
-            mic: micStates.get(s.data.user.id) || {
-              muted: false,
-              speaking: false,
-            },
-          }));
+        const usersInRoom = await Promise.all(
+          sockets
+            .filter((s) => s.data.user && s.id !== socket.id)
+            .map(async (s) => {
+              const userDoc = await User.findById(s.data.user.id)
+                .select("profile.frame")
+                .lean();
+
+              return {
+                ...s.data.user,
+                frame: userDoc?.profile?.frame || null,
+                mic: micStates.get(s.data.user.id) || {
+                  muted: false,
+                  speaking: false,
+                },
+              };
+            }),
+        );
 
         socket.emit("room:users", usersInRoom);
         socket.to(roomName).emit("room:userJoined", safeUser);
