@@ -9,6 +9,7 @@ module.exports = (io) => {
     /* =========================================================
        🎁 SEND STORE GIFT TO ANOTHER USER
     ========================================================== */
+
     socket.on("store:gift:send", async (payload) => {
       try {
         const senderId = socket.data.userId;
@@ -25,8 +26,8 @@ module.exports = (io) => {
         }
 
         /* ===============================
-           🎁 Find Gift
-        =============================== */
+   🎁 Find Gift
+=============================== */
 
         const gift = await StoreGift.findOne({
           _id: giftId,
@@ -40,7 +41,6 @@ module.exports = (io) => {
         }
 
         const receiver = await User.findById(receiverId);
-
         if (!receiver) {
           return socket.emit("store:gift:error", {
             message: "Receiver not found",
@@ -48,8 +48,8 @@ module.exports = (io) => {
         }
 
         /* ===============================
-           💰 Deduct Coins
-        =============================== */
+   💰 Deduct Coins
+=============================== */
 
         const sender = await User.findOneAndUpdate(
           { _id: senderId, coins: { $gte: gift.price } },
@@ -69,15 +69,15 @@ module.exports = (io) => {
         }
 
         /* ===============================
-           ⏳ Duration Logic
-        =============================== */
+   ⏳ Duration Logic
+=============================== */
 
         const finalDuration = gift.effectType === "ENTRANCE" ? 3 : duration;
         const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
         /* ===============================
-           🧹 Disable previous same effect
-        =============================== */
+   🧹 Disable previous same effect
+=============================== */
 
         await StoreGiftInventory.updateMany(
           {
@@ -89,8 +89,8 @@ module.exports = (io) => {
         );
 
         /* ===============================
-           📦 Add inventory
-        =============================== */
+   📦 Add Inventory
+=============================== */
 
         await StoreGiftInventory.create({
           userId: receiverId,
@@ -104,8 +104,8 @@ module.exports = (io) => {
         });
 
         /* ===============================
-           👤 Apply profile effects
-        =============================== */
+   👤 Apply Profile Effect
+=============================== */
 
         const update = {};
 
@@ -122,8 +122,8 @@ module.exports = (io) => {
         }
 
         /* ===============================
-           🧾 Save transaction
-        =============================== */
+   🧾 Save Transaction
+=============================== */
 
         await StoreGiftTransaction.create({
           senderId,
@@ -141,51 +141,39 @@ module.exports = (io) => {
           completedAt: new Date(),
         });
 
+        /* ===============================
+   🎬 BROADCAST GIFT ANIMATION TO ROOM
+=============================== */
+
         if (roomId) {
           const senderUser = await User.findById(senderId).select(
             "username profile.avatar",
           );
 
-          io.to(`room:${roomId}`).emit("gift:received", {
+          const payload = {
+            type: "GIFT",
             fromUserId: senderId,
             fromUsername: senderUser?.username || "User",
             fromAvatar: senderUser?.profile?.avatar || null,
-            recipientIds: [receiverId],
-            gift: {
-              _id: gift._id,
-              name: gift.name,
-              icon: gift.icon,
-              animationUrl: gift.animationUrl,
-              price: gift.price,
-              rarity: gift.rarity,
-              effectType: gift.effectType,
-            },
-            quantity: 1,
-          });
-        }
-        /* ===============================
-           🎬 Cinematic Entrance
-        =============================== */
-
-        if (roomId && gift.effectType === "ENTRANCE") {
-          const userData = await User.findById(receiverId).select(
-            "username profile.avatar level",
-          );
-
-          io.to(`room:${roomId}`).emit("room:cinematicEntrance", {
-            userId: receiverId,
-            username: userData?.username || "User",
-            avatar: userData?.profile?.avatar || null,
-            level: userData?.level || 1,
+            toUserId: receiverId,
+            giftId: gift._id,
+            name: gift.name,
+            icon: gift.icon,
             animationUrl: gift.animationUrl,
-            soundUrl: gift.soundUrl || null,
-            rarity: gift.rarity || "normal",
-          });
+            rarity: gift.rarity,
+            duration: 4,
+          };
+
+          // Universal event
+          io.to(`room:${roomId}`).emit("room:effect", payload);
+
+          // Existing event used by Flutter gift animation system
+          io.to(`room:${roomId}`).emit("gift:received", payload);
         }
 
         /* ===============================
-           📩 Notify receiver
-        =============================== */
+   📩 Notify Receiver
+=============================== */
 
         io.to(receiverId.toString()).emit("store:gift:received", {
           giftId: gift._id,
