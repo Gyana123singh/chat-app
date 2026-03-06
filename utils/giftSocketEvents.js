@@ -125,7 +125,6 @@ module.exports = (socket, io) => {
       /* ===============================
            👤 Apply Profile Effect
         =============================== */
-
       const update = {};
 
       if (gift.effectType === "FRAME") {
@@ -135,18 +134,46 @@ module.exports = (socket, io) => {
         };
       }
 
-      if (gift.effectType === "RING") update["profile.ring"] = gift.icon;
+      if (gift.effectType === "RING") {
+        update["profile.ring"] = gift.icon;
+      }
 
-      if (gift.effectType === "BUBBLE") update["profile.bubble"] = gift.icon;
+      if (gift.effectType === "BUBBLE") {
+        update["profile.bubble"] = gift.icon;
+      }
 
-      if (gift.effectType === "ENTRANCE")
+      if (gift.effectType === "ENTRANCE") {
         update["profile.entranceEffect"] = gift.animationUrl || gift.icon;
+      }
 
-      if (gift.effectType === "THEME")
+      if (gift.effectType === "THEME") {
         update["profile.theme"] = gift.name.toLowerCase();
+      }
 
       if (Object.keys(update).length > 0) {
         await User.findByIdAndUpdate(receiverId, { $set: update });
+
+        /* ===============================
+     🔔 GLOBAL PROFILE UPDATE
+  =============================== */
+
+        io.to(receiverId.toString()).emit("profile:update", {
+          effectType: gift.effectType,
+          frame:
+            gift.effectType === "FRAME"
+              ? {
+                  icon: gift.icon,
+                  expiresAt,
+                }
+              : null,
+          ring: gift.effectType === "RING" ? gift.icon : null,
+          bubble: gift.effectType === "BUBBLE" ? gift.icon : null,
+          entranceEffect:
+            gift.effectType === "ENTRANCE"
+              ? gift.animationUrl || gift.icon
+              : null,
+          theme: gift.effectType === "THEME" ? gift.name.toLowerCase() : null,
+        });
       }
 
       // 🔥 Notify room about new frame
@@ -354,7 +381,29 @@ module.exports = (socket, io) => {
       }
 
       if (Object.keys(update).length > 0) {
-        await User.findByIdAndUpdate(userId, { $set: update });
+        await User.findByIdAndUpdate(receiverId, { $set: update });
+
+        /* ===============================
+     🔔 GLOBAL PROFILE UPDATE
+  =============================== */
+
+        io.to(receiverId.toString()).emit("profile:update", {
+          effectType: gift.effectType,
+          frame:
+            gift.effectType === "FRAME"
+              ? {
+                  icon: gift.icon,
+                  expiresAt,
+                }
+              : null,
+          ring: gift.effectType === "RING" ? gift.icon : null,
+          bubble: gift.effectType === "BUBBLE" ? gift.icon : null,
+          entranceEffect:
+            gift.effectType === "ENTRANCE"
+              ? gift.animationUrl || gift.icon
+              : null,
+          theme: gift.effectType === "THEME" ? gift.name.toLowerCase() : null,
+        });
       }
 
       /* ===============================

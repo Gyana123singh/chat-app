@@ -10,16 +10,13 @@ async function expireStoreGifts() {
       isActive: true,
     });
 
-    if (expiredGifts.length === 0) return;
+    if (!expiredGifts.length) return;
 
     console.log(`⌛ Expiring ${expiredGifts.length} store gifts`);
 
     for (const gift of expiredGifts) {
-      // deactivate inventory
-      await StoreGiftInventory.updateOne(
-        { _id: gift._id },
-        { $set: { isActive: false } },
-      );
+      gift.isActive = false;
+      await gift.save();
 
       const update = {};
 
@@ -31,9 +28,7 @@ async function expireStoreGifts() {
       if (gift.effectType === "THEME") update["profile.theme"] = null;
 
       if (Object.keys(update).length > 0) {
-        await User.findByIdAndUpdate(gift.userId, {
-          $set: update,
-        });
+        await User.findByIdAndUpdate(gift.userId, { $set: update });
       }
     }
   } catch (err) {
