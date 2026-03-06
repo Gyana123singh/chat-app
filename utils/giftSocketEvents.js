@@ -13,6 +13,9 @@ module.exports = (io) => {
     socket.on("store:gift:send", async (payload) => {
       try {
         const senderId = socket.data.userId;
+        const senderUsername = socket.data.username;
+        const senderAvatar = socket.data.avatar;
+
         const { giftId, receiverId, roomId = null, duration = 1 } = payload;
 
         if (!senderId || !giftId || !receiverId) {
@@ -26,8 +29,8 @@ module.exports = (io) => {
         }
 
         /* ===============================
-   🎁 Find Gift
-=============================== */
+           🎁 Find Gift
+        =============================== */
 
         const gift = await StoreGift.findOne({
           _id: giftId,
@@ -41,6 +44,7 @@ module.exports = (io) => {
         }
 
         const receiver = await User.findById(receiverId);
+
         if (!receiver) {
           return socket.emit("store:gift:error", {
             message: "Receiver not found",
@@ -48,8 +52,8 @@ module.exports = (io) => {
         }
 
         /* ===============================
-   💰 Deduct Coins
-=============================== */
+           💰 Deduct Coins
+        =============================== */
 
         const sender = await User.findOneAndUpdate(
           { _id: senderId, coins: { $gte: gift.price } },
@@ -69,15 +73,20 @@ module.exports = (io) => {
         }
 
         /* ===============================
-   ⏳ Duration Logic
-=============================== */
+           ⏳ Duration Logic
+        =============================== */
 
-        const finalDuration = gift.effectType === "ENTRANCE" ? 3 : duration;
+        let finalDuration = duration;
+
+        if (gift.effectType === "ENTRANCE" || gift.effectType === "FRAME") {
+          finalDuration = 3;
+        }
+
         const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
         /* ===============================
-   🧹 Disable previous same effect
-=============================== */
+           🧹 Disable previous same effect
+        =============================== */
 
         await StoreGiftInventory.updateMany(
           {
@@ -89,8 +98,8 @@ module.exports = (io) => {
         );
 
         /* ===============================
-   📦 Add Inventory
-=============================== */
+           📦 Add Inventory
+        =============================== */
 
         await StoreGiftInventory.create({
           userId: receiverId,
@@ -104,16 +113,25 @@ module.exports = (io) => {
         });
 
         /* ===============================
-   👤 Apply Profile Effect
-=============================== */
+           👤 Apply Profile Effect
+        =============================== */
 
         const update = {};
 
-        if (gift.effectType === "FRAME") update["profile.frame"] = gift.icon;
+        if (gift.effectType === "FRAME") {
+          update["profile.frame"] = {
+            icon: gift.icon,
+            expiresAt: expiresAt,
+          };
+        }
+
         if (gift.effectType === "RING") update["profile.ring"] = gift.icon;
+
         if (gift.effectType === "BUBBLE") update["profile.bubble"] = gift.icon;
+
         if (gift.effectType === "ENTRANCE")
           update["profile.entranceEffect"] = gift.animationUrl;
+
         if (gift.effectType === "THEME")
           update["profile.theme"] = gift.name.toLowerCase();
 
@@ -122,8 +140,8 @@ module.exports = (io) => {
         }
 
         /* ===============================
-   🧾 Save Transaction
-=============================== */
+           🧾 Save Transaction
+        =============================== */
 
         await StoreGiftTransaction.create({
           senderId,
@@ -142,19 +160,15 @@ module.exports = (io) => {
         });
 
         /* ===============================
-   🎬 BROADCAST GIFT ANIMATION TO ROOM
-=============================== */
+           🎬 BROADCAST GIFT ANIMATION
+        =============================== */
 
         if (roomId) {
-          const senderUser = await User.findById(senderId).select(
-            "username profile.avatar",
-          );
-
           const payload = {
             type: "GIFT",
             fromUserId: senderId,
-            fromUsername: senderUser?.username || "User",
-            fromAvatar: senderUser?.profile?.avatar || null,
+            fromUsername: senderUsername || "User",
+            fromAvatar: senderAvatar || null,
             toUserId: receiverId,
             giftId: gift._id,
             name: gift.name,
@@ -164,16 +178,13 @@ module.exports = (io) => {
             duration: 4,
           };
 
-          // Universal event
           io.to(`room:${roomId}`).emit("room:effect", payload);
-
-          // Existing event used by Flutter gift animation system
           io.to(`room:${roomId}`).emit("gift:received", payload);
         }
 
         /* ===============================
-   📩 Notify Receiver
-=============================== */
+           📩 Notify Receiver
+        =============================== */
 
         io.to(receiverId.toString()).emit("store:gift:received", {
           giftId: gift._id,
@@ -242,17 +253,17 @@ module.exports = (io) => {
            ⏳ Duration Logic
         =============================== */
 
-        const finalDuration = gift.effectType === "ENTRANCE" ? 3 : duration;
+        let finalDuration = duration;
+
+        if (gift.effectType === "ENTRANCE" || gift.effectType === "FRAME") {
+          finalDuration = 3;
+        }
+
         const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
-        await StoreGiftInventory.updateMany(
-          {
-            userId,
-            effectType: gift.effectType,
-            isActive: true,
-          },
-          { $set: { isActive: false } },
-        );
+        /* ===============================
+           Save Inventory
+        =============================== */
 
         await StoreGiftInventory.create({
           userId,
@@ -265,19 +276,30 @@ module.exports = (io) => {
           isActive: true,
         });
 
+        /* ===============================
+           Apply Profile Effect
+        =============================== */
+
         const update = {};
 
-        if (gift.effectType === "FRAME") update["profile.frame"] = gift.icon;
-        if (gift.effectType === "RING") update["profile.ring"] = gift.icon;
-        if (gift.effectType === "BUBBLE") update["profile.bubble"] = gift.icon;
-        if (gift.effectType === "ENTRANCE")
+        if (gift.effectType === "FRAME") {
+          update["profile.frame"] = {
+            icon: gift.icon,
+            expiresAt: expiresAt,
+          };
+        }
+
+        if (gift.effectType === "ENTRANCE") {
           update["profile.entranceEffect"] = gift.animationUrl;
-        if (gift.effectType === "THEME")
-          update["profile.theme"] = gift.name.toLowerCase();
+        }
 
         if (Object.keys(update).length > 0) {
           await User.findByIdAndUpdate(userId, { $set: update });
         }
+
+        /* ===============================
+           Save Transaction
+        =============================== */
 
         await StoreGiftTransaction.create({
           senderId: userId,
