@@ -1008,9 +1008,6 @@ module.exports = (io) => {
        EMOJI
     ========================= */
     socket.on("send_emoji", ({ roomId, userId, emoji }) => {
-      if (socket.data.isWatcher) {
-        return socket.emit("error", { message: "Join room to send emoji" });
-      }
       if (!roomId || !userId || !emoji) return;
 
       io.to(`room:${roomId}`).emit("receive_emoji", {
@@ -1057,9 +1054,7 @@ module.exports = (io) => {
        CHAT
     ========================= */
     socket.on("message:send", ({ roomId, text }) => {
-      if (socket.data.isWatcher) {
-        return socket.emit("error", { message: "Join room to chat" });
-      }
+      
       const { userId, username, avatar } = socket.data;
       if (!roomId || !text || !userId) return;
 
