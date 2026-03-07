@@ -85,6 +85,7 @@ const roomSchema = new mongoose.Schema(
         },
       },
     ],
+
     maxParticipants: {
       type: Number,
       default: null,
@@ -92,6 +93,10 @@ const roomSchema = new mongoose.Schema(
     currentParticipants: {
       type: Number,
       default: 0,
+    },
+    seatCount: {
+      type: Number,
+      default: 12,
     },
     privacy: {
       type: String,

@@ -249,8 +249,8 @@ module.exports = (io) => {
     /* =========================
    ROOM WATCH (AUDIENCE MODE)
 ========================= */
-    socket.on("room:watch", async ({ roomId }) => {
-      if (!roomId) return;
+    socket.on("room:watch", async ({ roomId, user }) => {
+      if (!roomId || !user) return;
 
       const roomName = `room:${roomId}`;
 
@@ -259,8 +259,13 @@ module.exports = (io) => {
       socket.data.roomId = roomId;
       socket.data.isWatcher = true;
 
-      console.log("👀 User watching room:", roomId);
+      // ⭐ SAFE USER SETUP
+      socket.data.user = user;
+      socket.data.userId = socket.data.userId || user.id;
+      socket.data.username = user.username;
+      socket.data.avatar = user.avatar;
 
+      console.log("👀 User watching room:", roomId);
       try {
         /* ===== USERS LIST ===== */
         const sockets = await io.in(roomName).fetchSockets();
@@ -317,7 +322,6 @@ module.exports = (io) => {
        ROOM JOIN
     ========================= */
     socket.on("room:join", async ({ roomId, user }) => {
-      socket.data.isWatcher = false;
       if (!roomId) return;
 
       const safeUser = user || socket.data.user;
@@ -329,8 +333,9 @@ module.exports = (io) => {
       const roomName = `room:${roomId}`;
       socket.join(roomName);
       socket.data.roomId = roomId;
+      socket.data.isWatcher = false;
       socket.data.user = safeUser;
-
+      socket.data.userId = safeUser.id;
       const userId = safeUser.id;
       // ===============================
       // 🥊 SEND ACTIVE PK STATE (IF ANY)
@@ -1054,7 +1059,6 @@ module.exports = (io) => {
        CHAT
     ========================= */
     socket.on("message:send", ({ roomId, text }) => {
-      
       const { userId, username, avatar } = socket.data;
       if (!roomId || !text || !userId) return;
 
