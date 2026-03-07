@@ -95,14 +95,16 @@ exports.acceptRequest = async (req, res) => {
       return res.status(404).json({ message: "Request not found" });
     }
 
-    // Prevent duplicate friendship
+    // ✅ Check both directions to prevent duplicate friendship
     const alreadyFriend = await Friend.findOne({
-      userId: request.from,
-      friendId: request.to,
+      $or: [
+        { userId: request.from, friendId: request.to },
+        { userId: request.to, friendId: request.from },
+      ],
     }).session(session);
 
     if (!alreadyFriend) {
-      await Friend.create(
+      await Friend.insertMany(
         [
           { userId: request.from, friendId: request.to },
           { userId: request.to, friendId: request.from },
