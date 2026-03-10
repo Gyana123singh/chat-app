@@ -562,11 +562,6 @@ module.exports = (io) => {
     });
 
     socket.on("gift:send", async (payload) => {
-      if (socket.data.isWatcher) {
-        return socket.emit("gift:error", {
-          message: "Join room to send gifts",
-        });
-      }
       try {
         const fromUserId = socket.data.userId;
 
@@ -815,9 +810,6 @@ module.exports = (io) => {
 
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
-      if (socket.data.isWatcher) {
-        return socket.emit("error", { message: "Join room to send images" });
-      }
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !imageUrl) return;
@@ -1060,9 +1052,8 @@ module.exports = (io) => {
     ========================= */
     socket.on("message:send", ({ roomId, text }) => {
       const { userId, username, avatar } = socket.data;
-      if (!roomId || !text || !userId) return;
 
-      const roomName = `room:${roomId}`;
+      if (!roomId || !text || !userId) return;
 
       const message = {
         id: `${userId}-${Date.now()}`,
@@ -1073,10 +1064,13 @@ module.exports = (io) => {
         timestamp: new Date().toISOString(),
       };
 
-      if (!roomMessages.has(roomId)) roomMessages.set(roomId, []);
+      if (!roomMessages.has(roomId)) {
+        roomMessages.set(roomId, []);
+      }
+
       roomMessages.get(roomId).push(message);
 
-      io.to(roomName).emit("message:receive", message);
+      io.to(`room:${roomId}`).emit("message:receive", message);
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
