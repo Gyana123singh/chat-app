@@ -272,3 +272,90 @@ exports.deleteRechargePlan = async (req, res) => {
     });
   }
 };
+
+// ===============================
+// ADMIN: ADD COINS
+// ===============================
+exports.addCoinsToUser = async (req, res) => {
+  try {
+    const { email, coins } = req.body;
+
+    if (!email || !coins || coins <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and valid coin amount required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    user.coins += Number(coins);
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Coins added successfully",
+      coins: user.coins,
+    });
+  } catch (error) {
+    console.error("ADD COINS ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+// ===============================
+// ADMIN: DEDUCT COINS
+// ===============================
+exports.deductCoinsFromUser = async (req, res) => {
+  try {
+    const { email, coins } = req.body;
+
+    if (!email || !coins || coins <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and valid coin amount required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.coins < coins) {
+      return res.status(400).json({
+        success: false,
+        message: "User does not have enough coins",
+      });
+    }
+
+    user.coins -= Number(coins);
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Coins deducted successfully",
+      coins: user.coins,
+    });
+  } catch (error) {
+    console.error("DEDUCT COINS ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};

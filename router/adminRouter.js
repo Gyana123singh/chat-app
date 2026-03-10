@@ -9,6 +9,8 @@ const {
   addRechargePlan,
   getRechargePlans,
   deleteRechargePlan,
+  addCoinsToUser,
+  deductCoinsFromUser,
 } = require("../controllers/adminContrroler");
 
 router.post("/register", registerUser);
@@ -22,4 +24,6 @@ router.post("/calculate-coins", calculateCoins); // api for calculate coins
 router.post("/recharge-plan", addRechargePlan); // api for reacharge plan
 router.get("/get-recharge-plans", getRechargePlans); // api for get all recharge-plans
 router.delete("/delete-recharge-plan/:id", deleteRechargePlan); // api for get all recharge-plans
+router.post("/add-coins", addCoinsToUser);
+router.post("/deduct-coins", deductCoinsFromUser);
 module.exports = router;
