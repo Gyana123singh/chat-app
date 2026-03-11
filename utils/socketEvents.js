@@ -759,10 +759,6 @@ module.exports = (io) => {
     });
 
     socket.on("pk:vote", async ({ roomId, pkId, toUserId }) => {
-      if (socket.data.isWatcher) {
-        return socket.emit("error", { message: "Join room to vote" });
-      }
-
       try {
         const pk = await PKBattle.findById(pkId);
         if (!pk || pk.status !== "running") return;
