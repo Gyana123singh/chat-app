@@ -413,7 +413,7 @@ module.exports = (io) => {
         );
 
         const usersInRoom = sockets
-          .filter((s) => s.data.user && s.id !== socket.id)
+          .filter((s) => s.data.user && !s.data.isWatcher)
           .map((s) => ({
             ...s.data.user,
             frame: frameMap.get(s.data.user.id) || null,
