@@ -281,7 +281,7 @@ module.exports = (io) => {
             },
           }));
 
-        io.to(roomName).emit("room:users", usersInRoom);
+        socket.emit("room:users", usersInRoom);
 
         /* ===== MESSAGES ===== */
         const messages = roomMessages.get(roomId) || [];
