@@ -271,9 +271,10 @@ module.exports = (io) => {
         const sockets = await io.in(roomName).fetchSockets();
 
         const usersInRoom = sockets
-          .filter((s) => s.data.user && !s.data.isWatcher)
+          .filter((s) => s.data.user)
           .map((s) => ({
             ...s.data.user,
+            isWatcher: s.data.isWatcher || false,
             mic: micStates.get(s.data.user.id) || {
               muted: false,
               speaking: false,
@@ -401,7 +402,7 @@ module.exports = (io) => {
         const sockets = await io.in(roomName).fetchSockets();
 
         const userIds = sockets
-          .filter((s) => s.data.user && !s.data.isWatcher)
+          .filter((s) => s.data.user)
           .map((s) => s.data.user.id);
 
         const users = await User.find({ _id: { $in: userIds } })
@@ -413,9 +414,10 @@ module.exports = (io) => {
         );
 
         const usersInRoom = sockets
-          .filter((s) => s.data.user && !s.data.isWatcher)
+          .filter((s) => s.data.user)
           .map((s) => ({
             ...s.data.user,
+            isWatcher: s.data.isWatcher || false,
             frame: frameMap.get(s.data.user.id) || null,
             mic: micStates.get(s.data.user.id) || {
               muted: false,
