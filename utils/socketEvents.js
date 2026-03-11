@@ -401,7 +401,7 @@ module.exports = (io) => {
         const sockets = await io.in(roomName).fetchSockets();
 
         const userIds = sockets
-          .filter((s) => s.data.user && s.id !== socket.id)
+          .filter((s) => s.data.user && !s.data.isWatcher)
           .map((s) => s.data.user.id);
 
         const users = await User.find({ _id: { $in: userIds } })
@@ -423,8 +423,7 @@ module.exports = (io) => {
             },
           }));
 
-        socket.emit("room:users", usersInRoom);
-        socket.to(roomName).emit("room:userJoined", safeUser);
+        io.to(roomName).emit("room:users", usersInRoom);
 
         /* ===== MESSAGES ===== */
         const messages = roomMessages.get(roomId) || [];
