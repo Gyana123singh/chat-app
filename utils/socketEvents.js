@@ -1070,7 +1070,7 @@ module.exports = (io) => {
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
-      if (socket.data.isWatcher) return;
+      if (socket.data.isWatcher === true) return;
       const { userId, username } = socket.data;
       if (!roomId || !userId) return;
 
