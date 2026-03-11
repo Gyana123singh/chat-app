@@ -414,16 +414,22 @@ module.exports = (io) => {
         );
 
         const usersInRoom = sockets
-          .filter((s) => s.data.user)
-          .map((s) => ({
-            ...s.data.user,
-            isWatcher: s.data.isWatcher || false,
-            frame: frameMap.get(s.data.user.id) || null,
-            mic: micStates.get(s.data.user.id) || {
-              muted: false,
-              speaking: false,
-            },
-          }));
+          .map((s) => {
+            const user = s.data.user;
+
+            if (!user) return null;
+
+            return {
+              ...user,
+              isWatcher: s.data.isWatcher || false,
+              frame: frameMap.get(user.id) || null,
+              mic: micStates.get(user.id) || {
+                muted: false,
+                speaking: false,
+              },
+            };
+          })
+          .filter(Boolean);
 
         io.to(roomName).emit("room:users", usersInRoom);
 
