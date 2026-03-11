@@ -1070,7 +1070,6 @@ module.exports = (io) => {
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
-      if (socket.data.isWatcher === true) return;
       const { userId, username } = socket.data;
       if (!roomId || !userId) return;
 
@@ -1079,10 +1078,11 @@ module.exports = (io) => {
       if (!typingUsers.has(roomId)) typingUsers.set(roomId, new Set());
 
       const typingSet = typingUsers.get(roomId);
+
       if (isTyping) typingSet.add(userId);
       else typingSet.delete(userId);
 
-      socket.to(roomName).emit("message:typing", {
+      io.to(roomName).emit("message:typing", {
         userId,
         username,
         isTyping,
