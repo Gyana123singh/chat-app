@@ -1053,10 +1053,14 @@ module.exports = (io) => {
     /* =========================
        CHAT
     ========================= */
-    socket.on("message:send", ({ roomId, text }) => {
+    socket.on("message:send", async ({ roomId, text }) => {
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !text || !userId) return;
+
+      const user = await User.findById(userId)
+        .select("profile.bubble profile.frame level")
+        .lean();
 
       const message = {
         id: `${userId}-${Date.now()}`,
@@ -1064,6 +1068,9 @@ module.exports = (io) => {
         username,
         avatar,
         text,
+        bubble: user?.profile?.bubble || null,
+        frame: user?.profile?.frame?.icon || null,
+        level: user?.level?.personal?.level || 1,
         timestamp: new Date().toISOString(),
       };
 
