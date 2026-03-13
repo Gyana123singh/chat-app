@@ -1,4 +1,5 @@
 const User = require("../models/users");
+const generateDisplayId = require("../utils/generateDisplayId");
 
 const handleGoogleAuth = async (profile) => {
   const email = profile.emails?.[0]?.value;
@@ -13,9 +14,11 @@ const handleGoogleAuth = async (profile) => {
       user.oauthProvider = "google";
       user.oauthProviderId = profile.id;
     } else {
+      const displayId = await generateDisplayId();
       user = await User.create({
         username: profile.displayName,
         email,
+        displayId, // ⭐ NEW
         oauthProvider: "google",
         oauthProviderId: profile.id,
         isVerified: true,

@@ -1,6 +1,7 @@
 const admin = require("../config/firebaseAdmin");
 const { signToken } = require("../utils/jwtAuth");
 const User = require("../models/users");
+const generateDisplayId = require("../utils/generateDisplayId"); // ⭐ ADD THIS
 
 exports.firebaseOtpLogin = async (req, res) => {
   try {
@@ -38,11 +39,13 @@ exports.firebaseOtpLogin = async (req, res) => {
     let user = await User.findOne({ phone: phoneNumber });
 
     if (!user) {
+      const displayId = await generateDisplayId();
       user = await User.create({
         phone: phoneNumber,
         countryCode,
         username: `user_${phoneNumber.slice(-4)}`,
         role: "user",
+        displayId, // ⭐ NEW
       });
     }
 
