@@ -154,6 +154,26 @@ module.exports = (socket, io) => {
         await User.findByIdAndUpdate(receiverId, { $set: update });
 
         /* ===============================
+   🔥 UPDATE SOCKET PROFILE CACHE
+================================ */
+
+        const receiverSockets = await io
+          .in(receiverId.toString())
+          .fetchSockets();
+
+        receiverSockets.forEach((s) => {
+          if (!s.data.profile) s.data.profile = {};
+
+          if (gift.effectType === "BUBBLE") {
+            s.data.profile.bubble = gift.icon;
+          }
+
+          if (gift.effectType === "FRAME") {
+            s.data.profile.frame = gift.icon;
+          }
+        });
+
+        /* ===============================
      🔔 GLOBAL PROFILE UPDATE
   =============================== */
 
@@ -382,6 +402,19 @@ module.exports = (socket, io) => {
 
       if (Object.keys(update).length > 0) {
         await User.findByIdAndUpdate(userId, { $set: update });
+        const userSockets = await io.in(userId.toString()).fetchSockets();
+
+        userSockets.forEach((s) => {
+          if (!s.data.profile) s.data.profile = {};
+
+          if (gift.effectType === "BUBBLE") {
+            s.data.profile.bubble = gift.icon;
+          }
+
+          if (gift.effectType === "FRAME") {
+            s.data.profile.frame = gift.icon;
+          }
+        });
 
         /* ===============================
      🔔 GLOBAL PROFILE UPDATE

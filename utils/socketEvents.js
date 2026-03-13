@@ -827,8 +827,13 @@ module.exports = (io) => {
         username,
         avatar,
         imageUrl,
-        width: width || null,
-        height: height || null,
+        width,
+        height,
+
+        bubble: socket.data.profile?.bubble || null,
+        frame: socket.data.profile?.frame || null,
+        level: socket.data.profile?.level || 1,
+
         timestamp: new Date().toISOString(),
       };
 
