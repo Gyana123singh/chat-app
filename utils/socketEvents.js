@@ -685,7 +685,12 @@ module.exports = (io) => {
 
         if (sendType !== "pk" && totalCost >= 5000) {
           luck = calculateProfitLoss(totalCost);
-
+          console.log("🎰 PROFIT/LOSS DEBUG:", {
+            totalCost,
+            result: luck.result,
+            percent: luck.percentage,
+            coins: luck.coins,
+          });
           if (luck.coins !== 0) {
             await User.findByIdAndUpdate(fromUserId, {
               $inc: { coins: luck.coins },
@@ -772,7 +777,7 @@ module.exports = (io) => {
         });
 
         // 🎰 Profit/Loss Animation
-        if (luck && luck.percentage !== 0) {
+        if (luck && luck.coins !== 0) {
           io.to(`room:${roomId}`).emit("gift:luck", {
             userId: fromUserId,
             username: socket.data.username,
