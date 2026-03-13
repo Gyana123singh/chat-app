@@ -12,6 +12,7 @@ const Room = require("../models/room"); // or your room model path
 const mongoose = require("mongoose");
 const registerStoreGiftSocket = require("../utils/giftSocketEvents");
 const StoreGiftInventory = require("../models/storeGiftInventory");
+const calculateProfitLoss = require("../utils/proftLossLuckEngine");
 
 // pkId -> timeoutId
 const pkTimers = new Map();
@@ -676,6 +677,21 @@ module.exports = (io) => {
           return socket.emit("gift:error", { message: "Not enough coins" });
         }
 
+        // ==========================
+        // 🎰 PROFIT / LOSS SYSTEM (NORMAL GIFTS ONLY)
+        // ==========================
+
+        let luck = null;
+
+        if (sendType !== "pk" && totalCost >= 5000) {
+          luck = calculateProfitLoss(totalCost);
+
+          if (luck.coins !== 0) {
+            await User.findByIdAndUpdate(fromUserId, {
+              $inc: { coins: luck.coins },
+            });
+          }
+        }
         // =========================
         // 5️⃣ PK Logic (SAFE)
         // =========================
@@ -755,11 +771,27 @@ module.exports = (io) => {
           pkId: sendType === "pk" ? pkId : null,
         });
 
+        // 🎰 Profit/Loss Animation
+        if (luck && luck.percentage !== 0) {
+          io.to(`room:${roomId}`).emit("gift:luck", {
+            userId: fromUserId,
+            username: socket.data.username,
+            coins: luck.coins,
+            percentage: luck.percentage,
+            result: luck.result,
+          });
+        }
         // =========================
         // 8️⃣ Success Response
         // =========================
+        let finalBalance = sender.coins;
+
+        if (luck && luck.coins !== 0) {
+          finalBalance = sender.coins + luck.coins;
+        }
+
         socket.emit("gift:success", {
-          balance: sender.coins,
+          balance: finalBalance,
           transactionId: tx._id,
         });
       } catch (err) {
