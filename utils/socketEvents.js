@@ -232,7 +232,7 @@ module.exports = (io) => {
     /* =========================
        USER CONNECT
     ========================= */
-    socket.on("user:connect", ({ userId, username, avatar }) => {
+    socket.on("user:connect", async ({ userId, username, avatar }) => {
       if (!userId) return;
 
       onlineUsers.set(userId, socket.id);
@@ -240,10 +240,19 @@ module.exports = (io) => {
       socket.data.username = username;
       socket.data.avatar = avatar;
 
-      socket.join(userId.toString()); // 🔥 ADD THIS LINE for CP
+      socket.join(userId.toString());
       micStates.set(userId, { muted: false, speaking: false });
 
-      console.log("🟢 User connected:", { userId, username });
+      // 🔥 Cache profile data
+      const user = await User.findById(userId)
+        .select("profile.bubble profile.frame level")
+        .lean();
+
+      socket.data.profile = {
+        bubble: user?.profile?.bubble || null,
+        frame: user?.profile?.frame?.icon || null,
+        level: user?.level?.personal?.level || 1,
+      };
     });
 
     /* =========================
@@ -584,8 +593,7 @@ module.exports = (io) => {
         if (!fromUserId || !roomId || !giftId || !sendType) {
           return socket.emit("gift:error", { message: "Missing fields" });
         }
-
-        const gift = await Gift.findById(giftId);
+        const gift = await Gift.findById(giftId).lean();
         if (!gift || !gift.isAvailable) {
           return socket.emit("gift:error", { message: "Gift not available" });
         }
@@ -658,20 +666,15 @@ module.exports = (io) => {
         // =========================
         const totalCost = gift.price * quantity * recipientIds.length;
 
-        const sender = await User.findById(fromUserId);
-        if (!sender) {
-          return socket.emit("gift:error", { message: "Sender not found" });
-        }
+        const sender = await User.findOneAndUpdate(
+          { _id: fromUserId, coins: { $gte: totalCost } },
+          { $inc: { coins: -totalCost } },
+          { new: true },
+        );
 
-        if (sender.coins < totalCost) {
+        if (!sender) {
           return socket.emit("gift:error", { message: "Not enough coins" });
         }
-
-        // =========================
-        // 4️⃣ Deduct Coins
-        // =========================
-        sender.coins -= totalCost;
-        await sender.save();
 
         // =========================
         // 5️⃣ PK Logic (SAFE)
@@ -833,7 +836,14 @@ module.exports = (io) => {
         roomMessages.set(roomId, []);
       }
 
-      roomMessages.get(roomId).push(message);
+      const messages = roomMessages.get(roomId);
+
+      messages.push(message);
+
+      // prevent memory overflow
+      if (messages.length > 100) {
+        messages.shift();
+      }
 
       io.to(`room:${roomId}`).emit("message:receive", message);
     });
@@ -1053,24 +1063,21 @@ module.exports = (io) => {
     /* =========================
        CHAT
     ========================= */
-    socket.on("message:send", async ({ roomId, text }) => {
+    socket.on("message:send", ({ roomId, text }) => {
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !text || !userId) return;
 
-      const user = await User.findById(userId)
-        .select("profile.bubble profile.frame level")
-        .lean();
-
       const message = {
         id: `${userId}-${Date.now()}`,
+        roomId,
         userId,
         username,
         avatar,
         text,
-        bubble: user?.profile?.bubble || null,
-        frame: user?.profile?.frame?.icon || null,
-        level: user?.level?.personal?.level || 1,
+        bubble: socket.data.profile?.bubble || null,
+        frame: socket.data.profile?.frame || null,
+        level: socket.data.profile?.level || 1,
         timestamp: new Date().toISOString(),
       };
 
@@ -1078,7 +1085,14 @@ module.exports = (io) => {
         roomMessages.set(roomId, []);
       }
 
-      roomMessages.get(roomId).push(message);
+      const messages = roomMessages.get(roomId);
+
+      messages.push(message);
+
+      // 🔥 prevent memory leak
+      if (messages.length > 100) {
+        messages.shift();
+      }
 
       io.to(`room:${roomId}`).emit("message:receive", message);
     });

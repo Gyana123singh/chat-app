@@ -381,13 +381,13 @@ module.exports = (socket, io) => {
       }
 
       if (Object.keys(update).length > 0) {
-        await User.findByIdAndUpdate(receiverId, { $set: update });
+        await User.findByIdAndUpdate(userId, { $set: update });
 
         /* ===============================
      🔔 GLOBAL PROFILE UPDATE
   =============================== */
 
-        io.to(receiverId.toString()).emit("profile:update", {
+        io.to(userId.toString()).emit("profile:update", {
           effectType: gift.effectType,
           frame:
             gift.effectType === "FRAME"
