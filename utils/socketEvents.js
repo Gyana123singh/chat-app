@@ -12,7 +12,7 @@ const Room = require("../models/room"); // or your room model path
 const mongoose = require("mongoose");
 const registerStoreGiftSocket = require("../utils/giftSocketEvents");
 const StoreGiftInventory = require("../models/storeGiftInventory");
-const calculateProfitLoss = require("../utils/proftLossLuckEngine");
+const calculateProfitLoss = require("../utils/profitLossLuckEngine");
 
 // pkId -> timeoutId
 const pkTimers = new Map();
@@ -683,7 +683,7 @@ module.exports = (io) => {
 
         let luck = null;
 
-        const amount = gift.price * quantity;
+        const amount = totalCost;
 
         if (sendType !== "pk" && amount >= 5000) {
           luck = calculateProfitLoss(amount);
