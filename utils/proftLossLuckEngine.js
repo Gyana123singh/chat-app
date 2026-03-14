@@ -12,6 +12,7 @@ function calculateProfitLoss(amount) {
   ];
 
   const rand = Math.random() * 100;
+  console.log("🎰 RANDOM VALUE:", rand);
 
   let cumulative = 0;
 
@@ -20,6 +21,8 @@ function calculateProfitLoss(amount) {
 
     if (rand <= cumulative) {
       const coins = Math.floor((amount * outcome.percent) / 100);
+
+      console.log("🎰 RESULT:", outcome.type);
 
       return {
         result: outcome.type,
@@ -31,5 +34,3 @@ function calculateProfitLoss(amount) {
 
   return { result: "neutral", percentage: 0, coins: 0 };
 }
-
-module.exports = calculateProfitLoss;

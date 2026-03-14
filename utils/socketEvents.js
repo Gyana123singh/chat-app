@@ -683,8 +683,8 @@ module.exports = (io) => {
 
         let luck = null;
 
-        if (sendType !== "pk" && totalCost >= 5000) {
-          luck = calculateProfitLoss(totalCost);
+        if (sendType !== "pk" && gift.price * quantity >= 5000) {
+          luck = calculateProfitLoss(gift.price * quantity);
           console.log("🎰 PROFIT/LOSS DEBUG:", {
             totalCost,
             result: luck.result,
