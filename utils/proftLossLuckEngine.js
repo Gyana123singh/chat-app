@@ -27,3 +27,4 @@ function calculateProfitLoss(amount) {
 
   return { result: "neutral", percentage: 0, coins: 0 };
 }
+module.exports = calculateProfitLoss;
