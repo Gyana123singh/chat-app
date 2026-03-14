@@ -442,6 +442,12 @@ module.exports = (io) => {
           .filter(Boolean);
 
         io.to(roomName).emit("room:users", usersInRoom);
+        // 🚀 notify existing users that someone joined
+        socket.to(roomName).emit("room:userJoined", {
+          id: safeUser.id,
+          username: safeUser.username,
+          avatar: safeUser.avatar,
+        });
 
         /* ===== MESSAGES ===== */
         const messages = roomMessages.get(roomId) || [];
@@ -1076,36 +1082,55 @@ module.exports = (io) => {
     /* =========================
        WEBRTC SIGNALING
     ========================= */
+    // socket.on("call:offer", ({ to, offer }) => {
+    //   const targetSocket = onlineUsers.get(to);
+    //   if (targetSocket) {
+    //     io.to(targetSocket).emit("call:offer", {
+    //       from: socket.data.userId,
+    //       offer,
+    //     });
+    //   }
+    // });
+
     socket.on("call:offer", ({ to, offer }) => {
-      const targetSocket = onlineUsers.get(to);
-      if (targetSocket) {
-        io.to(targetSocket).emit("call:offer", {
-          from: socket.data.userId,
-          offer,
-        });
-      }
+      io.to(to.toString()).emit("call:offer", {
+        from: socket.data.userId,
+        offer,
+      });
     });
+    // socket.on("call:answer", ({ to, answer }) => {
+    //   const targetSocket = onlineUsers.get(to);
+    //   if (targetSocket) {
+    //     io.to(targetSocket).emit("call:answer", {
+    //       from: socket.data.userId,
+    //       answer,
+    //     });
+    //   }
+    // });
 
     socket.on("call:answer", ({ to, answer }) => {
-      const targetSocket = onlineUsers.get(to);
-      if (targetSocket) {
-        io.to(targetSocket).emit("call:answer", {
-          from: socket.data.userId,
-          answer,
-        });
-      }
+      io.to(to.toString()).emit("call:answer", {
+        from: socket.data.userId,
+        answer,
+      });
     });
+
+    // socket.on("call:ice", ({ to, candidate }) => {
+    //   const targetSocket = onlineUsers.get(to);
+    //   if (targetSocket) {
+    //     io.to(targetSocket).emit("call:ice", {
+    //       from: socket.data.userId,
+    //       candidate,
+    //     });
+    //   }
+    // });
 
     socket.on("call:ice", ({ to, candidate }) => {
-      const targetSocket = onlineUsers.get(to);
-      if (targetSocket) {
-        io.to(targetSocket).emit("call:ice", {
-          from: socket.data.userId,
-          candidate,
-        });
-      }
+      io.to(to.toString()).emit("call:ice", {
+        from: socket.data.userId,
+        candidate,
+      });
     });
-
     /* =========================
        CHAT
     ========================= */
