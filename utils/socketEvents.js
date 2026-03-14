@@ -1082,15 +1082,6 @@ module.exports = (io) => {
     /* =========================
        WEBRTC SIGNALING
     ========================= */
-    // socket.on("call:offer", ({ to, offer }) => {
-    //   const targetSocket = onlineUsers.get(to);
-    //   if (targetSocket) {
-    //     io.to(targetSocket).emit("call:offer", {
-    //       from: socket.data.userId,
-    //       offer,
-    //     });
-    //   }
-    // });
 
     socket.on("call:offer", ({ to, offer }) => {
       io.to(to.toString()).emit("call:offer", {
@@ -1098,15 +1089,6 @@ module.exports = (io) => {
         offer,
       });
     });
-    // socket.on("call:answer", ({ to, answer }) => {
-    //   const targetSocket = onlineUsers.get(to);
-    //   if (targetSocket) {
-    //     io.to(targetSocket).emit("call:answer", {
-    //       from: socket.data.userId,
-    //       answer,
-    //     });
-    //   }
-    // });
 
     socket.on("call:answer", ({ to, answer }) => {
       io.to(to.toString()).emit("call:answer", {
@@ -1114,16 +1096,6 @@ module.exports = (io) => {
         answer,
       });
     });
-
-    // socket.on("call:ice", ({ to, candidate }) => {
-    //   const targetSocket = onlineUsers.get(to);
-    //   if (targetSocket) {
-    //     io.to(targetSocket).emit("call:ice", {
-    //       from: socket.data.userId,
-    //       candidate,
-    //     });
-    //   }
-    // });
 
     socket.on("call:ice", ({ to, candidate }) => {
       io.to(to.toString()).emit("call:ice", {
