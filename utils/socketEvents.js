@@ -678,19 +678,23 @@ module.exports = (io) => {
         }
 
         // ==========================
-        // 🎰 PROFIT / LOSS SYSTEM (NORMAL GIFTS ONLY)
+        // 🎰 PROFIT / LOSS SYSTEM (ONLY ≥ 5000)
         // ==========================
 
         let luck = null;
 
-        if (sendType !== "pk" && gift.price * quantity >= 5000) {
-          luck = calculateProfitLoss(gift.price * quantity);
+        const amount = gift.price * quantity;
+
+        if (sendType !== "pk" && amount >= 5000) {
+          luck = calculateProfitLoss(amount);
+
           console.log("🎰 PROFIT/LOSS DEBUG:", {
-            totalCost,
+            amount,
             result: luck.result,
             percent: luck.percentage,
             coins: luck.coins,
           });
+
           if (luck.coins !== 0) {
             await User.findByIdAndUpdate(fromUserId, {
               $inc: { coins: luck.coins },
