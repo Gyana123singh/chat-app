@@ -183,13 +183,15 @@ exports.getRequests = async (req, res) => {
       .populate("from", "_id username profile.avatar level")
       .lean();
 
-    const formatted = requests.map((r) => ({
-      requestId: r._id,
-      _id: r.from._id,
-      username: r.from.username,
-      avatar: r.from.profile?.avatar,
-      level: r.from.level,
-    }));
+    const formatted = requests
+      .filter((r) => r.from) // ✅ remove broken users
+      .map((r) => ({
+        requestId: r._id,
+        _id: r.from._id,
+        username: r.from.username,
+        avatar: r.from.profile?.avatar,
+        level: r.from.level,
+      }));
 
     res.json({
       success: true,
