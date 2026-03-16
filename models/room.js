@@ -144,6 +144,19 @@ const roomSchema = new mongoose.Schema(
       type: [Number], // e.g. [1,2,3,4]
       default: [],
     },
+    // ⭐ ROOM-SPECIFIC USER PROFILES
+    roomProfiles: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        avatar: {
+          type: String,
+          default: null,
+        },
+      },
+    ],
   },
   { timestamps: true },
 );

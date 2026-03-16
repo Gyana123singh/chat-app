@@ -423,14 +423,45 @@ module.exports = (io) => {
           users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null]),
         );
 
+        // const usersInRoom = sockets
+        //   .map((s) => {
+        //     const user = s.data.user;
+
+        //     if (!user) return null;
+
+        //     return {
+        //       ...user,
+        //       isWatcher: s.data.isWatcher || false,
+        //       frame: frameMap.get(user.id) || null,
+        //       mic: micStates.get(user.id) || {
+        //         muted: false,
+        //         speaking: false,
+        //       },
+        //     };
+        //   })
+        //   .filter(Boolean);
+
+        const room = await Room.findOne({ roomId });
+
+        const roomAvatarMap = new Map();
+
+        if (room && room.roomProfiles) {
+          room.roomProfiles.forEach((p) => {
+            roomAvatarMap.set(p.userId.toString(), p.avatar);
+          });
+        }
+
         const usersInRoom = sockets
           .map((s) => {
             const user = s.data.user;
 
             if (!user) return null;
 
+            const avatar = roomAvatarMap.get(user.id) || user.avatar;
+
             return {
               ...user,
+              avatar,
               isWatcher: s.data.isWatcher || false,
               frame: frameMap.get(user.id) || null,
               mic: micStates.get(user.id) || {
@@ -840,7 +871,50 @@ module.exports = (io) => {
         console.error("❌ pk:vote error:", e.message);
       }
     });
+    // room:avatar:update
+    socket.on("room:avatar:update", async ({ roomId, avatar }) => {
+      try {
+        const userId = socket.data.userId;
 
+        if (!roomId || !avatar) return;
+
+        const room = await Room.findOne({ roomId });
+        if (!room) return;
+
+        // Only host can change room avatar
+        if (!room.host || room.host.toString() !== userId.toString()) {
+          return socket.emit("error:permission", {
+            message: "Only host can update room avatar",
+          });
+        }
+
+        // Find existing room profile
+        const existing = room.roomProfiles?.find(
+          (p) => p.userId.toString() === userId.toString(),
+        );
+
+        if (existing) {
+          existing.avatar = avatar;
+        } else {
+          room.roomProfiles.push({
+            userId,
+            avatar,
+          });
+        }
+
+        await room.save();
+
+        // Broadcast change to everyone in the room
+        io.to(`room:${roomId}`).emit("room:avatar:updated", {
+          userId,
+          avatar,
+        });
+
+        console.log("✅ Room avatar updated:", { roomId, userId });
+      } catch (err) {
+        console.error("❌ room:avatar:update error:", err.message);
+      }
+    });
     // ===============================
     // PK MANUAL END EVENTS
     // ===============================
