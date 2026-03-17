@@ -9,52 +9,92 @@ exports.createPK = async (req, res) => {
   try {
     const { roomId, leftUserId, rightUserId, mode, duration } = req.body;
 
+    // ✅ Basic validation
     if (!roomId || !leftUserId || !rightUserId || !duration) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Missing fields" });
+      return res.status(400).json({
+        success: false,
+        message: "Missing fields",
+      });
     }
 
+    // =========================
+    // ✅ FIX: Convert to number (VERY IMPORTANT)
+    // =========================
+    const parsedDuration = Number(duration);
+
+    // =========================
+    // ✅ Allowed durations
+    // =========================
+    const allowedDurations = [15, 30, 60, 300, 600, 900];
+
+    if (!allowedDurations.includes(parsedDuration)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid duration. Allowed: 15s, 30s, 1m, 5m, 10m, 15m",
+      });
+    }
+
+    // =========================
+    // ✅ Room check
+    // =========================
     const room = await Room.findOne({ roomId });
     if (!room) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Room not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
     }
 
-    // 🚫 Anti-multiple-PK protection
+    // 🚫 Prevent multiple PK
     if (room.activePK) {
-      return res
-        .status(400)
-        .json({ success: false, message: "PK already running in this room" });
+      return res.status(400).json({
+        success: false,
+        message: "PK already running in this room",
+      });
     }
 
+    // =========================
+    // ✅ Create PK
+    // =========================
     const pk = await PKBattle.create({
       roomId: room.roomId,
-      hostId: room.creator || room.host, // ✅ FIX: use existing field
+      hostId: room.creator || room.host,
       leftUser: { userId: leftUserId, score: 0 },
       rightUser: { userId: rightUserId, score: 0 },
       mode: mode || "coins",
-      duration, // seconds
+      duration: parsedDuration, // ✅ use parsed value
       status: "running",
       startedAt: new Date(),
     });
 
+    // =========================
+    // ✅ Save active PK
+    // =========================
     room.activePK = pk._id;
     await room.save();
 
     const io = req.app.get("io");
 
-    // 🔴 Notify clients
+    // =========================
+    // 📢 Notify clients
+    // =========================
     io.to(`room:${room.roomId}`).emit("pk:started", pk);
 
-    // ⏱️ START AUTO END TIMER ✅ (THIS IS THE IMPORTANT LINE)
+    // =========================
+    // ⏱️ Start Timer
+    // =========================
     startPKTimer(pk, io);
 
-    return res.json({ success: true, pk });
+    return res.json({
+      success: true,
+      pk,
+    });
   } catch (err) {
-    console.error("Start PK error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("❌ Start PK error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 
