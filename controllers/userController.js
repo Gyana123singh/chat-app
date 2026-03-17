@@ -1,13 +1,14 @@
 // controllers/userController.js
 const User = require("../models/users");
 const cloudinary = require("../config/cloudinary");
+const bcrypt = require("bcryptjs");
 
 exports.getUserById = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats isVerified"
+      "username phone country countryCode role lastSeen profile stats isVerified",
     );
 
     if (!user) {
@@ -22,20 +23,20 @@ exports.getUserById = async (req, res) => {
       data: {
         id: user._id,
         username: user.username,
-        avatar: user.profile.avatar,
-        bio: user.profile.bio,
-        language: user.profile.language,
-        theme: user.profile.theme,
+        avatar: user.profile?.avatar,
+        bio: user.profile?.bio,
+        language: user.profile?.language,
+        theme: user.profile?.theme,
 
         country: user.country,
         countryCode: user.countryCode,
         phone: user.phone,
 
-        coins: user.stats.coins,
-        followers: user.stats.followers,
-        following: user.stats.following,
-        giftsReceived: user.stats.giftsReceived,
-        totalHostingMinutes: user.stats.totalHostingMinutes,
+        coins: user.stats?.coins,
+        followers: user.stats?.followers,
+        following: user.stats?.following,
+        giftsReceived: user.stats?.giftsReceived,
+        totalHostingMinutes: user.stats?.totalHostingMinutes,
 
         role: user.role,
         isVerified: user.isVerified,
@@ -53,14 +54,17 @@ exports.getUserById = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
+
+    console.log("USER ID:", userId);
+    console.log("BODY:", req.body);
 
     const {
       username,
       phone,
       country,
       countryCode,
-      avatar, // base64 image (only if user uploads)
+      avatar,
       bio,
       language,
       theme,
@@ -72,36 +76,54 @@ exports.updateProfile = async (req, res) => {
     /* =========================
        TOP-LEVEL FIELDS
     ========================= */
-    if (username) updateData.username = username;
-    if (phone) updateData.phone = phone;
-    if (country) updateData.country = country;
-    if (countryCode) updateData.countryCode = countryCode;
+    if (username !== undefined) updateData.username = username;
+    if (phone !== undefined) updateData.phone = phone;
+    if (country !== undefined) updateData.country = country;
+    if (countryCode !== undefined) updateData.countryCode = countryCode;
 
     /* =========================
        AVATAR (CUSTOM IMAGE)
     ========================= */
-    if (avatar) {
-      const uploadResult = await cloudinary.uploader.upload(avatar, {
-        folder: "users/avatar",
-        transformation: [{ width: 300, height: 300, crop: "fill" }],
-      });
+    if (avatar !== undefined && avatar !== null && avatar !== "") {
+      try {
+        const uploadResult = await cloudinary.uploader.upload(avatar, {
+          folder: "users/avatar",
+          transformation: [{ width: 300, height: 300, crop: "fill" }],
+        });
 
-      updateData["profile.avatar"] = uploadResult.secure_url;
-      updateData["profile.avatarSource"] = "custom"; // 🔥 important
+        updateData["profile.avatar"] = uploadResult.secure_url;
+        updateData["profile.avatarSource"] = "custom";
+      } catch (err) {
+        console.error("Cloudinary Error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Image upload failed",
+        });
+      }
     }
 
     /* =========================
        PROFILE FIELDS
     ========================= */
     if (bio !== undefined) updateData["profile.bio"] = bio;
-    if (language) updateData["profile.language"] = language;
-    if (theme) updateData["profile.theme"] = theme;
-    if (interests) updateData["profile.interests"] = interests;
+    if (language !== undefined) updateData["profile.language"] = language;
+    if (theme !== undefined) updateData["profile.theme"] = theme;
+    if (interests !== undefined) updateData["profile.interests"] = interests;
+
+    console.log("UPDATE DATA:", updateData);
+
+    // 🚨 Prevent empty update
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No data provided to update",
+      });
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select("username phone country countryCode profile");
 
     if (!updatedUser) {
@@ -128,7 +150,7 @@ exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find({ isActive: true })
       .select(
-        "username profile.avatar country role stats.followers stats.following stats.coins lastSeen"
+        "username profile.avatar country role stats.followers stats.following stats.coins lastSeen",
       )
       .sort({ createdAt: -1 });
 
@@ -160,7 +182,8 @@ exports.followUser = async (req, res) => {
     const user = await User.findById(userId);
     const targetUser = await User.findById(id);
 
-    if (!targetUser) {
+    // ✅ safety checks
+    if (!user || !targetUser) {
       return res.status(404).json({
         success: false,
         message: "User not found",
@@ -172,13 +195,16 @@ exports.followUser = async (req, res) => {
     if (isFollowing) {
       user.following = user.following.filter((f) => f.toString() !== id);
       targetUser.followers = targetUser.followers.filter(
-        (f) => f.toString() !== userId
+        (f) => f.toString() !== userId,
       );
-      user.stats.following -= 1;
-      targetUser.stats.followers -= 1;
+
+      // ✅ prevent negative values
+      user.stats.following = Math.max(0, user.stats.following - 1);
+      targetUser.stats.followers = Math.max(0, targetUser.stats.followers - 1);
     } else {
       user.following.push(id);
       targetUser.followers.push(userId);
+
       user.stats.following += 1;
       targetUser.stats.followers += 1;
     }
@@ -237,7 +263,7 @@ exports.getFollowers = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).populate(
       "followers",
-      "username profile.avatar stats"
+      "username profile.avatar stats",
     );
 
     res.status(200).json({
@@ -257,7 +283,7 @@ exports.getFollowing = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).populate(
       "following",
-      "username profile.avatar stats"
+      "username profile.avatar stats",
     );
 
     res.status(200).json({
@@ -274,65 +300,110 @@ exports.getFollowing = async (req, res) => {
 };
 
 exports.getAccountSecurity = async (req, res) => {
-  const user = await User.findById(req.userId).select("-password");
+  try {
+    const user = await User.findById(req.user.id).select("-password");
 
-  res.json({
-    securityStatus: "Safe",
-    lastLogin: user.lastLogin,
-    accountInfo: {
-      diiId: user.diiId,
-      phone: user.phone,
-      email: user.email ? "Linked" : "Not Linked",
-    },
-    security: {
-      biometric: user.biometricEnabled,
-      protection: user.accountProtection,
-    },
-    thirdParty: user.thirdParty,
-  });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      securityStatus: "Safe",
+      lastLogin: user.lastLogin,
+      accountInfo: {
+        diiId: user.diiId,
+        phone: user.phone,
+        email: user.email ? "Linked" : "Not Linked",
+      },
+      security: {
+        biometric: user.biometricEnabled,
+        protection: user.accountProtection,
+      },
+      thirdParty: user.thirdParty,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 // * CHANGE PASSWORD
 
 exports.changePassword = async (req, res) => {
-  const { oldPassword, newPassword } = req.body;
+  try {
+    const { oldPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.userId);
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
+    }
 
-  const isMatch = await bcrypt.compare(oldPassword, user.password);
-  if (!isMatch) {
-    return res.status(400).json({ message: "Old password incorrect" });
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Old password incorrect",
+      });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-
-  user.password = await bcrypt.hash(newPassword, 10);
-  await user.save();
-
-  res.json({ message: "Password changed successfully" });
 };
 
 /**
  * TOGGLE BIOMETRIC LOGIN
  */
 exports.toggleBiometric = async (req, res) => {
-  const user = await User.findById(req.userId);
-  user.biometricEnabled = !user.biometricEnabled;
-  await user.save();
+  try {
+    const user = await User.findById(req.user.id);
 
-  res.json({
-    message: "Biometric setting updated",
-    enabled: user.biometricEnabled,
-  });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.biometricEnabled = !user.biometricEnabled;
+    await user.save();
+
+    res.json({
+      message: "Biometric setting updated",
+      enabled: user.biometricEnabled,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 /**
  * LINK / UNLINK THIRD PARTY
  */
 exports.updateThirdParty = async (req, res) => {
-  const { provider, status } = req.body; // google / facebook
+  try {
+    const { provider, status } = req.body;
 
-  const user = await User.findById(req.userId);
-  user.thirdParty[provider] = status;
-  await user.save();
+    const user = await User.findById(req.user.id);
 
-  res.json({ message: `${provider} updated` });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.thirdParty[provider] = status;
+    await user.save();
+
+    res.json({ message: `${provider} updated` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
