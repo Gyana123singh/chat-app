@@ -454,17 +454,24 @@ module.exports = (io) => {
         const usersInRoom = sockets
           .map((s) => {
             const user = s.data.user;
-
             if (!user) return null;
 
-            const avatar = roomAvatarMap.get(user.id) || user.avatar;
+            const userIdStr = user.id?.toString();
+
+            // ✅ PRIORITY: room avatar → DB avatar → fallback
+            const dbUser = users.find((u) => u._id.toString() === userIdStr);
+
+            const avatar =
+              roomAvatarMap.get(userIdStr) ||
+              dbUser?.profile?.avatar || // ✅ from DB
+              user.avatar; // fallback
 
             return {
               ...user,
               avatar,
               isWatcher: s.data.isWatcher || false,
-              frame: frameMap.get(user.id) || null,
-              mic: micStates.get(user.id) || {
+              frame: frameMap.get(userIdStr) || null,
+              mic: micStates.get(userIdStr) || {
                 muted: false,
                 speaking: false,
               },
@@ -888,29 +895,36 @@ module.exports = (io) => {
           });
         }
 
-        // Find existing room profile
-        const existing = room.roomProfiles?.find(
-          (p) => p.userId.toString() === userId.toString(),
+        // ✅ FIX: ensure array exists
+        if (!room.roomProfiles) {
+          room.roomProfiles = [];
+        }
+
+        const userIdStr = userId.toString();
+
+        // ✅ Find existing profile
+        const existing = room.roomProfiles.find(
+          (p) => p.userId.toString() === userIdStr,
         );
 
         if (existing) {
           existing.avatar = avatar;
         } else {
           room.roomProfiles.push({
-            userId,
+            userId: userId,
             avatar,
           });
         }
 
         await room.save();
 
-        // Broadcast change to everyone in the room
+        // ✅ Broadcast update
         io.to(`room:${roomId}`).emit("room:avatar:updated", {
-          userId,
+          userId: userIdStr,
           avatar,
         });
 
-        console.log("✅ Room avatar updated:", { roomId, userId });
+        console.log("✅ Room avatar updated:", { roomId, userIdStr, avatar });
       } catch (err) {
         console.error("❌ room:avatar:update error:", err.message);
       }
