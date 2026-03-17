@@ -611,11 +611,31 @@ module.exports = (io) => {
     // ===============================
     socket.on("pk:start", async ({ roomId, pkId }) => {
       try {
+        const userId = socket.data.userId;
+
+        if (!userId || !roomId || !pkId) return;
+
+        const room = await Room.findOne({ roomId });
+
+        if (!room) {
+          return socket.emit("pk:error", { message: "Room not found" });
+        }
+
+        // ✅ ONLY HOST ALLOWED
+        if (!room.host || room.host.toString() !== userId.toString()) {
+          return socket.emit("pk:error", {
+            message: "Only host can start PK",
+          });
+        }
+
         const pk = await PKBattle.findById(pkId);
-        if (!pk) return;
+        if (!pk) {
+          return socket.emit("pk:error", { message: "PK not found" });
+        }
 
-        console.log("🔥 Broadcasting PK immediately:", pk._id);
+        console.log("🔥 Host starting PK:", pk._id);
 
+        // Broadcast PK to room
         io.to(`room:${roomId}`).emit("pk:started", pk);
       } catch (e) {
         console.error("❌ pk:start socket error:", e.message);
@@ -933,16 +953,38 @@ module.exports = (io) => {
     // PK MANUAL END EVENTS
     // ===============================
 
-    socket.on("pk:end", async ({ pkId }) => {
+    socket.on("pk:end", async ({ pkId, roomId }) => {
       try {
+        const userId = socket.data.userId;
+
+        const room = await Room.findOne({ roomId });
+
+        if (!room || room.host.toString() !== userId.toString()) {
+          return socket.emit("pk:error", {
+            message: "Only host can end PK",
+          });
+        }
+
         await endPKInternal(pkId, io);
       } catch (err) {
         console.error("❌ pk:end error:", err);
       }
     });
 
-    socket.on("pk:forceEnd", async ({ pkId }) => {
+    socket.on("pk:forceEnd", async ({ pkId, roomId }) => {
       try {
+        const userId = socket.data.userId;
+
+        if (!userId || !roomId) return;
+
+        const room = await Room.findOne({ roomId });
+
+        if (!room || room.host.toString() !== userId.toString()) {
+          return socket.emit("pk:error", {
+            message: "Only host can force end PK",
+          });
+        }
+
         await endPKInternal(pkId, io);
       } catch (err) {
         console.error("❌ pk:forceEnd error:", err);
