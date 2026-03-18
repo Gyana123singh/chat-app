@@ -52,20 +52,28 @@ class RoomManager {
   resumeMusic(roomId) {
     const state = this.getState(roomId);
     state.isPlaying = true;
-    state.startedAt = Date.now() - state.pausedAt;
+    state.startedAt = Date.now() - state.pausedAt * 1000;
     state.pausedAt = 0;
     this.roomMusicStates.set(roomId, state);
     return state;
   }
 
   stopMusic(roomId) {
-    this.roomMusicStates.delete(roomId);
+    this.roomMusicStates.set(roomId, {
+      musicFile: null,
+      isPlaying: false,
+      startedAt: null,
+      pausedAt: 0,
+      playedBy: null,
+    });
   }
 
   getCurrentPosition(roomId) {
     const state = this.getState(roomId);
+
     if (!state.isPlaying) return state.pausedAt;
-    return Date.now() - state.startedAt;
+
+    return Math.floor((Date.now() - state.startedAt) / 1000); // ✅ seconds
   }
 }
 

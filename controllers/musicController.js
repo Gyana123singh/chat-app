@@ -23,7 +23,7 @@ exports.uploadMusic = async (req, res) => {
 
     // 🔒 BLOCK IF SESSION ACTIVE (PLAYING OR PAUSED)
     const currentState = await MusicState.findOne({ roomId });
-    if (currentState?.playedBy) {
+    if (currentState?.isPlaying) {
       return res.status(403).json({
         error: "Music session active. Please wait.",
       });
@@ -107,10 +107,14 @@ exports.playMusic = async (req, res) => {
     roomManager.initRoom(roomId);
 
     const dbState = await MusicState.findOne({ roomId });
+    if (!dbState) {
+      return res.status(400).json({ error: "Music not ready yet" });
+    }
 
-    if (!dbState || !dbState.musicUrl)
-      return res.status(400).json({ error: "No music uploaded" });
-
+    if (!dbState.musicUrl) {
+      console.log("⚠️ Missing musicUrl in DB:", dbState);
+      return res.status(400).json({ error: "Music URL missing" });
+    }
     // 🛡 SAFETY
     if (!dbState.playedBy) {
       return res.status(400).json({ error: "No active DJ" });
@@ -134,7 +138,7 @@ exports.playMusic = async (req, res) => {
       { roomId },
       {
         isPlaying: true,
-        startedAt: newState.startedAt,
+        startedAt: newState.startedAt || new Date(),
         pausedAt: 0,
       },
     );
@@ -143,7 +147,7 @@ exports.playMusic = async (req, res) => {
       musicFile: newState.musicFile,
       musicUrl: dbState.musicUrl,
       isPlaying: true,
-      startedAt: newState.startedAt,
+      startedAt: newState.startedAt || new Date(),
       currentPosition: 0,
       playedBy: dbState.playedBy,
     };
@@ -179,14 +183,19 @@ exports.pauseMusic = async (req, res) => {
       return res.status(403).json({ error: "Only DJ can pause" });
     }
 
-    roomManager.pauseMusic(roomId, pausedAt);
+    const safePausedAt = Math.floor(pausedAt);
+
+    roomManager.pauseMusic(roomId, safePausedAt);
 
     await MusicState.findOneAndUpdate(
       { roomId },
-      { isPlaying: false, pausedAt },
+      {
+        isPlaying: false,
+        pausedAt: safePausedAt,
+      },
     );
 
-    io.to(`room:${roomId}`).emit("music:paused", { pausedAt });
+    io.to(`room:${roomId}`).emit("music:paused", { pausedAt: safePausedAt });
 
     res.json({ success: true });
   } catch (err) {
@@ -217,11 +226,15 @@ exports.resumeMusic = async (req, res) => {
 
     await MusicState.findOneAndUpdate(
       { roomId },
-      { isPlaying: true, startedAt: newState.startedAt, pausedAt: 0 },
+      {
+        isPlaying: true,
+        startedAt: newState.startedAt || new Date(),
+        pausedAt: 0,
+      },
     );
 
     io.to(`room:${roomId}`).emit("music:resumed", {
-      startedAt: newState.startedAt,
+      startedAt: newState.startedAt || new Date(),
     });
 
     res.json({ success: true });
@@ -296,10 +309,11 @@ exports.getMusicState = async (req, res) => {
 
     res.json({
       musicFile: state.musicFile,
-      musicUrl: dbState?.musicUrl || null,
+      musicUrl: dbState?.musicUrl || null, // ✅ DB only for URL
       isPlaying: state.isPlaying,
+      startedAt: state.startedAt,
       currentPosition: roomManager.getCurrentPosition(roomId),
-      playedBy: dbState?.playedBy || null,
+      playedBy: state.playedBy, // ✅ FIX
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

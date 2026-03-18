@@ -6,13 +6,25 @@ async function restoreMusicState(roomId) {
 
   if (!db || !db.musicUrl) return;
 
-  roomManager.roomMusicStates.set(roomId, {
-    musicFile: db.musicFile,
-    isPlaying: db.isPlaying,
-    startedAt: db.startedAt,
-    pausedAt: db.pausedAt || 0,
-    playedBy: db.playedBy?.toString() || null,
-  });
+  roomManager.initRoom(roomId);
+
+  if (db.isPlaying && db.startedAt) {
+    roomManager.roomMusicStates.set(roomId, {
+      musicFile: db.musicFile,
+      isPlaying: true,
+      startedAt: new Date(db.startedAt).getTime(), // ✅ FIX
+      pausedAt: 0,
+      playedBy: db.playedBy?.toString() || null,
+    });
+  } else {
+    roomManager.roomMusicStates.set(roomId, {
+      musicFile: db.musicFile,
+      isPlaying: false,
+      startedAt: null,
+      pausedAt: db.pausedAt || 0,
+      playedBy: db.playedBy?.toString() || null,
+    });
+  }
 }
 
 module.exports = restoreMusicState;

@@ -423,24 +423,6 @@ module.exports = (io) => {
           users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null]),
         );
 
-        // const usersInRoom = sockets
-        //   .map((s) => {
-        //     const user = s.data.user;
-
-        //     if (!user) return null;
-
-        //     return {
-        //       ...user,
-        //       isWatcher: s.data.isWatcher || false,
-        //       frame: frameMap.get(user.id) || null,
-        //       mic: micStates.get(user.id) || {
-        //         muted: false,
-        //         speaking: false,
-        //       },
-        //     };
-        //   })
-        //   .filter(Boolean);
-
         const room = await Room.findOne({ roomId });
 
         const roomAvatarMap = new Map();
@@ -497,15 +479,18 @@ module.exports = (io) => {
         const currentPosition = roomManager.getCurrentPosition(roomId);
         const dbState = await MusicState.findOne({ roomId });
 
+        const isPlaying = currentMusicState.isPlaying;
+
+        const syncedPosition = roomManager.getCurrentPosition(roomId);
+
         const musicPayload = {
           musicFile: currentMusicState.musicFile,
           isPlaying: currentMusicState.isPlaying,
-          startedAt: currentMusicState.startedAt, // ✅ FIX (IMPORTANT)
-          currentPosition,
-          playedBy: currentMusicState.playedBy,
-          musicUrl: dbState?.musicUrl || null,
+          startedAt: currentMusicState.startedAt, // ✅ FIX
+          playedBy: currentMusicState.playedBy, // ✅ FIX
+          currentPosition: roomManager.getCurrentPosition(roomId),
+          musicUrl: dbState?.musicUrl || null, // DB only for URL
         };
-
         // ✅ ONLY SEND STATE (NO AUTOPLAY)
         socket.emit("room:musicState", musicPayload);
 
