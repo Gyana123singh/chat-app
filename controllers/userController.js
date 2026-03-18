@@ -3,9 +3,12 @@ const User = require("../models/users");
 const cloudinary = require("../config/cloudinary");
 const bcrypt = require("bcryptjs");
 
+// ================= GET PROFILE =================
 exports.getUserById = async (req, res) => {
   try {
-    const userId = req.user.id;
+    console.log("REQ USER:", req.user); // 🔥 debug
+
+    const userId = req.user.id; // from token
 
     const user = await User.findById(userId).select(
       "username phone country countryCode role lastSeen profile stats isVerified",
@@ -52,11 +55,11 @@ exports.getUserById = async (req, res) => {
   }
 };
 
+// ================= UPDATE PROFILE =================
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    console.log("USER ID:", userId);
     console.log("BODY:", req.body);
 
     const {
@@ -73,50 +76,33 @@ exports.updateProfile = async (req, res) => {
 
     const updateData = {};
 
-    /* =========================
-       TOP-LEVEL FIELDS
-    ========================= */
-    if (username !== undefined) updateData.username = username;
-    if (phone !== undefined) updateData.phone = phone;
-    if (country !== undefined) updateData.country = country;
-    if (countryCode !== undefined) updateData.countryCode = countryCode;
+    // TOP LEVEL
+    if (username) updateData.username = username;
+    if (phone) updateData.phone = phone;
+    if (country) updateData.country = country;
+    if (countryCode) updateData.countryCode = countryCode;
 
-    /* =========================
-       AVATAR (CUSTOM IMAGE)
-    ========================= */
-    if (avatar !== undefined && avatar !== null && avatar !== "") {
-      try {
-        const uploadResult = await cloudinary.uploader.upload(avatar, {
-          folder: "users/avatar",
-          transformation: [{ width: 300, height: 300, crop: "fill" }],
-        });
+    // PROFILE
+    if (bio) updateData["profile.bio"] = bio;
+    if (language) updateData["profile.language"] = language;
+    if (theme) updateData["profile.theme"] = theme;
+    if (interests) updateData["profile.interests"] = interests;
 
-        updateData["profile.avatar"] = uploadResult.secure_url;
-        updateData["profile.avatarSource"] = "custom";
-      } catch (err) {
-        console.error("Cloudinary Error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Image upload failed",
-        });
-      }
+    // AVATAR
+    if (avatar) {
+      const uploadResult = await cloudinary.uploader.upload(avatar, {
+        folder: "users/avatar",
+        transformation: [{ width: 300, height: 300, crop: "fill" }],
+      });
+
+      updateData["profile.avatar"] = uploadResult.secure_url;
+      updateData["profile.avatarSource"] = "custom";
     }
 
-    /* =========================
-       PROFILE FIELDS
-    ========================= */
-    if (bio !== undefined) updateData["profile.bio"] = bio;
-    if (language !== undefined) updateData["profile.language"] = language;
-    if (theme !== undefined) updateData["profile.theme"] = theme;
-    if (interests !== undefined) updateData["profile.interests"] = interests;
-
-    console.log("UPDATE DATA:", updateData);
-
-    // 🚨 Prevent empty update
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
         success: false,
-        message: "No data provided to update",
+        message: "No data provided",
       });
     }
 
@@ -124,14 +110,7 @@ exports.updateProfile = async (req, res) => {
       userId,
       { $set: updateData },
       { new: true, runValidators: true },
-    ).select("username phone country countryCode profile");
-
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
+    );
 
     res.status(200).json({
       success: true,
@@ -139,7 +118,7 @@ exports.updateProfile = async (req, res) => {
       data: updatedUser,
     });
   } catch (error) {
-    console.error("Update Profile Error:", error);
+    console.error("Update Error:", error);
     res.status(500).json({
       success: false,
       message: "Server error",
