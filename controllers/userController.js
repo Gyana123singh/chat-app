@@ -58,9 +58,16 @@ exports.getUserById = async (req, res) => {
 // ================= UPDATE PROFILE =================
 exports.updateProfile = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // ✅ Auth check
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
-    console.log("BODY:", req.body);
+    const userId = req.user.id;
+    console.log("📦 BODY:", req.body);
 
     const {
       username,
@@ -72,37 +79,82 @@ exports.updateProfile = async (req, res) => {
       language,
       theme,
       interests,
+      gender,
     } = req.body;
 
     const updateData = {};
 
-    // TOP LEVEL
+    // ✅ ENUM VALIDATION
+    const validCountries = ["IN", "PK", "BD"];
+    const validCodes = ["+91", "+92", "+880"];
+
+    // ✅ BASIC FIELDS
     if (username) updateData.username = username;
     if (phone) updateData.phone = phone;
-    if (country) updateData.country = country;
-    if (countryCode) updateData.countryCode = countryCode;
 
-    // PROFILE
+    if (country) {
+      if (!validCountries.includes(country)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid country",
+        });
+      }
+      updateData.country = country;
+    }
+
+    if (countryCode) {
+      if (!validCodes.includes(countryCode)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid country code",
+        });
+      }
+      updateData.countryCode = countryCode;
+    }
+
+    // ✅ Ensure profile exists
+    await User.updateOne(
+      { _id: userId, profile: { $exists: false } },
+      { $set: { profile: {} } },
+    );
+
+    // ✅ PROFILE FIELDS
     if (bio) updateData["profile.bio"] = bio;
     if (language) updateData["profile.language"] = language;
     if (theme) updateData["profile.theme"] = theme;
-    if (interests) updateData["profile.interests"] = interests;
 
-    // AVATAR
-    if (avatar) {
-      const uploadResult = await cloudinary.uploader.upload(avatar, {
-        folder: "users/avatar",
-        transformation: [{ width: 300, height: 300, crop: "fill" }],
-      });
-
-      updateData["profile.avatar"] = uploadResult.secure_url;
-      updateData["profile.avatarSource"] = "custom";
+    // ✅ interests must be array
+    if (Array.isArray(interests)) {
+      updateData["profile.interests"] = interests;
     }
 
+    // ✅ gender
+    if (gender) updateData.gender = gender;
+
+    // ✅ Avatar upload (safe)
+    if (avatar && avatar.startsWith("data:image")) {
+      try {
+        const uploadResult = await cloudinary.uploader.upload(avatar, {
+          folder: "users/avatar",
+          transformation: [{ width: 300, height: 300, crop: "fill" }],
+        });
+
+        updateData["profile.avatar"] = uploadResult.secure_url;
+        updateData["profile.avatarSource"] = "custom";
+      } catch (err) {
+        console.error("❌ Cloudinary Error:", err);
+        return res.status(500).json({
+          success: false,
+          message: "Image upload failed",
+        });
+      }
+    }
+
+    // ✅ Nothing to update
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({
         success: false,
-        message: "No data provided",
+        message: "No valid data provided",
       });
     }
 
@@ -118,10 +170,11 @@ exports.updateProfile = async (req, res) => {
       data: updatedUser,
     });
   } catch (error) {
-    console.error("Update Error:", error);
+    console.error("🔥 FULL ERROR:", error.stack);
+
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: error.message || "Server error",
     });
   }
 };
