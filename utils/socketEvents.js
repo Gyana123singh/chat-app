@@ -1181,46 +1181,6 @@ module.exports = (io) => {
       }
     });
 
-    // room:leave
-   socket.on("room:leave", ({ roomId }) => {
-  if (!roomId) return;
-
-  const roomName = `room:${roomId}`;
-  const userId = socket.data.userId;
-
-  if (!userId) return;
-
-  socket.leave(roomName);
-
-  // ✅ remove from tracking maps
-  if (roomUsers.has(roomId)) {
-    roomUsers.get(roomId).delete(userId);
-  }
-
-  if (typingUsers.has(roomId)) {
-    typingUsers.get(roomId).delete(userId);
-  }
-
-  // ✅ clear timers
-  if (roomStayTimers.has(userId)) {
-    clearInterval(roomStayTimers.get(userId));
-    roomStayTimers.delete(userId);
-  }
-
-  if (micExpTimers.has(userId)) {
-    clearInterval(micExpTimers.get(userId));
-    micExpTimers.delete(userId);
-  }
-
-  // ✅ reset mic + socket state
-  micStates.delete(userId);
-  socket.data.roomId = null;
-  socket.data.isWatcher = false;
-
-  socket.to(roomName).emit("room:userLeft", { userId });
-
-  console.log(`🚪 User left room (manual): ${userId}`);
-});
     /* =========================
        EMOJI
     ========================= */
