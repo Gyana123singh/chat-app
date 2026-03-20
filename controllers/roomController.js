@@ -51,8 +51,7 @@ exports.createRoom = async (req, res) => {
 
     if (category) {
       const formatted =
-        category.charAt(0).toUpperCase() +
-        category.slice(1).toLowerCase();
+        category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
 
       if (allowedCategories.includes(formatted)) {
         safeCategory = formatted;
@@ -114,7 +113,6 @@ exports.createRoom = async (req, res) => {
       roomId: room.roomId,
       room,
     });
-
   } catch (err) {
     console.error("CREATE ROOM ERROR →", err);
     return res.status(500).json({
@@ -827,7 +825,7 @@ exports.joinRoom = async (req, res) => {
 };
 
 // controllers/roomController.js
-exports.leaveRoom = async (req, res) => { 
+exports.leaveRoom = async (req, res) => {
   try {
     const userId = req.user?.id;
     const roomId = req.params.roomId || req.params.id;
@@ -839,7 +837,6 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
-    // ✅ Find room by UUID (NOT Mongo _id)
     const room = await Room.findOne({ roomId });
 
     if (!room) {
@@ -849,12 +846,30 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
-    // ❌ Prevent host from leaving (optional rule)
-    if (room.host?.toString() === userId.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: "Host cannot leave the room",
-      });
+    const isHost = room.host?.toString() === userId.toString();
+
+    // ===============================
+    // 🧠 HANDLE HOST LEAVE (OPTIONAL LOGIC)
+    // ===============================
+    if (isHost) {
+      // 🔥 OPTION 1: Transfer host
+      if (room.participants.length > 1) {
+        const nextHost = room.participants.find(
+          (p) => p.user.toString() !== userId.toString(),
+        );
+
+        if (nextHost) {
+          room.host = nextHost.user;
+        }
+      } else {
+        // 🔥 OPTION 2: Delete room if alone
+        await Room.deleteOne({ roomId });
+
+        return res.status(200).json({
+          success: true,
+          message: "Room closed (host left)",
+        });
+      }
     }
 
     const beforeCount = room.participants.length;
@@ -873,18 +888,21 @@ exports.leaveRoom = async (req, res) => {
 
     await room.save();
 
-    // 🔔 Notify others via socket
-    const io = req.app.get("io");
-    io.to(`room:${room.roomId}`).emit("room:userLeft", { userId });
+    // ⚠️ DO NOT EMIT SOCKET HERE (handled in socket)
+    // const io = req.app.get("io");
+    // io.to(`room:${room.roomId}`).emit("room:userLeft", { userId });
 
     return res.status(200).json({
       success: true,
       message: "Left room successfully",
       roomId: room.roomId,
       participantsCount: room.participants.length,
+      isHostTransferred: isHost,
+      newHost: room.host || null,
     });
   } catch (error) {
     console.error("LEAVE ROOM ERROR →", error);
+
     return res.status(500).json({
       success: false,
       message: "Failed to leave room",
