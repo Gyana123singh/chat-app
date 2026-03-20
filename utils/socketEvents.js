@@ -13,7 +13,9 @@ const mongoose = require("mongoose");
 const registerStoreGiftSocket = require("../utils/giftSocketEvents");
 const StoreGiftInventory = require("../models/storeGiftInventory");
 const calculateProfitLoss = require("../utils/profitLossLuckEngine");
-
+async function getRoomSafe(roomId) {
+  return await Room.findOne({ roomId });
+}
 // pkId -> timeoutId
 const pkTimers = new Map();
 const backgroundUsers = new Map(); // userId -> true
@@ -268,7 +270,6 @@ module.exports = (io) => {
       if (!roomId || !user) return;
 
       const roomName = `room:${roomId}`;
-
       socket.join(roomName);
 
       socket.data.roomId = roomId;
@@ -281,20 +282,25 @@ module.exports = (io) => {
       socket.data.avatar = user.avatar;
 
       console.log("👀 User watching room:", roomId);
+
       try {
+        // ===============================
+        // ✅ FETCH ROOM ONCE (IMPORTANT)
+        // ===============================
+        const roomDoc = await Room.findOne({ roomId });
+
         /* ===== USERS LIST ===== */
         const sockets = await io.in(roomName).fetchSockets();
 
         const usersInRoom = sockets
           .filter((s) => s.data.user)
           .map((s) => {
-            const userIdStr = s.data.user.id?.toString(); // ✅ FIX
+            const userIdStr = s.data.user.id?.toString();
 
             return {
               ...s.data.user,
               isWatcher: s.data.isWatcher || false,
-              isBackground: backgroundUsers.has(userIdStr), // ✅ SAFE NOW
-
+              isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
                 muted: false,
                 speaking: false,
@@ -305,8 +311,7 @@ module.exports = (io) => {
         socket.emit("room:users", usersInRoom);
 
         /* ===== MESSAGES ===== */
-        const messages = roomMessages.get(roomId) || [];
-        socket.emit("room:messages", messages);
+        socket.emit("room:messages", roomMessages.get(roomId) || []);
 
         /* ===== MUSIC ===== */
         const currentMusicState = roomManager.getState(roomId);
@@ -317,8 +322,17 @@ module.exports = (io) => {
           currentPosition,
         });
 
-        /* ===== VIDEO ===== */
+        /* ===== SEAT COUNT ✅ ===== */
+        socket.emit("room:seatCount", {
+          seatCount: roomDoc?.seatCount || 12,
+        });
 
+        /* ===== DESCRIPTION ✅ ===== */
+        socket.emit("room:description", {
+          description: roomDoc?.description || "",
+        });
+
+        /* ===== VIDEO ===== */
         const videoRoom = await VideoRoom.findOne({ roomId });
 
         if (videoRoom) {
@@ -328,12 +342,7 @@ module.exports = (io) => {
         }
 
         /* ===== PK STATE ===== */
-        const roomDoc = await Room.findOne({ roomId });
-        socket.emit("room:description", {
-          description: roomDoc?.description || "",
-        });
-
-        if (roomDoc && roomDoc.activePK) {
+        if (roomDoc?.activePK) {
           const pk = await PKBattle.findById(roomDoc.activePK);
           if (pk && pk.status === "running") {
             socket.emit("pk:started", pk);
@@ -495,6 +504,10 @@ module.exports = (io) => {
           avatar: safeUser.avatar,
         });
 
+        //room:seatCount
+        socket.emit("room:seatCount", {
+          seatCount: roomDoc?.seatCount || 12,
+        });
         // ===============================
         // 💬 MESSAGES
         // ===============================
@@ -585,6 +598,65 @@ module.exports = (io) => {
         }
       } catch (err) {
         console.error("❌ room:join error:", err);
+      }
+    });
+    // ===============================
+    // 🎯 UPDATE ROOM SEAT COUNT
+    // ===============================
+    socket.on("room:seatCount:update", async ({ roomId, seatCount }) => {
+      try {
+        const userId = socket.data.userId;
+
+        if (!roomId || !seatCount) return;
+
+        // ✅ Validate allowed values
+        const allowedSeats = [8, 10, 12];
+        if (!allowedSeats.includes(seatCount)) {
+          return socket.emit("error", { message: "Invalid seat count" });
+        }
+
+        const room = await Room.findOne({ roomId });
+
+        // ✅ FIX: prevent crash
+        if (!room) {
+          return socket.emit("error", { message: "Room not found" });
+        }
+        // 🔐 Only host allowed
+        if (!room || room.host.toString() !== userId.toString()) {
+          return socket.emit("error:permission", {
+            message: "Only host can change seat count",
+          });
+        }
+
+        // ===============================
+        // ✅ FIX 1: PREVENT UNNECESSARY UPDATE
+        // ===============================
+        if (room.seatCount === seatCount) {
+          return; // nothing changed
+        }
+
+        // ===============================
+        // ✅ FIX 2: UPDATE + CLEAN LOCKED SEATS
+        // ===============================
+        room.seatCount = seatCount;
+
+        room.lockedSeats = (room.lockedSeats || []).filter(
+          (seat) => seat <= seatCount,
+        );
+
+        await room.save();
+
+        // ===============================
+        // 📢 BROADCAST UPDATE
+        // ===============================
+        io.to(`room:${roomId}`).emit("room:seatCount:updated", {
+          seatCount,
+          lockedSeats: room.lockedSeats, // optional but recommended
+        });
+
+        console.log("✅ Seat count updated:", seatCount);
+      } catch (err) {
+        console.error("❌ seatCount update error:", err.message);
       }
     });
     // ===============================
@@ -1456,17 +1528,20 @@ module.exports = (io) => {
 
     // INVITE USER TO ROOM
     socket.on("room:invite", async ({ roomId, toUserId }) => {
-      const fromUserId = socket.data.userId;
-      if (!fromUserId || !roomId || !toUserId) return;
+      const userId = socket.data.userId;
 
-      const allowed = await isHostOrAdmin(roomId, fromUserId);
-      if (!allowed) return;
+      const room = await getRoomSafe(roomId);
+      if (!room || !room.host || room.host.toString() !== userId.toString()) {
+        return socket.emit("error:permission", {
+          message: "Only host can invite",
+        });
+      }
 
       const targetSocket = onlineUsers.get(toUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("room:invited", {
           roomId,
-          fromUserId,
+          fromUserId: userId,
           fromUsername: socket.data.username,
         });
       }
@@ -1475,15 +1550,18 @@ module.exports = (io) => {
     // LOCK SEAT
     socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
-      if (!userId || !roomId) return;
+
+      const room = await getRoomSafe(roomId);
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) {
-        socket.emit("error:permission", { message: "Not host or admin" });
-        return;
+      if (!allowed) return socket.emit("error:permission");
+
+      // ✅ FIXED VALIDATION
+      if (!room || seatNumber < 1 || seatNumber > room.seatCount) {
+        return socket.emit("error", { message: "Invalid seat number" });
       }
 
-      await Room.findOneAndUpdate(
+      await Room.updateOne(
         { roomId },
         { $addToSet: { lockedSeats: seatNumber } },
       );
@@ -1496,10 +1574,18 @@ module.exports = (io) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
 
+      const room = await getRoomSafe(roomId);
+
+      // ✅ FIX: prevent crash + invalid seat
+      if (!room || seatNumber < 1 || seatNumber > room.seatCount) {
+        return socket.emit("error", { message: "Invalid seat number" });
+      }
+
       const allowed = await isHostOrAdmin(roomId, userId);
       if (!allowed) {
-        socket.emit("error:permission", { message: "Not host or admin" });
-        return;
+        return socket.emit("error:permission", {
+          message: "Not host or admin",
+        });
       }
 
       await Room.findOneAndUpdate(
@@ -1514,65 +1600,37 @@ module.exports = (io) => {
     socket.on("room:mic:forceOff", async ({ roomId, targetUserId }) => {
       const userId = socket.data.userId;
 
-      console.log("🎯 FORCE OFF REQUEST:", { roomId, userId, targetUserId });
-
-      if (!userId || !roomId || !targetUserId) {
-        console.log("❌ Missing fields in forceOff");
-        return;
-      }
-
       const allowed = await isHostOrAdmin(roomId, userId);
-      console.log("✅ Allowed?", allowed);
+      if (!allowed) return socket.emit("error:permission");
 
-      if (!allowed) {
-        console.log("⛔ Permission denied for forceOff");
-        socket.emit("error:permission", { message: "Not host or admin" });
-        return;
-      }
-
-      // Update mic state
       micStates.set(targetUserId, { muted: true, speaking: false });
 
-      // Notify room
       io.to(`room:${roomId}`).emit("mic:update", {
         userId: targetUserId,
         muted: true,
         speaking: false,
       });
 
-      // Notify target user directly
       const targetSocket = onlineUsers.get(targetUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("mic:forceMuted");
       }
-
-      console.log("🔇 Force muted user:", targetUserId);
     });
 
     // MUTE EVERYONE
     socket.on("room:mic:muteAll", async ({ roomId }) => {
       const userId = socket.data.userId;
-      if (!userId || !roomId) return;
 
       const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) {
-        socket.emit("error:permission", { message: "Not host or admin" });
-        return;
-      }
+      if (!allowed) return socket.emit("error:permission");
 
       const sockets = await io.in(`room:${roomId}`).fetchSockets();
 
       sockets.forEach((s) => {
         const uid = s.data.userId;
-        if (uid) {
-          micStates.set(uid, { muted: true, speaking: false });
+        if (!uid) return;
 
-          io.to(`room:${roomId}`).emit("mic:update", {
-            userId: uid,
-            muted: true,
-            speaking: false,
-          });
-        }
+        micStates.set(uid, { muted: true, speaking: false });
       });
 
       io.to(`room:${roomId}`).emit("room:mic:mutedAll");
@@ -1581,41 +1639,40 @@ module.exports = (io) => {
     // LOCK ALL SEATS
     socket.on("room:seats:lockAll", async ({ roomId }) => {
       const userId = socket.data.userId;
-      if (!userId || !roomId) return;
 
-      const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) {
-        socket.emit("error:permission", { message: "Not host or admin" });
-        return;
+      const room = await getRoomSafe(roomId);
+
+      // ✅ FIX: prevent crash
+      if (!room) {
+        return socket.emit("error", { message: "Room not found" });
       }
 
-      const allSeats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return socket.emit("error:permission");
 
-      await Room.findOneAndUpdate({ roomId }, { lockedSeats: allSeats });
+      // ✅ dynamic seats (already correct)
+      const allSeats = Array.from({ length: room.seatCount }, (_, i) => i + 1);
 
-      io.to(`room:${roomId}`).emit("room:seats:lockedAll");
+      room.lockedSeats = allSeats;
+      await room.save();
+
+      io.to(`room:${roomId}`).emit("room:seats:lockedAll", {
+        lockedSeats: allSeats,
+      });
     });
 
     // GIVE ADMIN (ONLY HOST CAN DO THIS)
     socket.on("room:giveAdmin", async ({ roomId, targetUserId }) => {
       const userId = socket.data.userId;
-      if (!userId || !roomId || !targetUserId) return;
 
-      const room = await Room.findOne({ roomId });
-      if (!room) return;
-
-      // Only HOST can give admin
-      if (!room.host || room.host.toString() !== userId.toString()) {
-        socket.emit("error:permission", {
-          message: "Only host can give admin",
+      const room = await getRoomSafe(roomId);
+      if (!room || !room.host || room.host.toString() !== userId.toString()) {
+        return socket.emit("error:permission", {
+          message: "Only host can assign admin",
         });
-        return;
       }
 
-      await Room.findOneAndUpdate(
-        { roomId },
-        { $addToSet: { admins: targetUserId } },
-      );
+      await Room.updateOne({ roomId }, { $addToSet: { admins: targetUserId } });
 
       io.to(`room:${roomId}`).emit("room:adminAdded", {
         userId: targetUserId,
