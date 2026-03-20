@@ -318,6 +318,7 @@ module.exports = (io) => {
         });
 
         /* ===== VIDEO ===== */
+
         const videoRoom = await VideoRoom.findOne({ roomId });
 
         if (videoRoom) {
@@ -328,6 +329,9 @@ module.exports = (io) => {
 
         /* ===== PK STATE ===== */
         const roomDoc = await Room.findOne({ roomId });
+        socket.emit("room:description", {
+          description: roomDoc?.description || "",
+        });
 
         if (roomDoc && roomDoc.activePK) {
           const pk = await PKBattle.findById(roomDoc.activePK);
@@ -354,48 +358,62 @@ module.exports = (io) => {
 
       const roomName = `room:${roomId}`;
       socket.join(roomName);
+
       socket.data.roomId = roomId;
       socket.data.isWatcher = false;
       socket.data.user = safeUser;
       socket.data.userId = safeUser.id;
+
       const userId = safeUser.id;
-      // ===============================
-      // 🥊 SEND ACTIVE PK STATE (IF ANY)
-      // ===============================
+
       try {
+        // ===============================
+        // ✅ FETCH ROOM ONCE (IMPORTANT FIX)
+        // ===============================
         const roomDoc = await Room.findOne({ roomId });
 
-        if (roomDoc && roomDoc.activePK) {
-          const pk = await PKBattle.findById(roomDoc.activePK);
+        // ===============================
+        // 📝 SEND DESCRIPTION (FIXED)
+        // ===============================
+        socket.emit("room:description", {
+          description: roomDoc?.description || "",
+        });
 
+        // ===============================
+        // 🥊 SEND ACTIVE PK
+        // ===============================
+        if (roomDoc?.activePK) {
+          const pk = await PKBattle.findById(roomDoc.activePK);
           if (pk && pk.status === "running") {
-            console.log("🔥 Sending active PK to joining user:", pk._id);
             socket.emit("pk:started", pk);
           }
         }
-      } catch (e) {
-        console.error("❌ Failed to send active PK on join:", e.message);
-      }
 
-      // 🔥 Init music state safely (no overwrite if already playing)
-      // ✅ CORRECT MUSIC STATE HANDLING
-      roomManager.initRoom(roomId);
-      await restoreMusicState(roomId);
+        // ===============================
+        // 🎵 MUSIC INIT
+        // ===============================
+        roomManager.initRoom(roomId);
+        await restoreMusicState(roomId);
 
-      // Track users
-      if (!roomUsers.has(roomId)) {
-        roomUsers.set(roomId, new Set());
-      }
-      roomUsers.get(roomId).add(userId);
-      console.log(`📍 ${safeUser.username} joined ${roomName}`);
+        // ===============================
+        // 👥 TRACK USERS
+        // ===============================
+        if (!roomUsers.has(roomId)) {
+          roomUsers.set(roomId, new Set());
+        }
+        roomUsers.get(roomId).add(userId);
 
-      try {
-        /* ===== VIDEO ROOM SYNC ===== */
+        console.log(`📍 ${safeUser.username} joined ${roomName}`);
+
+        // ===============================
+        // 🎥 VIDEO ROOM
+        // ===============================
         let videoRoom = await VideoRoom.findOne({ roomId });
+
         if (!videoRoom) {
           videoRoom = await VideoRoom.create({
             roomId,
-            hostId: userId, // just stored, no restriction
+            hostId: userId,
             video: { isVisible: false },
             audio: { isMixing: false },
             participants: [],
@@ -407,8 +425,8 @@ module.exports = (io) => {
           {
             $addToSet: {
               participants: {
-                userId: userId,
-                role: "listener", // everyone equal
+                userId,
+                role: "listener",
                 isReceivingVideo: false,
                 videoFPS: 0,
                 videoLatency: 0,
@@ -416,10 +434,11 @@ module.exports = (io) => {
               },
             },
           },
-          { new: true },
         );
 
-        /* ===== USERS LIST ===== */
+        // ===============================
+        // 👥 USERS LIST
+        // ===============================
         const sockets = await io.in(roomName).fetchSockets();
 
         const userIds = sockets
@@ -427,19 +446,16 @@ module.exports = (io) => {
           .map((s) => s.data.user.id);
 
         const users = await User.find({ _id: { $in: userIds } })
-          .select("profile.frame")
+          .select("profile.frame profile.avatar")
           .lean();
 
         const frameMap = new Map(
           users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null]),
         );
 
-        const room = await Room.findOne({ roomId });
-
         const roomAvatarMap = new Map();
-
-        if (room && room.roomProfiles) {
-          room.roomProfiles.forEach((p) => {
+        if (roomDoc?.roomProfiles) {
+          roomDoc.roomProfiles.forEach((p) => {
             roomAvatarMap.set(p.userId.toString(), p.avatar);
           });
         }
@@ -450,14 +466,12 @@ module.exports = (io) => {
             if (!user) return null;
 
             const userIdStr = user.id?.toString();
-
-            // ✅ PRIORITY: room avatar → DB avatar → fallback
             const dbUser = users.find((u) => u._id.toString() === userIdStr);
 
             const avatar =
               roomAvatarMap.get(userIdStr) ||
-              dbUser?.profile?.avatar || // ✅ from DB
-              user.avatar; // fallback
+              dbUser?.profile?.avatar ||
+              user.avatar;
 
             return {
               ...user,
@@ -474,46 +488,42 @@ module.exports = (io) => {
           .filter(Boolean);
 
         io.to(roomName).emit("room:users", usersInRoom);
-        // 🚀 notify existing users that someone joined
+
         socket.to(roomName).emit("room:userJoined", {
           id: safeUser.id,
           username: safeUser.username,
           avatar: safeUser.avatar,
         });
 
-        /* ===== MESSAGES ===== */
-        const messages = roomMessages.get(roomId) || [];
-        socket.emit("room:messages", messages);
+        // ===============================
+        // 💬 MESSAGES
+        // ===============================
+        socket.emit("room:messages", roomMessages.get(roomId) || []);
 
-        /* ===== MUSIC STATE ===== */
-
+        // ===============================
+        // 🎵 MUSIC STATE
+        // ===============================
         const currentMusicState = roomManager.getState(roomId);
-        const currentPosition = roomManager.getCurrentPosition(roomId);
         const dbState = await MusicState.findOne({ roomId });
 
-        const isPlaying = currentMusicState.isPlaying;
-
-        const syncedPosition = roomManager.getCurrentPosition(roomId);
-
-        const musicPayload = {
+        socket.emit("room:musicState", {
           musicFile: currentMusicState.musicFile,
           isPlaying: currentMusicState.isPlaying,
-          startedAt: currentMusicState.startedAt, // ✅ FIX
-          playedBy: currentMusicState.playedBy, // ✅ FIX
+          startedAt: currentMusicState.startedAt,
+          playedBy: currentMusicState.playedBy,
           currentPosition: roomManager.getCurrentPosition(roomId),
-          musicUrl: dbState?.musicUrl || null, // DB only for URL
-        };
-        // ✅ ONLY SEND STATE (NO AUTOPLAY)
-        socket.emit("room:musicState", musicPayload);
+          musicUrl: dbState?.musicUrl || null,
+        });
 
-        /* ===== VIDEO STATE ===== */
+        // ===============================
+        // 🎥 VIDEO STATE
+        // ===============================
         let currentTime = 0;
 
         if (videoRoom.video) {
           if (videoRoom.video.isPlaying && videoRoom.video.startedAt) {
             currentTime =
-              (Date.now() - new Date(videoRoom.video.startedAt).getTime()) /
-                1000 +
+              (Date.now() - new Date(videoRoom.video.startedAt)) / 1000 +
               (videoRoom.video.currentTime || 0);
           } else {
             currentTime = videoRoom.video.currentTime || 0;
@@ -527,71 +537,46 @@ module.exports = (io) => {
           },
         });
 
-        // 🎬 Cinematic entrance when user joins room
-
+        // ===============================
+        // 🎬 ENTRANCE EFFECT
+        // ===============================
         try {
           const userDoc = await User.findById(userId)
             .select("username profile.avatar level profile.entranceEffect")
             .lean();
 
-          // Check active entrance gift
           const activeEntrance = await StoreGiftInventory.findOne({
-            userId: userId,
+            userId,
             effectType: "ENTRANCE",
             isActive: true,
             expiresAt: { $gt: new Date() },
           }).lean();
 
-          console.log("🎬 Active entrance inventory:", activeEntrance);
-
           const animationUrl =
             activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
 
-          console.log("🎬 Checking entrance animation:", {
-            userId,
-            animationUrl,
-          });
-
           if (animationUrl) {
-            const payload = {
+            socket.to(roomName).emit("room:effect", {
               type: "ENTRANCE",
-              userId: userId,
+              userId,
               username: userDoc?.username || "User",
               avatar: userDoc?.profile?.avatar || null,
               level: userDoc?.level || 1,
-              animationUrl: animationUrl,
-              soundUrl: null,
-              rarity: "normal",
+              animationUrl,
               duration: 4,
-            };
-
-            // send entrance to everyone except joining user
-            socket.to(`room:${roomId}`).emit("room:effect", payload);
-
-            console.log("🎬 Entrance emitted:", payload);
-          } else {
-            console.log("⚠️ No entrance animation for user:", userId);
+            });
           }
         } catch (error) {
-          console.error("❌ Entrance emit error:", error.message);
+          console.error("❌ Entrance error:", error.message);
         }
+
         // ===============================
-        // ⏱ 5 MIN STAY EXP (PERSONAL)
+        // ⏱ EXP TIMER
         // ===============================
         if (!roomStayTimers.has(userId)) {
           const stayTimer = setInterval(
             async () => {
-              try {
-                await levelController.addPersonalExp(userId, 10, io);
-
-                io.to(userId.toString()).emit("level:exp", {
-                  type: "personal",
-                  exp: 10,
-                  message: "+10 EXP (5 min stay)",
-                });
-              } catch (e) {
-                console.error("stay exp error:", e.message);
-              }
+              await levelController.addPersonalExp(userId, 10, io);
             },
             5 * 60 * 1000,
           );
@@ -600,6 +585,49 @@ module.exports = (io) => {
         }
       } catch (err) {
         console.error("❌ room:join error:", err);
+      }
+    });
+    // ===============================
+    // 📝 ROOM DESCRIPTION UPDATE
+    // ===============================
+    socket.on("room:description:update", async ({ roomId, description }) => {
+      try {
+        const userId = socket.data.userId;
+
+        if (!roomId || typeof description !== "string") return;
+
+        // 🔐 Only host/admin allowed
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) {
+          return socket.emit("error:permission", {
+            message: "Only host/admin can update description",
+          });
+        }
+
+        // ✂️ Trim & limit
+        const cleanDesc = description.trim().slice(0, 150);
+        if (!cleanDesc) {
+          return socket.emit("error", {
+            message: "Description cannot be empty",
+          });
+        }
+
+        const room = await Room.findOneAndUpdate(
+          { roomId },
+          { description: cleanDesc },
+          { new: true },
+        );
+
+        if (!room) return;
+
+        // 📢 Broadcast to all users in room
+        io.to(`room:${roomId}`).emit("room:description:updated", {
+          description: room.description,
+        });
+
+        console.log("✅ Room description updated:", cleanDesc);
+      } catch (err) {
+        console.error("❌ room description error:", err.message);
       }
     });
     // ===============================

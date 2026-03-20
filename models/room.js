@@ -144,6 +144,11 @@ const roomSchema = new mongoose.Schema(
       type: [Number], // e.g. [1,2,3,4]
       default: [],
     },
+    description: {
+      type: String,
+      default: "",
+      maxlength: 150,
+    },
     // ⭐ ROOM-SPECIFIC USER PROFILES
     roomProfiles: [
       {
