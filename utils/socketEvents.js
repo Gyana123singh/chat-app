@@ -607,36 +607,43 @@ module.exports = (io) => {
       try {
         const userId = socket.data.userId;
 
+        // ===============================
+        // ✅ BASIC VALIDATION
+        // ===============================
         if (!roomId || !seatCount) return;
 
-        // ✅ Validate allowed values
         const allowedSeats = [8, 10, 12];
         if (!allowedSeats.includes(seatCount)) {
           return socket.emit("error", { message: "Invalid seat count" });
         }
 
+        // ===============================
+        // ✅ FETCH ROOM
+        // ===============================
         const room = await Room.findOne({ roomId });
 
-        // ✅ FIX: prevent crash
         if (!room) {
           return socket.emit("error", { message: "Room not found" });
         }
-        // 🔐 Only host allowed
-        if (!room || room.host.toString() !== userId.toString()) {
+
+        // ===============================
+        // 🔐 ONLY HOST CAN CHANGE
+        // ===============================
+        if (!room.host || room.host.toString() !== userId.toString()) {
           return socket.emit("error:permission", {
             message: "Only host can change seat count",
           });
         }
 
         // ===============================
-        // ✅ FIX 1: PREVENT UNNECESSARY UPDATE
+        // 🚫 NO CHANGE → SKIP DB WRITE
         // ===============================
         if (room.seatCount === seatCount) {
-          return; // nothing changed
+          return;
         }
 
         // ===============================
-        // ✅ FIX 2: UPDATE + CLEAN LOCKED SEATS
+        // 🧹 UPDATE + CLEAN LOCKED SEATS
         // ===============================
         room.seatCount = seatCount;
 
@@ -647,16 +654,23 @@ module.exports = (io) => {
         await room.save();
 
         // ===============================
-        // 📢 BROADCAST UPDATE
+        // 📢 BROADCAST UPDATE TO ALL USERS
         // ===============================
         io.to(`room:${roomId}`).emit("room:seatCount:updated", {
           seatCount,
-          lockedSeats: room.lockedSeats, // optional but recommended
+          lockedSeats: room.lockedSeats,
         });
 
-        console.log("✅ Seat count updated:", seatCount);
+        console.log("✅ Seat count updated:", {
+          roomId,
+          seatCount,
+        });
       } catch (err) {
         console.error("❌ seatCount update error:", err.message);
+
+        socket.emit("error", {
+          message: "Failed to update seat count",
+        });
       }
     });
     // ===============================
