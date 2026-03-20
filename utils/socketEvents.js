@@ -16,6 +16,7 @@ const calculateProfitLoss = require("../utils/profitLossLuckEngine");
 
 // pkId -> timeoutId
 const pkTimers = new Map();
+const backgroundUsers = new Map(); // userId -> true
 
 // Permission Helper (Host/Admin Check)
 // Permission Helper (Host/Admin Check) - FIXED
@@ -237,6 +238,10 @@ module.exports = (io) => {
       if (!userId) return;
 
       onlineUsers.set(userId, socket.id);
+      // ✅ RESET BACKGROUND STATE
+      backgroundUsers.delete(userId.toString());
+      socket.data.isBackground = false;
+
       socket.data.userId = userId;
       socket.data.username = username;
       socket.data.avatar = avatar;
@@ -282,14 +287,20 @@ module.exports = (io) => {
 
         const usersInRoom = sockets
           .filter((s) => s.data.user)
-          .map((s) => ({
-            ...s.data.user,
-            isWatcher: s.data.isWatcher || false,
-            mic: micStates.get(s.data.user.id) || {
-              muted: false,
-              speaking: false,
-            },
-          }));
+          .map((s) => {
+            const userIdStr = s.data.user.id?.toString(); // ✅ FIX
+
+            return {
+              ...s.data.user,
+              isWatcher: s.data.isWatcher || false,
+              isBackground: backgroundUsers.has(userIdStr), // ✅ SAFE NOW
+
+              mic: micStates.get(userIdStr) || {
+                muted: false,
+                speaking: false,
+              },
+            };
+          });
 
         socket.emit("room:users", usersInRoom);
 
@@ -452,6 +463,7 @@ module.exports = (io) => {
               ...user,
               avatar,
               isWatcher: s.data.isWatcher || false,
+              isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
               mic: micStates.get(userIdStr) || {
                 muted: false,
@@ -590,7 +602,45 @@ module.exports = (io) => {
         console.error("❌ room:join error:", err);
       }
     });
+    // ===============================
+    // 🟡 BACKGROUND MODE (KEEP BUTTON)
+    // ===============================
+    socket.on("room:background", ({ roomId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
 
+      backgroundUsers.set(userId.toString(), true);
+      socket.data.isBackground = true;
+
+      console.log("🟡 User moved to background:", userId);
+    });
+    // ===============================
+    // 🟢 FOREGROUND (RETURN TO ROOM)
+    // ===============================
+    socket.on("room:foreground", ({ roomId }) => {
+      const userId = socket.data.userId;
+      if (!userId) return;
+
+      backgroundUsers.delete(userId.toString());
+      socket.data.isBackground = false;
+
+      console.log("🟢 User back to foreground:", userId);
+    });
+    // ===============================
+    // 🔴 FULL LEAVE ROOM
+    // ===============================
+    socket.on("room:leave", ({ roomId }) => {
+      const userId = socket.data.userId;
+
+      if (!userId || !roomId) return;
+
+      backgroundUsers.delete(userId.toString());
+
+      socket.leave(`room:${roomId}`);
+      socket.data.isBackground = false;
+
+      console.log("🔴 User fully left room:", userId);
+    });
     // ===============================
     // 🥊 PK START (SOCKET BROADCAST)
     // ===============================
@@ -1551,11 +1601,18 @@ module.exports = (io) => {
       const { roomId, userId, user } = socket.data;
 
       try {
+        // 🔥🔥🔥 MOST IMPORTANT FIX
+        if (socket.data.isBackground) {
+          console.log("🟡 Background user disconnect ignored:", userId);
+          return;
+        }
+
         if (userId) {
           onlineUsers.delete(userId);
           micStates.delete(userId);
+
           // ===============================
-          // 🔥 CLEAR LEVEL TIMERS (ALWAYS)
+          // 🔥 CLEAR LEVEL TIMERS (SAFE)
           // ===============================
           if (roomStayTimers.has(userId)) {
             clearInterval(roomStayTimers.get(userId));
@@ -1566,6 +1623,7 @@ module.exports = (io) => {
             clearInterval(micExpTimers.get(userId));
             micExpTimers.delete(userId);
           }
+
           if (roomId && typingUsers.has(roomId)) {
             typingUsers.get(roomId).delete(userId);
           }
@@ -1576,7 +1634,7 @@ module.exports = (io) => {
 
           const musicState = roomManager.getState(roomId);
 
-          // 🔥 STOP MUSIC IF DJ LEFT (ALWAYS, EVEN IF PAUSED)
+          // 🔥 STOP MUSIC IF DJ LEFT
           if (
             roomId &&
             musicState.playedBy &&
@@ -1584,10 +1642,8 @@ module.exports = (io) => {
           ) {
             console.log("🎵 DJ left room, stopping music permanently");
 
-            // 1) Stop in-memory
             roomManager.stopMusic(roomId);
 
-            // 2) Clear DB state completely
             await MusicState.findOneAndUpdate(
               { roomId },
               {
@@ -1601,7 +1657,6 @@ module.exports = (io) => {
               },
             );
 
-            // 3) Notify all users
             io.to(`room:${roomId}`).emit("music:stopped", {
               reason: "dj_left",
             });
@@ -1609,9 +1664,9 @@ module.exports = (io) => {
         }
 
         if (roomId && user) {
-          socket
-            .to(`room:${roomId}`)
-            .emit("room:userLeft", { userId: user.id });
+          socket.to(`room:${roomId}`).emit("room:userLeft", {
+            userId: user.id,
+          });
         }
 
         console.log("❌ Socket disconnected:", socket.id);
