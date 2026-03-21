@@ -324,11 +324,13 @@ module.exports = (io) => {
 
         /* ===== SEAT COUNT ✅ ===== */
         socket.emit("room:seatCount", {
+          roomId,
           seatCount: roomDoc?.seatCount || 12,
         });
 
         /* ===== DESCRIPTION ✅ ===== */
         socket.emit("room:description", {
+          roomId,
           description: roomDoc?.description || "",
         });
 
@@ -385,6 +387,7 @@ module.exports = (io) => {
         // 📝 SEND DESCRIPTION (FIXED)
         // ===============================
         socket.emit("room:description", {
+          roomId,
           description: roomDoc?.description || "",
         });
 
@@ -506,6 +509,7 @@ module.exports = (io) => {
 
         //room:seatCount
         socket.emit("room:seatCount", {
+          roomId,
           seatCount: roomDoc?.seatCount || 12,
         });
         // ===============================
@@ -633,8 +637,9 @@ module.exports = (io) => {
         room.seatCount = seatCount;
         await room.save();
 
-        // ✅ SAME EVENT EVERYWHERE
+        // ✅ FIXED (added roomId)
         io.to(`room:${roomId}`).emit("room:seatCount", {
+          roomId,
           seatCount,
         });
 
@@ -642,6 +647,8 @@ module.exports = (io) => {
         console.error("❌ seatCount update error:", err);
       }
     });
+
+
     // ===============================
     // 📝 ROOM DESCRIPTION UPDATE
     // ===============================
@@ -649,7 +656,9 @@ module.exports = (io) => {
       try {
         const userId = socket.data.userId;
 
-        if (!roomId || typeof description !== "string") return;
+        if (!roomId || typeof description !== "string") {
+          return socket.emit("error", { message: "Invalid data" });
+        }
 
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) {
@@ -673,7 +682,7 @@ module.exports = (io) => {
 
         if (!room) return;
 
-        // ✅ FINAL FIXED VERSION
+        // ✅ already correct (with roomId)
         io.to(`room:${roomId}`).emit("room:description", {
           roomId,
           description: room.description,
