@@ -651,7 +651,6 @@ module.exports = (io) => {
 
         if (!roomId || typeof description !== "string") return;
 
-        // 🔐 Only host/admin allowed
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) {
           return socket.emit("error:permission", {
@@ -659,7 +658,6 @@ module.exports = (io) => {
           });
         }
 
-        // ✂️ Trim & limit
         const cleanDesc = description.trim().slice(0, 150);
         if (!cleanDesc) {
           return socket.emit("error", {
@@ -675,8 +673,9 @@ module.exports = (io) => {
 
         if (!room) return;
 
-        // 📢 Broadcast to all users in room
-        io.to(`room:${roomId}`).emit("room:description:updated", {
+        // ✅ FINAL FIXED VERSION
+        io.to(`room:${roomId}`).emit("room:description", {
+          roomId,
           description: room.description,
         });
 
