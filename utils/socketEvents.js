@@ -607,13 +607,9 @@ module.exports = (io) => {
       try {
         const userId = socket.data.userId;
 
-        console.log("🚀 seat update request:", { roomId, seatCount, userId });
-
         if (!userId) {
           return socket.emit("error", { message: "User not authenticated" });
         }
-
-        if (!roomId || !seatCount) return;
 
         const allowedSeats = [8, 10, 12];
         if (!allowedSeats.includes(seatCount)) {
@@ -632,19 +628,16 @@ module.exports = (io) => {
           });
         }
 
-        if (room.seatCount === seatCount) {
-          console.log("⚠️ Same seat count, skipping");
-          return;
-        }
+        if (room.seatCount === seatCount) return;
 
         room.seatCount = seatCount;
         await room.save();
 
-        console.log("📢 Broadcasting update");
-
-        io.to(`room:${roomId}`).emit("room:seatCount:updated", {
+        // ✅ SAME EVENT EVERYWHERE
+        io.to(`room:${roomId}`).emit("room:seatCount", {
           seatCount,
         });
+
       } catch (err) {
         console.error("❌ seatCount update error:", err);
       }
