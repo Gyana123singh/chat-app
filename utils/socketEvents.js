@@ -253,8 +253,9 @@ module.exports = (io) => {
 
       // 🔥 Cache profile data
       const user = await User.findById(userId)
-        .select("profile.bubble profile.frame level")
+        .select("profile.bubble profile.frame level displayId")
         .lean();
+      socket.data.displayId = user?.displayId; // ✅ ADD THIS LINE
 
       socket.data.profile = {
         bubble: user?.profile?.bubble || null,
@@ -524,6 +525,7 @@ module.exports = (io) => {
 
         socket.to(roomName).emit("room:userJoined", {
           id: safeUser.id,
+          displayId: socket.data.displayId, // ✅ ADD
           username: safeUser.username,
           avatar: safeUser.avatar,
         });
@@ -974,6 +976,7 @@ module.exports = (io) => {
         // =========================
         io.to(`room:${roomId}`).emit("gift:received", {
           fromUserId,
+          fromDisplayId: socket.data.displayId, // ✅ ADD
           fromUsername: socket.data.username,
           fromAvatar: socket.data.avatar,
           recipientIds,
@@ -1148,6 +1151,7 @@ module.exports = (io) => {
         id: `${userId}-${Date.now()}`,
         type: "image",
         userId,
+        displayId: socket.data.displayId, // ✅ ADD
         username,
         avatar,
         imageUrl,
@@ -1392,6 +1396,7 @@ module.exports = (io) => {
         id: `${userId}-${Date.now()}`,
         roomId,
         userId,
+        displayId: socket.data.displayId, // ✅ ADD
         username,
         avatar,
         text,
@@ -1492,6 +1497,7 @@ module.exports = (io) => {
       if (targetSocket) {
         io.to(targetSocket).emit("friend:request:received", {
           fromUserId,
+          fromDisplayId: socket.data.displayId, // ✅ ADD
           fromUsername: socket.data.username,
           fromAvatar: socket.data.avatar,
         });
@@ -1523,6 +1529,7 @@ module.exports = (io) => {
         .filter((s) => s.data.user)
         .map((s) => ({
           userId: s.data.user.id,
+          displayId: s.data.displayId, // ✅ ADD THIS
           username: s.data.user.username,
           avatar: s.data.user.avatar,
           mic: micStates.get(s.data.user.id) || {
