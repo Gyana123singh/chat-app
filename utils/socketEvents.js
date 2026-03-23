@@ -285,20 +285,40 @@ module.exports = (io) => {
 
       try {
         // ===============================
-        // ✅ FETCH ROOM ONCE (IMPORTANT)
+        // ✅ FETCH ROOM
         // ===============================
         const roomDoc = await Room.findOne({ roomId });
 
         /* ===== USERS LIST ===== */
         const sockets = await io.in(roomName).fetchSockets();
 
+        // ✅ STEP 1: Collect user IDs
+        const userIds = sockets
+          .filter((s) => s.data.user)
+          .map((s) => s.data.user.id);
+
+        // ✅ STEP 2: Fetch users from DB (INCLUDING displayId)
+        const users = await User.find({ _id: { $in: userIds } })
+          .select("displayId username profile.avatar")
+          .lean();
+
+        // ✅ STEP 3: Create fast lookup map
+        const userMap = new Map(
+          users.map((u) => [u._id.toString(), u])
+        );
+
+        // ✅ STEP 4: Build users list with displayId
         const usersInRoom = sockets
           .filter((s) => s.data.user)
           .map((s) => {
             const userIdStr = s.data.user.id?.toString();
+            const dbUser = userMap.get(userIdStr);
 
             return {
               ...s.data.user,
+              displayId: dbUser?.displayId || null, // ✅ ADDED
+              username: dbUser?.username || s.data.user.username,
+              avatar: dbUser?.profile?.avatar || s.data.user.avatar,
               isWatcher: s.data.isWatcher || false,
               isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
@@ -322,13 +342,13 @@ module.exports = (io) => {
           currentPosition,
         });
 
-        /* ===== SEAT COUNT ✅ ===== */
+        /* ===== SEAT COUNT ===== */
         socket.emit("room:seatCount", {
           roomId,
           seatCount: roomDoc?.seatCount || 12,
         });
 
-        /* ===== DESCRIPTION ✅ ===== */
+        /* ===== DESCRIPTION ===== */
         socket.emit("room:description", {
           roomId,
           description: roomDoc?.description || "",
@@ -458,7 +478,7 @@ module.exports = (io) => {
           .map((s) => s.data.user.id);
 
         const users = await User.find({ _id: { $in: userIds } })
-          .select("profile.frame profile.avatar")
+          .select("profile.frame profile.avatar displayId username")
           .lean();
 
         const frameMap = new Map(
@@ -488,6 +508,7 @@ module.exports = (io) => {
             return {
               ...user,
               avatar,
+              displayId: dbUser?.displayId || null, // ✅ ADD THIS
               isWatcher: s.data.isWatcher || false,
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
