@@ -1,7 +1,7 @@
 const admin = require("../config/firebaseAdmin");
 const { signToken } = require("../utils/jwtAuth");
 const User = require("../models/users");
-const generateDisplayId = require("../utils/generateDisplayId"); // ⭐ ADD THIS
+const generateDisplayId = require("../utils/generateDisplayId");
 
 exports.firebaseOtpLogin = async (req, res) => {
   try {
@@ -23,45 +23,55 @@ exports.firebaseOtpLogin = async (req, res) => {
     // 🌍 Country detection
     let countryCode = "";
 
-    if (phoneNumber.startsWith("+91"))
-      countryCode = "+91"; // India
-    else if (phoneNumber.startsWith("+92"))
-      countryCode = "+92"; // Pakistan
-    else if (phoneNumber.startsWith("+880"))
-      countryCode = "+880"; // Bangladesh
-    else if (phoneNumber.startsWith("+977"))
-      countryCode = "+977"; // 🇳🇵 Nepal
+    if (phoneNumber.startsWith("+91")) countryCode = "+91";
+    else if (phoneNumber.startsWith("+92")) countryCode = "+92";
+    else if (phoneNumber.startsWith("+880")) countryCode = "+880";
+    else if (phoneNumber.startsWith("+977")) countryCode = "+977";
     else {
       return res.status(400).json({ message: "Country not supported" });
     }
 
-    // 🔍 Find or create user
+    // =========================
+    // 🔍 Find or Create User
+    // =========================
     let user = await User.findOne({ phone: phoneNumber });
 
     if (!user) {
       const displayId = await generateDisplayId();
+
       user = await User.create({
         phone: phoneNumber,
         countryCode,
         username: `user_${phoneNumber.slice(-4)}`,
         role: "user",
-        displayId, // ⭐ NEW
+        displayId, // ✅ NEW USER
       });
+    } else if (!user.displayId) {
+      // ✅ FIX: OLD USER SUPPORT
+      user.displayId = await generateDisplayId();
+      await user.save();
     }
 
+    // =========================
     // 🔑 JWT token
+    // =========================
     const token = signToken(user);
 
+    // =========================
+    // ✅ FINAL RESPONSE (IMPORTANT)
+    // =========================
     res.status(200).json({
       success: true,
       token,
       user: {
         id: user._id,
+        displayId: user.displayId, // ✅ CRITICAL FIX
         phone: user.phone,
         username: user.username,
         role: user.role,
       },
     });
+
   } catch (error) {
     console.error("OTP LOGIN ERROR:", error);
     res.status(401).json({ message: "Invalid or expired OTP" });
