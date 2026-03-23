@@ -6,12 +6,10 @@ const bcrypt = require("bcryptjs");
 // ================= GET PROFILE =================
 exports.getUserById = async (req, res) => {
   try {
-    console.log("REQ USER:", req.user); // 🔥 debug
-
-    const userId = req.user.id; // from token
+    const userId = req.user.id;
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats isVerified",
+      "username phone country countryCode role lastSeen profile stats isVerified displayId"
     );
 
     if (!user) {
@@ -25,6 +23,7 @@ exports.getUserById = async (req, res) => {
       success: true,
       data: {
         id: user._id,
+        displayId: user.displayId, // ✅ FIX
         username: user.username,
         avatar: user.profile?.avatar,
         bio: user.profile?.bio,
