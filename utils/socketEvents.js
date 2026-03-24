@@ -256,7 +256,7 @@ module.exports = (io) => {
         .select("profile.bubble profile.frame level displayId")
         .lean();
       socket.data.displayId = user?.displayId; // ✅ ADD THIS LINE
-
+      socket.data.displayId = user?.displayId; // ✅ REQUIRED
       socket.data.profile = {
         bubble: user?.profile?.bubble || null,
         frame: user?.profile?.frame?.icon || null,
@@ -393,7 +393,17 @@ module.exports = (io) => {
 
       socket.data.roomId = roomId;
       socket.data.isWatcher = false;
-      socket.data.user = safeUser;
+      // 🔥 attach displayId into user object
+      const dbUser = await User.findById(safeUser.id)
+        .select("displayId username profile.avatar")
+        .lean();
+
+      socket.data.user = {
+        id: safeUser.id,
+        username: dbUser?.username || safeUser.username,
+        avatar: dbUser?.profile?.avatar || safeUser.avatar,
+        displayId: dbUser?.displayId || socket.data.displayId || null, // ✅ FIX
+      };
       socket.data.userId = safeUser.id;
 
       const userId = safeUser.id;
@@ -508,17 +518,19 @@ module.exports = (io) => {
             if (!user) return null;
 
             const userIdStr = user.id?.toString();
-            const dbUser = userMap.get(userIdStr); // 🔥 FIXED
-
-            const avatar =
-              roomAvatarMap.get(userIdStr) ||
-              dbUser?.profile?.avatar ||
-              user.avatar;
+            const dbUser = userMap.get(userIdStr);
 
             return {
-              ...user,
-              avatar,
-              displayId: dbUser?.displayId || null, // ✅ NOW ALWAYS COMES
+              id: user.id,
+              username: user.username,
+              avatar:
+                roomAvatarMap.get(userIdStr) ||
+                dbUser?.profile?.avatar ||
+                user.avatar,
+
+              // 🔥🔥 THIS IS THE MAIN FIX
+              displayId: user.displayId || null,
+
               isWatcher: s.data.isWatcher || false,
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
