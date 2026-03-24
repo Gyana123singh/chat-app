@@ -546,10 +546,10 @@ module.exports = (io) => {
         io.to(roomName).emit("room:users", usersInRoom);
 
         socket.to(roomName).emit("room:userJoined", {
-          id: safeUser.id,
-          displayId: socket.data.displayId, // ✅ ADD
-          username: safeUser.username,
-          avatar: safeUser.avatar,
+          id: socket.data.user.id,
+          displayId: socket.data.user.displayId, // ✅ FIXED
+          username: socket.data.user.username,
+          avatar: socket.data.user.avatar,
         });
 
         //room:seatCount
