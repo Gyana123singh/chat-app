@@ -472,18 +472,26 @@ module.exports = (io) => {
         // ===============================
         // 👥 USERS LIST
         // ===============================
+
         const sockets = await io.in(roomName).fetchSockets();
 
+        // ✅ Collect user IDs
         const userIds = sockets
           .filter((s) => s.data.user)
           .map((s) => s.data.user.id);
 
+        // ✅ Fetch users (including displayId)
         const users = await User.find({ _id: { $in: userIds } })
           .select("profile.frame profile.avatar displayId username")
           .lean();
 
+        // ✅ Create fast lookup maps
+        const userMap = new Map(
+          users.map((u) => [u._id.toString(), u])
+        );
+
         const frameMap = new Map(
-          users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null]),
+          users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null])
         );
 
         const roomAvatarMap = new Map();
@@ -493,13 +501,14 @@ module.exports = (io) => {
           });
         }
 
+        // ✅ Build users list (FIXED displayId)
         const usersInRoom = sockets
           .map((s) => {
             const user = s.data.user;
             if (!user) return null;
 
             const userIdStr = user.id?.toString();
-            const dbUser = users.find((u) => u._id.toString() === userIdStr);
+            const dbUser = userMap.get(userIdStr); // 🔥 FIXED
 
             const avatar =
               roomAvatarMap.get(userIdStr) ||
@@ -509,7 +518,7 @@ module.exports = (io) => {
             return {
               ...user,
               avatar,
-              displayId: dbUser?.displayId || null, // ✅ ADD THIS
+              displayId: dbUser?.displayId || null, // ✅ NOW ALWAYS COMES
               isWatcher: s.data.isWatcher || false,
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
@@ -521,6 +530,7 @@ module.exports = (io) => {
           })
           .filter(Boolean);
 
+        // ✅ Broadcast updated users
         io.to(roomName).emit("room:users", usersInRoom);
 
         socket.to(roomName).emit("room:userJoined", {
