@@ -19,6 +19,7 @@ async function getRoomSafe(roomId) {
 // pkId -> timeoutId
 const pkTimers = new Map();
 const backgroundUsers = new Map(); // userId -> true
+const seats = new Map(); // ✅ roomId -> [userIds]
 
 // Permission Helper (Host/Admin Check)
 // Permission Helper (Host/Admin Check) - FIXED
@@ -243,7 +244,8 @@ module.exports = (io) => {
       // ✅ RESET BACKGROUND STATE
       backgroundUsers.delete(userId.toString());
       socket.data.isBackground = false;
-
+      // ✅ DEFAULT STATE (CRITICAL FIX)
+      socket.data.isWatcher = true;
       socket.data.userId = userId;
       socket.data.username = username;
       socket.data.avatar = avatar;
@@ -320,7 +322,7 @@ module.exports = (io) => {
               displayId: dbUser?.displayId || null, // ✅ ADDED
               username: dbUser?.username || s.data.user.username,
               avatar: dbUser?.profile?.avatar || s.data.user.avatar,
-              isWatcher: s.data.isWatcher || false,
+              isWatcher: !seats.get(roomId)?.includes(s.data.user?.id),
               isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
                 muted: false,
@@ -392,7 +394,12 @@ module.exports = (io) => {
       socket.join(roomName);
 
       socket.data.roomId = roomId;
+      socket.data.userId = safeUser.id;  // FIRST
       socket.data.isWatcher = false;
+
+      // THIRD (ADD TO SEATS)
+      const roomSeats = seats.get(roomId) || [];
+      seats.set(roomId, [...roomSeats, socket.data.userId]);;
       // 🔥 attach displayId into user object
       const dbUser = await User.findById(safeUser.id)
         .select("displayId username profile.avatar")
@@ -531,7 +538,7 @@ module.exports = (io) => {
               // 🔥🔥 THIS IS THE MAIN FIX
               displayId: user.displayId || null,
 
-              isWatcher: s.data.isWatcher || false,
+              isWatcher: !seats.get(roomId)?.includes(s.data.user?.id),
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
               mic: micStates.get(userIdStr) || {
@@ -769,7 +776,9 @@ module.exports = (io) => {
       const userId = socket.data.userId;
 
       if (!userId || !roomId) return;
-
+      // ✅ ADD THIS
+      const roomSeats = seats.get(roomId) || [];
+      seats.set(roomId, roomSeats.filter(id => id !== userId));
       backgroundUsers.delete(userId.toString());
 
       socket.leave(`room:${roomId}`);
@@ -1171,17 +1180,17 @@ module.exports = (io) => {
 
       console.log("🪑 User leaving seat → audience:", userId);
 
-      // ✅ Set watcher
+      // ✅ SET WATCHER
       socket.data.isWatcher = true;
+      // ✅ REMOVE FROM SEATS (CRITICAL)
+      const roomSeats = seats.get(roomId) || [];
+      seats.set(roomId, roomSeats.filter(id => id !== userId));
 
-      // ✅ Mute mic
+      // ✅ FORCE MIC OFF
       micStates.set(userId, { muted: true, speaking: false });
 
       const roomName = `room:${roomId}`;
 
-      // ===============================
-      // 🔥 REBUILD USERS LIST (MAIN FIX)
-      // ===============================
       const sockets = await io.in(roomName).fetchSockets();
 
       const usersInRoom = sockets
@@ -1194,7 +1203,10 @@ module.exports = (io) => {
             username: u.username,
             avatar: u.avatar,
             displayId: u.displayId || null,
-            isWatcher: s.data.isWatcher || false, // ✅ IMPORTANT
+
+            // ✅ FIXED LOGIC
+            isWatcher: !seats.get(roomId)?.includes(s.data.user?.id),
+
             isBackground: false,
             mic: micStates.get(u.id) || {
               muted: false,
@@ -1204,17 +1216,7 @@ module.exports = (io) => {
         })
         .filter(Boolean);
 
-      // ✅ BROADCAST UPDATED USERS
       io.to(roomName).emit("room:users", usersInRoom);
-
-      // Optional events
-      io.to(roomName).emit("room:userLeftSeat", { userId });
-
-      io.to(roomName).emit("mic:update", {
-        userId,
-        muted: true,
-        speaking: false,
-      });
     });
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
@@ -1778,7 +1780,10 @@ module.exports = (io) => {
     ========================= */
     socket.on("disconnect", async () => {
       const { roomId, userId, user } = socket.data;
-
+      if (roomId && userId) {
+        const roomSeats = seats.get(roomId) || [];
+        seats.set(roomId, roomSeats.filter(id => id !== userId));
+      }
       try {
         // 🔥🔥🔥 MOST IMPORTANT FIX
         if (socket.data.isBackground) {
