@@ -322,7 +322,7 @@ module.exports = (io) => {
               displayId: dbUser?.displayId || null, // ✅ ADDED
               username: dbUser?.username || s.data.user.username,
               avatar: dbUser?.profile?.avatar || s.data.user.avatar,
-              isWatcher: !seats.get(roomId)?.includes(s.data.userId),
+              isWatcher: !seats.get(roomId)?.map(id => id.toString()).includes(s.data.userId?.toString()),
               isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
                 muted: false,
@@ -537,7 +537,7 @@ module.exports = (io) => {
               // 🔥🔥 THIS IS THE MAIN FIX
               displayId: user.displayId || null,
 
-              isWatcher: !seats.get(roomId)?.includes(s.data.userId),
+              isWatcher: !seats.get(roomId)?.map(id => id.toString()).includes(s.data.userId?.toString()),
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
               mic: micStates.get(userIdStr) || {
@@ -1174,49 +1174,56 @@ module.exports = (io) => {
     // 🔽 LEAVE SEAT (GO TO AUDIENCE)
     // ===============================
     socket.on("room:leaveSeat", async ({ roomId }) => {
-      const userId = socket.data.userId;
+      const userId = socket.data.userId?.toString();
       if (!userId || !roomId) return;
 
-      console.log(`🪑 User ${userId} leaving seat in room ${roomId}`);
+      console.log(`🪑 User leaving seat: ${userId}`);
 
-      // 1. Update seats
-      const roomSeats = seats.get(roomId) || [];
-      seats.set(roomId, roomSeats.filter(id => id !== userId));
+      // ✅ STEP 1: UPDATE STATE FIRST
+      let roomSeats = seats.get(roomId) || [];
+      roomSeats = roomSeats.map(id => id.toString()).filter(id => id !== userId);
+      seats.set(roomId, roomSeats);
 
-      // 2. Update state
       socket.data.isWatcher = true;
       micStates.set(userId, { muted: true, speaking: false });
+
+      // ✅ STEP 2: SNAPSHOT STATE (VERY IMPORTANT)
+      const seatsSnapshot = new Set(roomSeats);
 
       const roomName = `room:${roomId}`;
       const sockets = await io.in(roomName).fetchSockets();
 
-      const usersInRoom = sockets
-        .map((s) => {
-          const u = s.data.user;
-          if (!u) return null;
+      // ✅ STEP 3: BUILD FROM SNAPSHOT ONLY
+      const usersInRoom = sockets.map((s) => {
+        const u = s.data.user;
+        if (!u) return null;
 
-          return {
-            id: u.id,
-            username: u.username,
-            avatar: u.avatar,
-            displayId: u.displayId || null,
-            isWatcher: !seats.get(roomId)?.includes(s.data.userId),
-            isBackground: backgroundUsers.has(s.data.userId?.toString()),
-            mic: micStates.get(s.data.userId) || {
-              muted: true,
-              speaking: false,
-            },
-          };
-        })
-        .filter(Boolean);
+        const sUserId = s.data.userId?.toString();
 
-      // ✅ Full sync
+        return {
+          id: s.data.userId,
+          username: u.username,
+          avatar: u.avatar,
+          displayId: u.displayId || null,
+
+          // ✅ USE SNAPSHOT (NOT seats.get again)
+          isWatcher: !seatsSnapshot.has(sUserId),
+
+          isBackground: backgroundUsers.has(sUserId),
+
+          mic: micStates.get(sUserId) || {
+            muted: true,
+            speaking: false,
+          },
+        };
+      }).filter(Boolean);
+
+      // 🔥 DEBUG (CRITICAL)
+      console.log("🚨 FINAL USERS BEFORE EMIT:", usersInRoom);
+
+      // ✅ STEP 4: EMIT AFTER FULL BUILD
       io.to(roomName).emit("room:users", usersInRoom);
-
-      // 🔥 CRITICAL FIX (your idea)
       io.to(roomName).emit("room:userLeftSeat", { userId });
-
-      console.log(`✅ Vacancy sync sent for user ${userId}`);
     });
 
     socket.on("room:takeSeat", async ({ roomId }) => {
@@ -1237,11 +1244,11 @@ module.exports = (io) => {
       const sockets = await io.in(roomName).fetchSockets();
 
       const usersInRoom = sockets.map((s) => ({
-        id: s.data.user?.id,
+        id: s.data.userId,
         username: s.data.user?.username,
         avatar: s.data.user?.avatar,
         displayId: s.data.user?.displayId || null,
-        isWatcher: !seats.get(roomId)?.includes(s.data.userId),
+        isWatcher: !seats.get(roomId)?.map(id => id.toString()).includes(s.data.userId?.toString()),
         isBackground: backgroundUsers.has(s.data.userId?.toString()),
         mic: micStates.get(s.data.userId) || {
           muted: false,
