@@ -314,7 +314,7 @@ module.exports = (io) => {
         const usersInRoom = sockets
           .filter((s) => s.data.user)
           .map((s) => {
-            const userIdStr = s.data.user.id?.toString();
+            const userIdStr = s.data.userId?.toString();
             const dbUser = userMap.get(userIdStr);
 
             return {
@@ -322,7 +322,7 @@ module.exports = (io) => {
               displayId: dbUser?.displayId || null, // ✅ ADDED
               username: dbUser?.username || s.data.user.username,
               avatar: dbUser?.profile?.avatar || s.data.user.avatar,
-              isWatcher: !seats.get(roomId)?.includes(s.data.user?.id),
+              isWatcher: !seats.get(roomId)?.includes(s.data.userId),
               isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
                 muted: false,
@@ -395,11 +395,10 @@ module.exports = (io) => {
 
       socket.data.roomId = roomId;
       socket.data.userId = safeUser.id;  // FIRST
-      socket.data.isWatcher = false;
+      // ✅ ALWAYS JOIN AS WATCHER
+      socket.data.isWatcher = true;
 
-      // THIRD (ADD TO SEATS)
-      const roomSeats = seats.get(roomId) || [];
-      seats.set(roomId, [...roomSeats, socket.data.userId]);;
+      // ❌ DO NOT ADD TO SEATS HERE
       // 🔥 attach displayId into user object
       const dbUser = await User.findById(safeUser.id)
         .select("displayId username profile.avatar")
@@ -538,7 +537,7 @@ module.exports = (io) => {
               // 🔥🔥 THIS IS THE MAIN FIX
               displayId: user.displayId || null,
 
-              isWatcher: !seats.get(roomId)?.includes(s.data.user?.id),
+              isWatcher: !seats.get(roomId)?.includes(s.data.userId),
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
               mic: micStates.get(userIdStr) || {
@@ -1205,7 +1204,7 @@ module.exports = (io) => {
             displayId: u.displayId || null,
 
             // ✅ FIXED LOGIC
-            isWatcher: !seats.get(roomId)?.includes(s.data.user?.id),
+            isWatcher: !seats.get(roomId)?.includes(s.data.userId),
 
             isBackground: false,
             mic: micStates.get(u.id) || {
@@ -1215,6 +1214,39 @@ module.exports = (io) => {
           };
         })
         .filter(Boolean);
+
+      io.to(roomName).emit("room:users", usersInRoom);
+    });
+
+    socket.on("room:takeSeat", async ({ roomId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      console.log("🪑 User taking seat:", userId);
+
+      socket.data.isWatcher = false;
+
+      const roomSeats = seats.get(roomId) || [];
+
+      if (!roomSeats.includes(userId)) {
+        seats.set(roomId, [...roomSeats, userId]);
+      }
+
+      const roomName = `room:${roomId}`;
+      const sockets = await io.in(roomName).fetchSockets();
+
+      const usersInRoom = sockets.map((s) => ({
+        id: s.data.user?.id,
+        username: s.data.user?.username,
+        avatar: s.data.user?.avatar,
+        displayId: s.data.user?.displayId || null,
+        isWatcher: !seats.get(roomId)?.includes(s.data.userId),
+        isBackground: false,
+        mic: micStates.get(s.data.userId) || {
+          muted: false,
+          speaking: false,
+        },
+      }));
 
       io.to(roomName).emit("room:users", usersInRoom);
     });
