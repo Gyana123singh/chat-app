@@ -1167,24 +1167,50 @@ module.exports = (io) => {
     // ===============================
     socket.on("room:leaveSeat", async ({ roomId }) => {
       const userId = socket.data.userId;
-
       if (!userId || !roomId) return;
 
       console.log("🪑 User leaving seat → audience:", userId);
 
-      // ✅ Mark as watcher (audience)
+      // ✅ Set watcher
       socket.data.isWatcher = true;
 
-      // ✅ Mute mic (important)
+      // ✅ Mute mic
       micStates.set(userId, { muted: true, speaking: false });
 
-      // ✅ Notify room UI update
-      io.to(`room:${roomId}`).emit("room:userLeftSeat", {
-        userId,
-      });
+      const roomName = `room:${roomId}`;
 
-      // ✅ Update mic state for all
-      io.to(`room:${roomId}`).emit("mic:update", {
+      // ===============================
+      // 🔥 REBUILD USERS LIST (MAIN FIX)
+      // ===============================
+      const sockets = await io.in(roomName).fetchSockets();
+
+      const usersInRoom = sockets
+        .map((s) => {
+          const u = s.data.user;
+          if (!u) return null;
+
+          return {
+            id: u.id,
+            username: u.username,
+            avatar: u.avatar,
+            displayId: u.displayId || null,
+            isWatcher: s.data.isWatcher || false, // ✅ IMPORTANT
+            isBackground: false,
+            mic: micStates.get(u.id) || {
+              muted: false,
+              speaking: false,
+            },
+          };
+        })
+        .filter(Boolean);
+
+      // ✅ BROADCAST UPDATED USERS
+      io.to(roomName).emit("room:users", usersInRoom);
+
+      // Optional events
+      io.to(roomName).emit("room:userLeftSeat", { userId });
+
+      io.to(roomName).emit("mic:update", {
         userId,
         muted: true,
         speaking: false,
