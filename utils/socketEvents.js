@@ -1177,19 +1177,17 @@ module.exports = (io) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
 
-      console.log("🪑 User leaving seat → audience:", userId);
+      console.log(`🪑 User ${userId} leaving seat in room ${roomId}`);
 
-      // ✅ SET WATCHER
-      socket.data.isWatcher = true;
-      // ✅ REMOVE FROM SEATS (CRITICAL)
+      // 1. Update seats
       const roomSeats = seats.get(roomId) || [];
       seats.set(roomId, roomSeats.filter(id => id !== userId));
 
-      // ✅ FORCE MIC OFF
+      // 2. Update state
+      socket.data.isWatcher = true;
       micStates.set(userId, { muted: true, speaking: false });
 
       const roomName = `room:${roomId}`;
-
       const sockets = await io.in(roomName).fetchSockets();
 
       const usersInRoom = sockets
@@ -1202,20 +1200,23 @@ module.exports = (io) => {
             username: u.username,
             avatar: u.avatar,
             displayId: u.displayId || null,
-
-            // ✅ FIXED LOGIC
             isWatcher: !seats.get(roomId)?.includes(s.data.userId),
-
             isBackground: backgroundUsers.has(s.data.userId?.toString()),
             mic: micStates.get(s.data.userId) || {
-              muted: false,
+              muted: true,
               speaking: false,
             },
           };
         })
         .filter(Boolean);
 
+      // ✅ Full sync
       io.to(roomName).emit("room:users", usersInRoom);
+
+      // 🔥 CRITICAL FIX (your idea)
+      io.to(roomName).emit("room:userLeftSeat", { userId });
+
+      console.log(`✅ Vacancy sync sent for user ${userId}`);
     });
 
     socket.on("room:takeSeat", async ({ roomId }) => {
