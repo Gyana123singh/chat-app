@@ -1162,7 +1162,34 @@ module.exports = (io) => {
         console.error("❌ pk:forceEnd error:", err);
       }
     });
+    // ===============================
+    // 🔽 LEAVE SEAT (GO TO AUDIENCE)
+    // ===============================
+    socket.on("room:leaveSeat", async ({ roomId }) => {
+      const userId = socket.data.userId;
 
+      if (!userId || !roomId) return;
+
+      console.log("🪑 User leaving seat → audience:", userId);
+
+      // ✅ Mark as watcher (audience)
+      socket.data.isWatcher = true;
+
+      // ✅ Mute mic (important)
+      micStates.set(userId, { muted: true, speaking: false });
+
+      // ✅ Notify room UI update
+      io.to(`room:${roomId}`).emit("room:userLeftSeat", {
+        userId,
+      });
+
+      // ✅ Update mic state for all
+      io.to(`room:${roomId}`).emit("mic:update", {
+        userId,
+        muted: true,
+        speaking: false,
+      });
+    });
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
       const { userId, username, avatar } = socket.data;
