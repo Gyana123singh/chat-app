@@ -1206,8 +1206,8 @@ module.exports = (io) => {
             // ✅ FIXED LOGIC
             isWatcher: !seats.get(roomId)?.includes(s.data.userId),
 
-            isBackground: false,
-            mic: micStates.get(u.id) || {
+            isBackground: backgroundUsers.has(s.data.userId?.toString()),
+            mic: micStates.get(s.data.userId) || {
               muted: false,
               speaking: false,
             },
@@ -1241,7 +1241,7 @@ module.exports = (io) => {
         avatar: s.data.user?.avatar,
         displayId: s.data.user?.displayId || null,
         isWatcher: !seats.get(roomId)?.includes(s.data.userId),
-        isBackground: false,
+        isBackground: backgroundUsers.has(s.data.userId?.toString()),
         mic: micStates.get(s.data.userId) || {
           muted: false,
           speaking: false,
