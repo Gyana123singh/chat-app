@@ -316,13 +316,15 @@ module.exports = (io) => {
           .map((s) => {
             const userIdStr = s.data.userId?.toString();
             const dbUser = userMap.get(userIdStr);
-
+            const seatSnapshot = new Set(
+              (seats.get(roomId) || []).map(id => id.toString())
+            );
             return {
               ...s.data.user,
               displayId: dbUser?.displayId || null, // ✅ ADDED
               username: dbUser?.username || s.data.user.username,
               avatar: dbUser?.profile?.avatar || s.data.user.avatar,
-              isWatcher: !seats.get(roomId)?.map(id => id.toString()).includes(s.data.userId?.toString()),
+              isWatcher: !seatSnapshot.has(userIdStr),
               isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
                 muted: false,
@@ -525,7 +527,9 @@ module.exports = (io) => {
 
             const userIdStr = user.id?.toString();
             const dbUser = userMap.get(userIdStr);
-
+            const seatSnapshot = new Set(
+              (seats.get(roomId) || []).map(id => id.toString())
+            );
             return {
               id: user.id,
               username: user.username,
@@ -537,7 +541,7 @@ module.exports = (io) => {
               // 🔥🔥 THIS IS THE MAIN FIX
               displayId: user.displayId || null,
 
-              isWatcher: !seats.get(roomId)?.map(id => id.toString()).includes(s.data.userId?.toString()),
+              isWatcher: !seatSnapshot.has(s.data.userId?.toString()),
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
               mic: micStates.get(userIdStr) || {
