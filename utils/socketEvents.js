@@ -896,14 +896,29 @@ module.exports = (io) => {
           recipientIds = [toUserId];
         }
 
-        // Remove sender
+        // =========================
+        // REMOVE SENDER (NORMAL FLOW)
+        // =========================
         recipientIds = recipientIds.filter(
           (id) => id?.toString() !== fromUserId.toString(),
         );
 
+        // =========================
+        // 🔥 SELF SEND HANDLING
+        // =========================
+        let isSelfSend = false;
+
         if (recipientIds.length === 0) {
           recipientIds = [fromUserId];
+          isSelfSend = true;
+        } else {
+          isSelfSend =
+            recipientIds.length === 1 &&
+            recipientIds[0].toString() === fromUserId.toString();
         }
+
+        // ✅ FIX: override sendType locally
+        const finalSendType = isSelfSend ? "self" : sendType;
 
         // =========================
         // 3️⃣ Cost Calculation
@@ -921,18 +936,17 @@ module.exports = (io) => {
         }
 
         // ==========================
-        // 🎰 PROFIT / LOSS SYSTEM (ONLY ≥ 5000)
+        // 🎰 PROFIT / LOSS SYSTEM (FIXED FOR SELF SEND)
         // ==========================
-
         let luck = null;
-
         const amount = totalCost;
 
-        if (sendType !== "pk" && amount >= 5000) {
+        if (amount >= 5000 && (finalSendType !== "pk")) {
           luck = calculateProfitLoss(amount);
 
           console.log("🎰 PROFIT/LOSS DEBUG:", {
             amount,
+            isSelfSend,
             result: luck.result,
             percent: luck.percentage,
             coins: luck.coins,
@@ -991,7 +1005,7 @@ module.exports = (io) => {
           giftPrice: gift.price,
           giftCategory: gift.category,
           giftRarity: gift.rarity,
-          sendType,
+          sendType: finalSendType,
           recipientIds: recipientIds.map(
             (id) => new mongoose.Types.ObjectId(id),
           ),
@@ -1020,7 +1034,7 @@ module.exports = (io) => {
             effectType: gift.effectType,
           },
           quantity,
-          sendType,
+          sendType: finalSendType, // ✅ FIXED
           pkId: sendType === "pk" ? pkId : null,
         });
 
