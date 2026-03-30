@@ -1315,7 +1315,7 @@ module.exports = (io) => {
 
       console.log("✅ Seat taken synced:", userId);
     });
-    
+
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
       const { userId, username, avatar } = socket.data;
@@ -1629,20 +1629,36 @@ module.exports = (io) => {
 
       if (!msg) return;
 
+      // ❌ Prevent editing deleted messages
+      if (msg.deleted) {
+        return socket.emit("error", {
+          message: "Cannot edit deleted message",
+        });
+      }
+
       // ✅ Only sender can edit
       if (msg.userId !== userId) {
         return socket.emit("error", { message: "Not allowed to edit" });
       }
 
+      // ===============================
+      // 🔥 UPDATE MESSAGE
+      // ===============================
       msg.text = newText;
       msg.edited = true;
       msg.editedAt = new Date().toISOString();
 
+      // ===============================
+      // 🔥 BROADCAST FULL DATA
+      // ===============================
       io.to(`room:${roomId}`).emit("message:edited", {
         messageId,
         newText,
         edited: true,
+        editedAt: msg.editedAt,
       });
+
+      console.log("✏️ Message edited:", messageId);
     });
 
     socket.on("message:delete", async ({ roomId, messageId }) => {
@@ -1658,7 +1674,9 @@ module.exports = (io) => {
 
       const msg = messages[msgIndex];
 
-      // ✅ Allow: sender OR host/admin
+      // ===============================
+      // ✅ PERMISSION CHECK
+      // ===============================
       let allowed = false;
 
       if (msg.userId === userId) {
@@ -1672,14 +1690,24 @@ module.exports = (io) => {
         return socket.emit("error", { message: "Not allowed to delete" });
       }
 
-      // 🔥 WhatsApp style (soft delete)
+      // ===============================
+      // 🔥 SOFT DELETE (UPDATED)
+      // ===============================
       msg.text = "🚫 This message was deleted";
       msg.deleted = true;
       msg.deletedAt = new Date().toISOString();
 
+      // ===============================
+      // 🔥 BROADCAST FULL DATA (IMPORTANT FIX)
+      // ===============================
       io.to(`room:${roomId}`).emit("message:deleted", {
         messageId,
+        text: msg.text,
+        deleted: true,
+        deletedAt: msg.deletedAt,
       });
+
+      console.log("🗑️ Message deleted:", messageId);
     });
     /* =========================
        TROPHY / LEADERBOARD
