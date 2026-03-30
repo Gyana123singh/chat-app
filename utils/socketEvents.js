@@ -1195,87 +1195,127 @@ module.exports = (io) => {
       const userId = socket.data.userId?.toString();
       if (!userId || !roomId) return;
 
-      console.log(`🪑 User leaving seat: ${userId}`);
+      console.log("🪑 Leaving seat:", userId);
 
-      // ✅ STEP 1: UPDATE STATE FIRST
+      // ✅ FORCE REMOVE FROM SEATS (STRING SAFE)
       let roomSeats = seats.get(roomId) || [];
-      roomSeats = roomSeats.map(id => id.toString()).filter(id => id !== userId);
+
+      roomSeats = roomSeats
+        .map((id) => id.toString())
+        .filter((id) => id !== userId);
+
       seats.set(roomId, roomSeats);
 
+      // ✅ UPDATE USER STATE
       socket.data.isWatcher = true;
       micStates.set(userId, { muted: true, speaking: false });
 
-      // ✅ STEP 2: SNAPSHOT STATE (VERY IMPORTANT)
-      const seatsSnapshot = new Set(roomSeats);
+      // ✅ ALWAYS USE FRESH SNAPSHOT
+      const seatSnapshot = new Set(roomSeats);
 
       const roomName = `room:${roomId}`;
       const sockets = await io.in(roomName).fetchSockets();
 
-      // ✅ STEP 3: BUILD FROM SNAPSHOT ONLY
-      const usersInRoom = sockets.map((s) => {
-        const u = s.data.user;
-        if (!u) return null;
+      const usersInRoom = sockets
+        .map((s) => {
+          if (!s.data.user) return null;
 
-        const sUserId = s.data.userId?.toString();
+          const uid = s.data.userId?.toString();
 
-        return {
-          id: s.data.userId,
-          username: u.username,
-          avatar: u.avatar,
-          displayId: u.displayId || null,
+          return {
+            id: uid,
+            username: s.data.user.username,
+            avatar: s.data.user.avatar,
+            displayId: s.data.user.displayId || null,
 
-          // ✅ USE SNAPSHOT (NOT seats.get again)
-          isWatcher: !seatsSnapshot.has(sUserId),
+            // 🔥 CORE FIX: ALWAYS CHECK SNAPSHOT
+            isWatcher: !seatSnapshot.has(uid),
 
-          isBackground: backgroundUsers.has(sUserId),
+            isBackground: backgroundUsers.has(uid),
 
-          mic: micStates.get(sUserId) || {
-            muted: true,
-            speaking: false,
-          },
-        };
-      }).filter(Boolean);
+            mic: micStates.get(uid) || {
+              muted: true,
+              speaking: false,
+            },
+          };
+        })
+        .filter(Boolean);
 
-      // 🔥 DEBUG (CRITICAL)
-      console.log("🚨 FINAL USERS BEFORE EMIT:", usersInRoom);
-
-      // ✅ STEP 4: EMIT AFTER FULL BUILD
+      // 🔥 IMPORTANT: BROADCAST FULL STATE
       io.to(roomName).emit("room:users", usersInRoom);
-      io.to(roomName).emit("room:userLeftSeat", { userId });
+
+      // 🔥 EXTRA: FORCE REMOVE EVENT (UI SAFETY)
+      io.to(roomName).emit("room:seat:removed", {
+        userId,
+      });
+
+      console.log("✅ Seat removed globally:", userId);
     });
 
     socket.on("room:takeSeat", async ({ roomId }) => {
-      const userId = socket.data.userId;
+      const userId = socket.data.userId?.toString();
       if (!userId || !roomId) return;
 
       console.log("🪑 User taking seat:", userId);
 
+      // ✅ UPDATE USER STATE
       socket.data.isWatcher = false;
+      micStates.set(userId, { muted: false, speaking: false });
 
-      const roomSeats = seats.get(roomId) || [];
+      // ✅ GET CURRENT SEATS
+      let roomSeats = seats.get(roomId) || [];
+
+      // ✅ STRING SAFE + PREVENT DUPLICATE
+      roomSeats = roomSeats.map((id) => id.toString());
 
       if (!roomSeats.includes(userId)) {
-        seats.set(roomId, [...roomSeats, userId]);
+        roomSeats.push(userId);
       }
+
+      seats.set(roomId, roomSeats);
+
+      // ✅ SNAPSHOT (CRITICAL FIX)
+      const seatSnapshot = new Set(roomSeats);
 
       const roomName = `room:${roomId}`;
       const sockets = await io.in(roomName).fetchSockets();
 
-      const usersInRoom = sockets.map((s) => ({
-        id: s.data.userId,
-        username: s.data.user?.username,
-        avatar: s.data.user?.avatar,
-        displayId: s.data.user?.displayId || null,
-        isWatcher: !seats.get(roomId)?.map(id => id.toString()).includes(s.data.userId?.toString()),
-        isBackground: backgroundUsers.has(s.data.userId?.toString()),
-        mic: micStates.get(s.data.userId) || {
-          muted: false,
-          speaking: false,
-        },
-      }));
+      const usersInRoom = sockets
+        .map((s) => {
+          if (!s.data.user) return null;
 
+          const uid = s.data.userId?.toString();
+
+          return {
+            id: uid,
+            username: s.data.user.username,
+            avatar: s.data.user.avatar,
+            displayId: s.data.user.displayId || null,
+
+            // 🔥 CORE FIX (same as leaveSeat)
+            isWatcher: !seatSnapshot.has(uid),
+
+            isBackground: backgroundUsers.has(uid),
+
+            mic: micStates.get(uid) || {
+              muted: false,
+              speaking: false,
+            },
+          };
+        })
+        .filter(Boolean);
+
+      // ✅ BROADCAST FULL STATE (SYNC ALL USERS)
       io.to(roomName).emit("room:users", usersInRoom);
+
+      // ✅ OPTIONAL (UI trigger)
+      io.to(roomName).emit("room:seat:taken", {
+        userId,
+      });
+
+      console.log("✅ Seat taken synced:", userId);
     });
+    
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
       const { userId, username, avatar } = socket.data;
