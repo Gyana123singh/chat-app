@@ -6,6 +6,7 @@ const VideoRoom = require("../models/videoRoom");
 
 exports.createRoom = async (req, res) => {
   try {
+    // ✅ AUTH CHECK
     if (!req.user?.id) {
       return res.status(401).json({
         success: false,
@@ -17,6 +18,7 @@ exports.createRoom = async (req, res) => {
 
     const { mode, title, category, description } = req.body;
 
+    // ✅ VALIDATION
     if (!mode) {
       return res.status(400).json({
         success: false,
@@ -24,8 +26,9 @@ exports.createRoom = async (req, res) => {
       });
     }
 
+    // ✅ GET USER
     const user = await User.findById(userId).select(
-      "username email profile.avatar",
+      "username email profile.avatar"
     );
 
     if (!user) {
@@ -35,9 +38,24 @@ exports.createRoom = async (req, res) => {
       });
     }
 
+    // 🔥 NEW LOGIC: CHECK EXISTING ACTIVE ROOM
+    const existingRoom = await Room.findOne({
+      creator: userId,
+      isActive: true,
+    });
+
+    if (existingRoom) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have an active room",
+        roomId: existingRoom.roomId, // optional for redirect
+      });
+    }
+
+    // ✅ GENERATE ROOM ID
     const roomId = uuidv4();
 
-    // Normalize category safely
+    // ✅ CATEGORY NORMALIZATION
     const allowedCategories = [
       "Gaming",
       "Music",
@@ -58,11 +76,10 @@ exports.createRoom = async (req, res) => {
       }
     }
 
+    // ✅ CREATE ROOM
     const room = await Room.create({
       roomId,
       mode,
-
-      // ✅ USE USER INPUT OR FALLBACK
       title: title || `${mode} Room`,
       category: safeCategory,
       description: description || "",
@@ -107,6 +124,7 @@ exports.createRoom = async (req, res) => {
       ],
     });
 
+    // ✅ RESPONSE
     return res.status(201).json({
       success: true,
       message: "Room created successfully",
@@ -121,6 +139,7 @@ exports.createRoom = async (req, res) => {
     });
   }
 };
+
 
 /* =========================
    🎬 GET VIDEO STATS
@@ -351,8 +370,8 @@ exports.recordVideoSession = async (req, res) => {
         100,
         Math.round(
           (safeFPS / 30) * 40 +
-            (safeLatency <= 100 ? 30 : 20) +
-            (safeDropped === 0 ? 30 : 10),
+          (safeLatency <= 100 ? 30 : 20) +
+          (safeDropped === 0 ? 30 : 10),
         ),
       ),
     );
@@ -415,7 +434,7 @@ exports.getVideoQualityMetrics = async (req, res) => {
       Math.round(
         (videoRoom.participants.reduce((sum, p) => sum + (p.videoFPS || 0), 0) /
           participantCount) *
-          10,
+        10,
       ) / 10;
 
     const avgLatency = Math.round(
@@ -428,12 +447,12 @@ exports.getVideoQualityMetrics = async (req, res) => {
     const sessionDuration = Math.max(
       1,
       (videoRoom.video.lastSyncTime?.getTime() || Date.now()) -
-        videoRoom.createdAt.getTime(),
+      videoRoom.createdAt.getTime(),
     );
     const bandwidthPerSecond =
       Math.round(
         ((videoRoom.stats.totalBandwidthUsed || 0) / (sessionDuration / 1000)) *
-          100,
+        100,
       ) / 100;
 
     // ✅ FIX #6: CLAMP QUALITY SCORE TO 0-100
@@ -443,8 +462,8 @@ exports.getVideoQualityMetrics = async (req, res) => {
         100,
         Math.round(
           (avgFPS / 30) * 40 +
-            (avgLatency <= 100 ? 30 : 20) +
-            (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
+          (avgLatency <= 100 ? 30 : 20) +
+          (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
         ),
       ),
     );
@@ -489,10 +508,10 @@ exports.getVideoQualityMetrics = async (req, res) => {
         // 🖥️ Host Info
         host: videoRoom.hostId
           ? {
-              id: videoRoom.hostId._id,
-              username: videoRoom.hostId.username || "Unknown",
-              avatar: videoRoom.hostId.profile?.avatar || null,
-            }
+            id: videoRoom.hostId._id,
+            username: videoRoom.hostId.username || "Unknown",
+            avatar: videoRoom.hostId.profile?.avatar || null,
+          }
           : null,
       },
     });
