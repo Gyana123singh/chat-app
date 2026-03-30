@@ -1578,6 +1578,69 @@ module.exports = (io) => {
       });
     });
 
+    socket.on("message:edit", ({ roomId, messageId, newText }) => {
+      const userId = socket.data.userId;
+
+      if (!roomId || !messageId || !newText) return;
+
+      const messages = roomMessages.get(roomId) || [];
+
+      const msg = messages.find((m) => m.id === messageId);
+
+      if (!msg) return;
+
+      // ✅ Only sender can edit
+      if (msg.userId !== userId) {
+        return socket.emit("error", { message: "Not allowed to edit" });
+      }
+
+      msg.text = newText;
+      msg.edited = true;
+      msg.editedAt = new Date().toISOString();
+
+      io.to(`room:${roomId}`).emit("message:edited", {
+        messageId,
+        newText,
+        edited: true,
+      });
+    });
+
+    socket.on("message:delete", async ({ roomId, messageId }) => {
+      const userId = socket.data.userId;
+
+      if (!roomId || !messageId) return;
+
+      const messages = roomMessages.get(roomId) || [];
+
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+
+      if (msgIndex === -1) return;
+
+      const msg = messages[msgIndex];
+
+      // ✅ Allow: sender OR host/admin
+      let allowed = false;
+
+      if (msg.userId === userId) {
+        allowed = true;
+      } else {
+        const isAdmin = await isHostOrAdmin(roomId, userId);
+        if (isAdmin) allowed = true;
+      }
+
+      if (!allowed) {
+        return socket.emit("error", { message: "Not allowed to delete" });
+      }
+
+      // 🔥 WhatsApp style (soft delete)
+      msg.text = "🚫 This message was deleted";
+      msg.deleted = true;
+      msg.deletedAt = new Date().toISOString();
+
+      io.to(`room:${roomId}`).emit("message:deleted", {
+        messageId,
+      });
+    });
     /* =========================
        TROPHY / LEADERBOARD
     ========================= */
