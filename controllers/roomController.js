@@ -4,6 +4,142 @@ const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 const VideoRoom = require("../models/videoRoom");
 
+// exports.createRoom = async (req, res) => {
+//   try {
+//     // ✅ AUTH CHECK
+//     if (!req.user?.id) {
+//       return res.status(401).json({
+//         success: false,
+//         message: "Unauthorized",
+//       });
+//     }
+
+//     const userId = req.user.id;
+
+//     const { mode, title, category, description } = req.body;
+
+//     // ✅ VALIDATION
+//     if (!mode) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Room mode required",
+//       });
+//     }
+
+//     // ✅ GET USER
+//     const user = await User.findById(userId).select(
+//       "username email profile.avatar"
+//     );
+
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "User not found",
+//       });
+//     }
+
+//     // 🔥 NEW LOGIC: CHECK EXISTING ACTIVE ROOM
+//     const existingRoom = await Room.findOne({
+//       creator: userId,
+//       isActive: true,
+//     });
+
+//     if (existingRoom) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "You already have an active room",
+//         roomId: existingRoom.roomId, // optional for redirect
+//       });
+//     }
+
+//     // ✅ GENERATE ROOM ID
+//     const roomId = uuidv4();
+
+//     // ✅ CATEGORY NORMALIZATION
+//     const allowedCategories = [
+//       "Gaming",
+//       "Music",
+//       "Sports",
+//       "Entertainment",
+//       "Education",
+//       "Other",
+//     ];
+
+//     let safeCategory = "Other";
+
+//     if (category) {
+//       const formatted =
+//         category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+
+//       if (allowedCategories.includes(formatted)) {
+//         safeCategory = formatted;
+//       }
+//     }
+
+//     // ✅ CREATE ROOM
+//     const room = await Room.create({
+//       roomId,
+//       mode,
+//       title: title || `${mode} Room`,
+//       category: safeCategory,
+//       description: description || "",
+
+//       host: userId,
+//       creator: userId,
+//       creatorName: user.username || user.email,
+//       creatorEmail: user.email,
+//       creatorAvatar: user.profile?.avatar || null,
+
+//       participants: [
+//         {
+//           user: userId,
+//           role: "host",
+//           avatar: user.profile?.avatar || "/avatar.png",
+//           joinedAt: new Date(),
+//         },
+//       ],
+
+//       stats: {
+//         totalJoins: 1,
+//       },
+
+//       isActive: true,
+//     });
+
+//     // ✅ CREATE VIDEO ROOM
+//     await VideoRoom.create({
+//       roomId,
+//       hostId: userId,
+//       video: { isVisible: false },
+//       audio: { isMixing: false },
+//       participants: [
+//         {
+//           userId,
+//           role: "host",
+//           isReceivingVideo: false,
+//           videoFPS: 0,
+//           videoLatency: 0,
+//           lastVideoFrameReceived: 0,
+//         },
+//       ],
+//     });
+
+//     // ✅ RESPONSE
+//     return res.status(201).json({
+//       success: true,
+//       message: "Room created successfully",
+//       roomId: room.roomId,
+//       room,
+//     });
+//   } catch (err) {
+//     console.error("CREATE ROOM ERROR →", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: err.message,
+//     });
+//   }
+// };
+
 exports.createRoom = async (req, res) => {
   try {
     // ✅ AUTH CHECK
@@ -15,16 +151,6 @@ exports.createRoom = async (req, res) => {
     }
 
     const userId = req.user.id;
-
-    const { mode, title, category, description } = req.body;
-
-    // ✅ VALIDATION
-    if (!mode) {
-      return res.status(400).json({
-        success: false,
-        message: "Room mode required",
-      });
-    }
 
     // ✅ GET USER
     const user = await User.findById(userId).select(
@@ -38,7 +164,7 @@ exports.createRoom = async (req, res) => {
       });
     }
 
-    // 🔥 NEW LOGIC: CHECK EXISTING ACTIVE ROOM
+    // 🔥 CHECK EXISTING ACTIVE ROOM
     const existingRoom = await Room.findOne({
       creator: userId,
       isActive: true,
@@ -48,41 +174,25 @@ exports.createRoom = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "You already have an active room",
-        roomId: existingRoom.roomId, // optional for redirect
+        roomId: existingRoom.roomId,
       });
     }
 
     // ✅ GENERATE ROOM ID
     const roomId = uuidv4();
 
-    // ✅ CATEGORY NORMALIZATION
-    const allowedCategories = [
-      "Gaming",
-      "Music",
-      "Sports",
-      "Entertainment",
-      "Education",
-      "Other",
-    ];
-
-    let safeCategory = "Other";
-
-    if (category) {
-      const formatted =
-        category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
-
-      if (allowedCategories.includes(formatted)) {
-        safeCategory = formatted;
-      }
-    }
+    // ✅ DEFAULT VALUES (NO PAYLOAD)
+    const defaultMode = "chat";
+    const defaultTitle = "My Room";
+    const defaultCategory = "Other";
 
     // ✅ CREATE ROOM
     const room = await Room.create({
       roomId,
-      mode,
-      title: title || `${mode} Room`,
-      category: safeCategory,
-      description: description || "",
+      mode: defaultMode,
+      title: defaultTitle,
+      category: defaultCategory,
+      description: "",
 
       host: userId,
       creator: userId,
@@ -139,8 +249,6 @@ exports.createRoom = async (req, res) => {
     });
   }
 };
-
-
 /* =========================
    🎬 GET VIDEO STATS
 ========================= */
