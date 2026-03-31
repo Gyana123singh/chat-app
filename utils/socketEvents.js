@@ -1644,7 +1644,7 @@ module.exports = (io) => {
       console.log("✏️ Message edited:", messageId);
     });
 
-    socket.on("message:delete", ({ roomId, messageId }) => {
+    socket.on("message:delete", async ({ roomId, messageId }) => {
       const userId = socket.data.userId;
 
       if (!roomId || !messageId || !userId) return;
@@ -1653,11 +1653,18 @@ module.exports = (io) => {
 
       // 🔥 Find message
       const message = messages.find((msg) => msg.id === messageId);
+      if (!message) return;
 
-      // ❌ If message not found OR not sender → BLOCK
-      if (!message || message.userId !== userId) {
+      // 🔥 Get room (to check host)
+      const room = await Room.findOne({ roomId });
+
+      const isSender = message.userId === userId;
+      const isHost = room?.host?.toString() === userId.toString();
+
+      // ❌ Block others
+      if (!isSender && !isHost) {
         return socket.emit("error", {
-          message: "You can delete only your own message",
+          message: "Only sender or host can delete",
         });
       }
 
@@ -1668,12 +1675,16 @@ module.exports = (io) => {
 
       roomMessages.set(roomId, updatedMessages);
 
-      // ✅ DELETE FOR EVERYONE (IMPORTANT)
+      // ✅ Delete for EVERYONE
       io.to(`room:${roomId}`).emit("message:deleted", {
         messageId,
       });
 
-      console.log("🗑 Message deleted by sender:", messageId);
+      console.log("🗑 Message deleted:", {
+        messageId,
+        deletedBy: userId,
+        role: isHost ? "HOST" : "SENDER",
+      });
     });
 
 
