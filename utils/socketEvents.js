@@ -1624,7 +1624,6 @@ module.exports = (io) => {
       if (!roomId || !messageId || !newText) return;
 
       const messages = roomMessages.get(roomId) || [];
-
       const msg = messages.find((m) => m.id === messageId);
 
       if (!msg) return;
@@ -1647,9 +1646,10 @@ module.exports = (io) => {
       msg.text = newText;
       msg.edited = true;
       msg.editedAt = new Date().toISOString();
+      msg.updated = true; // ✅ IMPORTANT (sync fix)
 
       // ===============================
-      // 🔥 BROADCAST FULL DATA
+      // 🔥 BROADCAST EDIT EVENT
       // ===============================
       io.to(`room:${roomId}`).emit("message:edited", {
         messageId,
@@ -1657,6 +1657,14 @@ module.exports = (io) => {
         edited: true,
         editedAt: msg.editedAt,
       });
+
+      // ===============================
+      // 🔥 FORCE FULL SYNC (PREVENT UI OVERRIDE BUG)
+      // ===============================
+      io.to(`room:${roomId}`).emit(
+        "room:messages",
+        roomMessages.get(roomId)
+      );
 
       console.log("✏️ Message edited:", messageId);
     });
@@ -1667,7 +1675,6 @@ module.exports = (io) => {
       if (!roomId || !messageId) return;
 
       const messages = roomMessages.get(roomId) || [];
-
       const msgIndex = messages.findIndex((m) => m.id === messageId);
 
       if (msgIndex === -1) return;
@@ -1691,14 +1698,15 @@ module.exports = (io) => {
       }
 
       // ===============================
-      // 🔥 SOFT DELETE (UPDATED)
+      // 🔥 SOFT DELETE (WHATSAPP STYLE)
       // ===============================
       msg.text = "🚫 This message was deleted";
       msg.deleted = true;
       msg.deletedAt = new Date().toISOString();
+      msg.updated = true; // ✅ IMPORTANT
 
       // ===============================
-      // 🔥 BROADCAST FULL DATA (IMPORTANT FIX)
+      // 🔥 BROADCAST DELETE EVENT
       // ===============================
       io.to(`room:${roomId}`).emit("message:deleted", {
         messageId,
@@ -1707,8 +1715,18 @@ module.exports = (io) => {
         deletedAt: msg.deletedAt,
       });
 
+      // ===============================
+      // 🔥 FORCE FULL SYNC (CRITICAL FIX)
+      // ===============================
+      io.to(`room:${roomId}`).emit(
+        "room:messages",
+        roomMessages.get(roomId)
+      );
+
       console.log("🗑️ Message deleted:", messageId);
     });
+
+
     /* =========================
        TROPHY / LEADERBOARD
     ========================= */
