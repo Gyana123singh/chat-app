@@ -1619,111 +1619,47 @@ module.exports = (io) => {
     });
 
     socket.on("message:edit", ({ roomId, messageId, newText }) => {
-      const userId = socket.data.userId;
-
       if (!roomId || !messageId || !newText) return;
 
       const messages = roomMessages.get(roomId) || [];
-      const msg = messages.find((m) => m.id === messageId);
 
-      if (!msg) return;
+      const updatedMessages = messages.map((msg) => {
+        if (msg.id === messageId) {
+          return {
+            ...msg,
+            text: newText,
+            edited: true,
+          };
+        }
+        return msg;
+      });
 
-      // ❌ Prevent editing deleted messages
-      if (msg.deleted) {
-        return socket.emit("error", {
-          message: "Cannot edit deleted message",
-        });
-      }
+      roomMessages.set(roomId, updatedMessages);
 
-      // ✅ Only sender can edit
-      if (msg.userId !== userId) {
-        return socket.emit("error", { message: "Not allowed to edit" });
-      }
-
-      // ===============================
-      // 🔥 UPDATE MESSAGE
-      // ===============================
-      msg.text = newText;
-      msg.edited = true;
-      msg.editedAt = new Date().toISOString();
-      msg.updated = true; // ✅ IMPORTANT (sync fix)
-
-      // ===============================
-      // 🔥 BROADCAST EDIT EVENT
-      // ===============================
       io.to(`room:${roomId}`).emit("message:edited", {
         messageId,
         newText,
-        edited: true,
-        editedAt: msg.editedAt,
       });
-
-      // ===============================
-      // 🔥 FORCE FULL SYNC (PREVENT UI OVERRIDE BUG)
-      // ===============================
-      io.to(`room:${roomId}`).emit(
-        "room:messages",
-        roomMessages.get(roomId)
-      );
 
       console.log("✏️ Message edited:", messageId);
     });
 
-    socket.on("message:delete", async ({ roomId, messageId }) => {
-      const userId = socket.data.userId;
-
+    socket.on("message:delete", ({ roomId, messageId }) => {
       if (!roomId || !messageId) return;
 
       const messages = roomMessages.get(roomId) || [];
-      const msgIndex = messages.findIndex((m) => m.id === messageId);
 
-      if (msgIndex === -1) return;
-
-      const msg = messages[msgIndex];
-
-      // ===============================
-      // ✅ PERMISSION CHECK
-      // ===============================
-      let allowed = false;
-
-      if (msg.userId === userId) {
-        allowed = true;
-      } else {
-        const isAdmin = await isHostOrAdmin(roomId, userId);
-        if (isAdmin) allowed = true;
-      }
-
-      if (!allowed) {
-        return socket.emit("error", { message: "Not allowed to delete" });
-      }
-
-      // ===============================
-      // 🔥 SOFT DELETE (WHATSAPP STYLE)
-      // ===============================
-      msg.text = "🚫 This message was deleted";
-      msg.deleted = true;
-      msg.deletedAt = new Date().toISOString();
-      msg.updated = true; // ✅ IMPORTANT
-
-      // ===============================
-      // 🔥 BROADCAST DELETE EVENT
-      // ===============================
-      io.to(`room:${roomId}`).emit("message:deleted", {
-        messageId,
-        text: msg.text,
-        deleted: true,
-        deletedAt: msg.deletedAt,
-      });
-
-      // ===============================
-      // 🔥 FORCE FULL SYNC (CRITICAL FIX)
-      // ===============================
-      io.to(`room:${roomId}`).emit(
-        "room:messages",
-        roomMessages.get(roomId)
+      const updatedMessages = messages.filter(
+        (msg) => msg.id !== messageId
       );
 
-      console.log("🗑️ Message deleted:", messageId);
+      roomMessages.set(roomId, updatedMessages);
+
+      io.to(`room:${roomId}`).emit("message:deleted", {
+        messageId,
+      });
+
+      console.log("🗑 Message deleted:", messageId);
     });
 
 
