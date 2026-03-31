@@ -1645,21 +1645,35 @@ module.exports = (io) => {
     });
 
     socket.on("message:delete", ({ roomId, messageId }) => {
-      if (!roomId || !messageId) return;
+      const userId = socket.data.userId;
+
+      if (!roomId || !messageId || !userId) return;
 
       const messages = roomMessages.get(roomId) || [];
 
+      // 🔥 Find message
+      const message = messages.find((msg) => msg.id === messageId);
+
+      // ❌ If message not found OR not sender → BLOCK
+      if (!message || message.userId !== userId) {
+        return socket.emit("error", {
+          message: "You can delete only your own message",
+        });
+      }
+
+      // ✅ Delete message
       const updatedMessages = messages.filter(
         (msg) => msg.id !== messageId
       );
 
       roomMessages.set(roomId, updatedMessages);
 
+      // ✅ DELETE FOR EVERYONE (IMPORTANT)
       io.to(`room:${roomId}`).emit("message:deleted", {
         messageId,
       });
 
-      console.log("🗑 Message deleted:", messageId);
+      console.log("🗑 Message deleted by sender:", messageId);
     });
 
 
