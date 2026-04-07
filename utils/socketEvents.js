@@ -241,25 +241,27 @@ module.exports = (io) => {
     socket.on("user:connect", async ({ userId, username, avatar }) => {
       if (!userId) return;
 
-      onlineUsers.set(userId, socket.id);
-      // ✅ RESET BACKGROUND STATE
-      backgroundUsers.delete(userId.toString());
-      socket.data.isBackground = false;
-      // ✅ DEFAULT STATE (CRITICAL FIX)
-      socket.data.isWatcher = true;
-      socket.data.userId = userId;
+      console.log("✅ CONNECTED USER:", userId);
+
+      socket.data.userId = userId.toString(); // ✅ ONLY THIS (KEEP ONE)
       socket.data.username = username;
       socket.data.avatar = avatar;
 
-      socket.join(userId.toString());
-      micStates.set(userId, { muted: false, speaking: false });
+      onlineUsers.set(userId.toString(), socket.id);
 
-      // 🔥 Cache profile data
+      backgroundUsers.delete(userId.toString());
+      socket.data.isBackground = false;
+      socket.data.isWatcher = true;
+
+      socket.join(userId.toString());
+      micStates.set(userId.toString(), { muted: false, speaking: false });
+
       const user = await User.findById(userId)
         .select("profile.bubble profile.frame level displayId")
         .lean();
-      socket.data.displayId = user?.displayId; // ✅ ADD THIS LINE
-      socket.data.displayId = user?.displayId; // ✅ REQUIRED
+
+      socket.data.displayId = user?.displayId;
+
       socket.data.profile = {
         bubble: user?.profile?.bubble || null,
         frame: user?.profile?.frame?.icon || null,
@@ -1620,43 +1622,34 @@ module.exports = (io) => {
       try {
         const { userId, username, avatar } = socket.data;
 
-        if (!roomId || !text || !userId) return;
+        console.log("📩 Incoming:", { roomId, text, userId });
 
-        // ✅ SAVE IN DB
+        // 🚨 HARD CHECK
+        if (!roomId || !text || !userId) {
+          console.log("❌ Missing:", { roomId, text, userId });
+          return;
+        }
+
         const newMessage = await Message.create({
           content: text,
           sender: userId,
           room: roomId,
         });
 
-        // ✅ SINGLE ID (IMPORTANT)
-        const message = {
-          id: newMessage._id.toString(), // 🔥 USE DB ID ONLY
+        console.log("✅ SAVED TO DB:", newMessage._id);
+
+        io.to(`room:${roomId}`).emit("message:receive", {
+          id: newMessage._id.toString(),
           roomId,
           userId,
-          displayId: socket.data.displayId,
           username,
           avatar,
           text,
-          bubble: socket.data.profile?.bubble || null,
-          frame: socket.data.profile?.frame || null,
-          level: socket.data.profile?.level || 1,
           timestamp: newMessage.createdAt,
-
-          deletedForEveryone: false,
-          deletedFor: [],
-        };
-
-        if (!roomMessages.has(roomId)) {
-          roomMessages.set(roomId, []);
-        }
-
-        roomMessages.get(roomId).push(message);
-
-        io.to(`room:${roomId}`).emit("message:receive", message);
+        });
 
       } catch (err) {
-        console.error("❌ message:send error:", err.message);
+        console.error("❌ FULL ERROR:", err);
       }
     });
 
