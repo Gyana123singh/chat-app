@@ -1,3 +1,4 @@
+// models/message.js
 const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema(
@@ -14,9 +15,9 @@ const messageSchema = new mongoose.Schema(
       required: true,
     },
 
+    // ✅ FIXED (STRING)
     room: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Room",
+      type: String,
       required: true,
     },
 
@@ -31,7 +32,6 @@ const messageSchema = new mongoose.Schema(
       default: {},
     },
 
-    // ✅ DELETE FEATURES (IMPORTANT)
     isDeletedForEveryone: {
       type: Boolean,
       default: false,
@@ -52,7 +52,6 @@ const messageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index
 messageSchema.index({ room: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Message", messageSchema);
