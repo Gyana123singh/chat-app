@@ -283,7 +283,7 @@ module.exports = (io) => {
 
       // ⭐ SAFE USER SETUP
       socket.data.user = user;
-      socket.data.userId = socket.data.userId || user.id;
+      socket.data.userId = (socket.data.userId || user.id).toString();
       socket.data.username = user.username;
       socket.data.avatar = user.avatar;
 
@@ -423,7 +423,9 @@ module.exports = (io) => {
       socket.join(roomName);
 
       socket.data.roomId = roomId;
-      socket.data.userId = safeUser.id;  // FIRST
+
+      // ✅ FIX THIS LINE
+      socket.data.userId = safeUser.id.toString();
       // ✅ ALWAYS JOIN AS WATCHER
       socket.data.isWatcher = true;
 
@@ -439,7 +441,7 @@ module.exports = (io) => {
         avatar: dbUser?.profile?.avatar || safeUser.avatar,
         displayId: dbUser?.displayId || socket.data.displayId || null, // ✅ FIX
       };
-      socket.data.userId = safeUser.id;
+
 
       const userId = safeUser.id;
 
@@ -1635,7 +1637,10 @@ module.exports = (io) => {
           sender: userId,
           room: roomId,
         });
-
+        console.log("🔥 FINAL CHECK:", {
+          userId,
+          type: typeof userId
+        });
         console.log("✅ SAVED TO DB:", newMessage._id);
 
         io.to(`room:${roomId}`).emit("message:receive", {
