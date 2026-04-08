@@ -1604,53 +1604,54 @@ module.exports = (io) => {
     /* =========================
        CHAT
     ========================= */
-    socket.on("message:send", async ({ roomId, text, userId }) => {
-      console.log("📩 MESSAGE SEND HIT:", {
-        roomId,
-        text,
-        userId,
-        socketUserId: socket.data.userId,
-      });
-
-      try {
-        const senderId = userId || socket.data.userId;
-
-        if (!roomId || !text?.trim() || !senderId) {
-          console.log("❌ Missing data:", { roomId, text, senderId });
-          return;
-        }
-
-        // ✅ SAVE TO DB
-        const newMessage = await Message.create({
-          content: text,
-          sender: senderId,
-          room: roomId,
-        });
-
-        console.log("✅ SAVED TO DB:", newMessage._id);
-
-        const message = {
-          id: newMessage._id.toString(),
-          roomId,
-          userId: senderId,
-          username: socket.data.username,
-          avatar: socket.data.avatar,
-          text,
-
-          // ✅ KEEP (your requirement)
-          bubble: socket.data.profile?.bubble || null,
-          frame: socket.data.profile?.frame || null,
-          level: socket.data.profile?.level || 1,
-
-          timestamp: new Date().toISOString(),
-        };
-
-        io.to(`room:${roomId}`).emit("message:receive", message);
-
-      } catch (err) {
-        console.error("❌ SEND ERROR:", err);
-      }
+   socket.on("message:send", async ({ roomId, text, userId }) => {
+  try {
+    console.log("📩 MESSAGE SEND HIT:", {
+      roomId,
+      text,
+      userId,
+      socketUserId: socket.data.userId,
     });
+
+    const senderId = userId || socket.data.userId;
+
+    if (!roomId || !text?.trim() || !senderId) {
+      console.log("❌ Missing data:", { roomId, text, senderId });
+      return;
+    }
+
+    // 🔥 FORCE STRING → OBJECTID FIX
+    const newMessage = await Message.create({
+      content: text,
+      sender: senderId,
+      room: roomId,
+    });
+
+    console.log("✅ SAVED TO DB:", newMessage._id);
+
+    const message = {
+      id: newMessage._id.toString(),
+      dbId: newMessage._id,
+      roomId,
+      userId: senderId, // ✅ FIXED
+      displayId: socket.data.displayId,
+      username: socket.data.username,
+      avatar: socket.data.avatar,
+      text,
+      bubble: socket.data.profile?.bubble || null,
+      frame: socket.data.profile?.frame || null,
+      level: socket.data.profile?.level || 1,
+      timestamp: new Date().toISOString(),
+      deletedForEveryone: false,
+      deletedFor: [],
+    };
+
+    io.to(`room:${roomId}`).emit("message:receive", message);
+
+  } catch (err) {
+    console.error("❌ MESSAGE SAVE ERROR:", err);
+  }
+});
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
       const { userId, username } = socket.data;
