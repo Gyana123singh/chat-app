@@ -1660,20 +1660,22 @@ module.exports = (io) => {
       try {
         const userId = socket.data.userId;
 
-        const message = await Message.findById(messageId);
-        if (!message) return;
+        const msg = await Message.findById(messageId);
+        if (!msg) return;
 
-        if (message.sender.toString() !== userId.toString()) return;
+        // ✅ Only sender can edit
+        if (msg.sender.toString() !== userId.toString()) return;
 
-        message.content = newText;
-        await message.save();
+        msg.content = newText;
+        await msg.save();
 
         io.to(`room:${roomId}`).emit("message:edited", {
           messageId,
           newText,
         });
+
       } catch (err) {
-        console.error("❌ edit error:", err);
+        console.error("❌ Edit message error:", err);
       }
     });
 
@@ -1681,28 +1683,29 @@ module.exports = (io) => {
       try {
         const userId = socket.data.userId;
 
-        const message = await Message.findById(messageId);
-        if (!message) return;
+        const msg = await Message.findById(messageId);
+        if (!msg) return;
+
+        // ✅ Only sender can delete
+        if (msg.sender.toString() !== userId.toString()) return;
+
+        if (type === "me") {
+          socket.emit("message:deleted:me", { messageId });
+        }
 
         if (type === "everyone") {
-          if (message.sender.toString() !== userId.toString()) return;
-
-          message.isDeletedForEveryone = true;
-          message.content = "This message was deleted";
-          await message.save();
+          msg.content = "This message was deleted";
+          msg.isDeletedForEveryone = true;
+          await msg.save();
 
           io.to(`room:${roomId}`).emit("message:deleted:everyone", {
             messageId,
-            text: "This message was deleted",
+            text: msg.content,
           });
-        } else {
-          message.deletedFor.push(userId);
-          await message.save();
-
-          socket.emit("message:deleted:me", { messageId });
         }
+
       } catch (err) {
-        console.error("❌ delete error:", err);
+        console.error("❌ Delete message error:", err);
       }
     });
 
