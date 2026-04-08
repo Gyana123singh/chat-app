@@ -222,9 +222,9 @@ async function endPKInternal(pkId, io) {
 module.exports = (io) => {
   const onlineUsers = new Map();
   const micStates = new Map(); // userId -> { muted, speaking }
-  const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
+
 
   // ===============================
   // WAFA LEVEL TIMERS (SAFE)
@@ -1346,45 +1346,56 @@ module.exports = (io) => {
     });
 
     // masage image part
-    socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
-      const senderId = userId || socket.data.userId;
-      const username = socket.data.username;
-      const avatar = socket.data.avatar;
+    socket.on("message:image", async ({ roomId, imageUrl }) => {
+      try {
+        console.log("🖼️ IMAGE MESSAGE HIT:", { roomId, imageUrl });
 
-      if (!roomId || !imageUrl) return;
+        const senderId = socket.data.userId; // ✅ FIXED (no undefined userId)
+        const username = socket.data.username;
+        const avatar = socket.data.avatar;
 
-      const message = {
-        id: `${userId}-${Date.now()}`,
-        type: "image",
-        userId,
-        displayId: socket.data.displayId, // ✅ ADD
-        username,
-        avatar,
-        imageUrl,
-        width,
-        height,
+        if (!roomId || !imageUrl || !senderId) {
+          console.log("❌ Missing image data:", { roomId, imageUrl, senderId });
+          return;
+        }
 
-        bubble: socket.data.profile?.bubble || null,
-        frame: socket.data.profile?.frame || null,
-        level: socket.data.profile?.level || 1,
+        // ✅ SAVE IMAGE MESSAGE TO DB
+        const newMessage = await Message.create({
+          content: imageUrl,
+          sender: senderId,
+          room: roomId,
+          type: "image", // ✅ IMPORTANT (optional but recommended)
+        });
 
-        timestamp: new Date().toISOString(),
-      };
+        console.log("✅ IMAGE SAVED:", newMessage._id);
 
-      if (!roomMessages.has(roomId)) {
-        roomMessages.set(roomId, []);
+        // ✅ FORMAT MESSAGE FOR FRONTEND
+        const message = {
+          id: newMessage._id.toString(),
+          roomId,
+          userId: senderId,
+          username,
+          avatar,
+
+          text: imageUrl, // you can also use "imageUrl"
+          type: "image",  // ✅ frontend can detect image
+
+          // ✅ KEEP YOUR CUSTOM FIELDS
+          bubble: socket.data.profile?.bubble || null,
+          frame: socket.data.profile?.frame || null,
+          level: socket.data.profile?.level || 1,
+
+          timestamp: new Date().toISOString(),
+          deletedForEveryone: false,
+          deletedFor: [],
+        };
+
+        // ✅ SEND TO ALL USERS IN ROOM
+        io.to(`room:${roomId}`).emit("message:receive", message);
+
+      } catch (err) {
+        console.error("❌ IMAGE MESSAGE ERROR:", err);
       }
-
-      const messages = roomMessages.get(roomId);
-
-      messages.push(message);
-
-      // prevent memory overflow
-      if (messages.length > 100) {
-        messages.shift();
-      }
-
-      io.to(`room:${roomId}`).emit("message:receive", message);
     });
 
     /* =========================
@@ -1594,60 +1605,51 @@ module.exports = (io) => {
        CHAT
     ========================= */
     socket.on("message:send", async ({ roomId, text, userId }) => {
-
-      // ✅ 👉 ADD LOG HERE (FIRST LINE INSIDE FUNCTION)
       console.log("📩 MESSAGE SEND HIT:", {
         roomId,
         text,
         userId,
         socketUserId: socket.data.userId,
       });
-      const senderId = userId || socket.data.userId;
-      const username = socket.data.username;
-      const avatar = socket.data.avatar;
 
-      if (!roomId || !text?.trim() || !senderId) {
-        console.log("❌ Missing data:", { roomId, text, senderId });
-        return;
+      try {
+        const senderId = userId || socket.data.userId;
+
+        if (!roomId || !text?.trim() || !senderId) {
+          console.log("❌ Missing data:", { roomId, text, senderId });
+          return;
+        }
+
+        // ✅ SAVE TO DB
+        const newMessage = await Message.create({
+          content: text,
+          sender: senderId,
+          room: roomId,
+        });
+
+        console.log("✅ SAVED TO DB:", newMessage._id);
+
+        const message = {
+          id: newMessage._id.toString(),
+          roomId,
+          userId: senderId,
+          username: socket.data.username,
+          avatar: socket.data.avatar,
+          text,
+
+          // ✅ KEEP (your requirement)
+          bubble: socket.data.profile?.bubble || null,
+          frame: socket.data.profile?.frame || null,
+          level: socket.data.profile?.level || 1,
+
+          timestamp: new Date().toISOString(),
+        };
+
+        io.to(`room:${roomId}`).emit("message:receive", message);
+
+      } catch (err) {
+        console.error("❌ SEND ERROR:", err);
       }
-
-      // ✅ SAVE TO DB
-      const newMessage = await Message.create({
-        content: text,
-        sender: senderId,
-        room: roomId,
-      });
-
-      const message = {
-        id: newMessage._id.toString(), // ✅ FIXED (IMPORTANT)
-        dbId: newMessage._id, // keep if you want
-        roomId,
-        userId,
-        displayId: socket.data.displayId,
-        username,
-        avatar,
-        text,
-        bubble: socket.data.profile?.bubble || null,
-        frame: socket.data.profile?.frame || null,
-        level: socket.data.profile?.level || 1,
-        timestamp: new Date().toISOString(),
-
-        deletedForEveryone: false,
-        deletedFor: [],
-      };
-
-      if (!roomMessages.has(roomId)) {
-        roomMessages.set(roomId, []);
-      }
-
-      const messages = roomMessages.get(roomId);
-      messages.push(message);
-
-      if (messages.length > 100) {
-        messages.shift();
-      }
-
-      io.to(`room:${roomId}`).emit("message:receive", message);
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
