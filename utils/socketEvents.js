@@ -1347,7 +1347,9 @@ module.exports = (io) => {
 
     // masage image part
     socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
-      const { userId, username, avatar } = socket.data;
+      const senderId = userId || socket.data.userId;
+      const username = socket.data.username;
+      const avatar = socket.data.avatar;
 
       if (!roomId || !imageUrl) return;
 
@@ -1591,15 +1593,28 @@ module.exports = (io) => {
     /* =========================
        CHAT
     ========================= */
-    socket.on("message:send", async ({ roomId, text }) => {
-      const { userId, username, avatar } = socket.data;
+    socket.on("message:send", async ({ roomId, text, userId }) => {
 
-      if (!roomId || !text?.trim() || !userId) return;
+      // ✅ 👉 ADD LOG HERE (FIRST LINE INSIDE FUNCTION)
+      console.log("📩 MESSAGE SEND HIT:", {
+        roomId,
+        text,
+        userId,
+        socketUserId: socket.data.userId,
+      });
+      const senderId = userId || socket.data.userId;
+      const username = socket.data.username;
+      const avatar = socket.data.avatar;
+
+      if (!roomId || !text?.trim() || !senderId) {
+        console.log("❌ Missing data:", { roomId, text, senderId });
+        return;
+      }
 
       // ✅ SAVE TO DB
       const newMessage = await Message.create({
         content: text,
-        sender: userId,
+        sender: senderId,
         room: roomId,
       });
 
