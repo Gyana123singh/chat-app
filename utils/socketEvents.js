@@ -222,9 +222,9 @@ async function endPKInternal(pkId, io) {
 module.exports = (io) => {
   const onlineUsers = new Map();
   const micStates = new Map(); // userId -> { muted, speaking }
+  const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
-
 
   // ===============================
   // WAFA LEVEL TIMERS (SAFE)
@@ -337,21 +337,7 @@ module.exports = (io) => {
         socket.emit("room:users", usersInRoom);
 
         /* ===== MESSAGES ===== */
-        const messages = await Message.find({ room: roomId })
-          .populate("sender", "username profile.avatar")
-          .sort({ createdAt: 1 })
-          .lean();
-
-        const formatted = messages.map(m => ({
-          id: m._id.toString(),
-          text: m.content,
-          userId: m.sender?._id,
-          username: m.sender?.username,
-          avatar: m.sender?.profile?.avatar,
-          deleted: m.isDeletedForEveryone,
-        }));
-
-        socket.emit("room:messages", formatted);
+        socket.emit("room:messages", roomMessages.get(roomId) || []);
 
         /* ===== MUSIC ===== */
         const currentMusicState = roomManager.getState(roomId);
@@ -585,21 +571,7 @@ module.exports = (io) => {
         // ===============================
         // 💬 MESSAGES
         // ===============================
-        const messages = await Message.find({ room: roomId })
-          .populate("sender", "username profile.avatar")
-          .sort({ createdAt: 1 })
-          .lean();
-
-        const formatted = messages.map(m => ({
-          id: m._id.toString(),
-          text: m.content,
-          userId: m.sender?._id,
-          username: m.sender?.username,
-          avatar: m.sender?.profile?.avatar,
-          deleted: m.isDeletedForEveryone,
-        }));
-
-        socket.emit("room:messages", formatted);
+        socket.emit("room:messages", roomMessages.get(roomId) || []);
 
         // ===============================
         // 🎵 MUSIC STATE
@@ -1346,56 +1318,43 @@ module.exports = (io) => {
     });
 
     // masage image part
-    socket.on("message:image", async ({ roomId, imageUrl }) => {
-      try {
-        console.log("🖼️ IMAGE MESSAGE HIT:", { roomId, imageUrl });
+    socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
+      const { userId, username, avatar } = socket.data;
 
-        const senderId = socket.data.userId; // ✅ FIXED (no undefined userId)
-        const username = socket.data.username;
-        const avatar = socket.data.avatar;
+      if (!roomId || !imageUrl) return;
 
-        if (!roomId || !imageUrl || !senderId) {
-          console.log("❌ Missing image data:", { roomId, imageUrl, senderId });
-          return;
-        }
+      const message = {
+        id: `${userId}-${Date.now()}`,
+        type: "image",
+        userId,
+        displayId: socket.data.displayId, // ✅ ADD
+        username,
+        avatar,
+        imageUrl,
+        width,
+        height,
 
-        // ✅ SAVE IMAGE MESSAGE TO DB
-        const newMessage = await Message.create({
-          content: imageUrl,
-          sender: senderId,
-          room: roomId,
-          type: "image", // ✅ IMPORTANT (optional but recommended)
-        });
+        bubble: socket.data.profile?.bubble || null,
+        frame: socket.data.profile?.frame || null,
+        level: socket.data.profile?.level || 1,
 
-        console.log("✅ IMAGE SAVED:", newMessage._id);
+        timestamp: new Date().toISOString(),
+      };
 
-        // ✅ FORMAT MESSAGE FOR FRONTEND
-        const message = {
-          id: newMessage._id.toString(),
-          roomId,
-          userId: senderId,
-          username,
-          avatar,
-
-          text: imageUrl, // you can also use "imageUrl"
-          type: "image",  // ✅ frontend can detect image
-
-          // ✅ KEEP YOUR CUSTOM FIELDS
-          bubble: socket.data.profile?.bubble || null,
-          frame: socket.data.profile?.frame || null,
-          level: socket.data.profile?.level || 1,
-
-          timestamp: new Date().toISOString(),
-          deletedForEveryone: false,
-          deletedFor: [],
-        };
-
-        // ✅ SEND TO ALL USERS IN ROOM
-        io.to(`room:${roomId}`).emit("message:receive", message);
-
-      } catch (err) {
-        console.error("❌ IMAGE MESSAGE ERROR:", err);
+      if (!roomMessages.has(roomId)) {
+        roomMessages.set(roomId, []);
       }
+
+      const messages = roomMessages.get(roomId);
+
+      messages.push(message);
+
+      // prevent memory overflow
+      if (messages.length > 100) {
+        messages.shift();
+      }
+
+      io.to(`room:${roomId}`).emit("message:receive", message);
     });
 
     /* =========================
@@ -1604,53 +1563,50 @@ module.exports = (io) => {
     /* =========================
        CHAT
     ========================= */
-    socket.on("message:send", async ({ roomId, text, userId }) => {
-      try {
-        console.log("📩 MESSAGE SEND HIT:", {
-          roomId,
-          text,
-          userId,
-          socketUserId: socket.data.userId,
-        });
+    socket.on("message:send", async ({ roomId, text }) => {
+      const { userId, username, avatar } = socket.data;
 
-        const senderId = userId || socket.data.userId;
+      if (!roomId || !text || !userId) return;
 
-        if (!roomId || !text?.trim() || !senderId) {
-          console.log("❌ Missing data:", { roomId, text, senderId });
-          return;
-        }
+      // ✅ SAVE TO DB (ONLY ADD THIS)
+      const newMessage = await Message.create({
+        content: text,
+        sender: userId,
+        room: roomId,
+      });
 
-        // 🔥 FORCE STRING → OBJECTID FIX
-        const newMessage = await Message.create({
-          content: text,
-          sender: senderId,
-          room: roomId,
-        });
+      // ✅ KEEP YOUR FULL STRUCTURE (IMPORTANT)
+      const message = {
+        id: `${userId}-${Date.now()}`, // keep your existing ID (no break)
+        dbId: newMessage._id, // 🔥 ADD THIS (important for future fix)
+        roomId,
+        userId,
+        displayId: socket.data.displayId,
+        username,
+        avatar,
+        text,
+        bubble: socket.data.profile?.bubble || null,
+        frame: socket.data.profile?.frame || null,
+        level: socket.data.profile?.level || 1,
+        timestamp: new Date().toISOString(),
 
-        console.log("✅ SAVED TO DB:", newMessage._id);
+        // delete features
+        deletedForEveryone: false,
+        deletedFor: [],
+      };
 
-        const message = {
-          id: newMessage._id.toString(),
-          dbId: newMessage._id,
-          roomId,
-          userId: senderId, // ✅ FIXED
-          displayId: socket.data.displayId,
-          username: socket.data.username,
-          avatar: socket.data.avatar,
-          text,
-          bubble: socket.data.profile?.bubble || null,
-          frame: socket.data.profile?.frame || null,
-          level: socket.data.profile?.level || 1,
-          timestamp: new Date().toISOString(),
-          deletedForEveryone: false,
-          deletedFor: [],
-        };
-
-        io.to(`room:${roomId}`).emit("message:receive", message);
-
-      } catch (err) {
-        console.error("❌ MESSAGE SAVE ERROR:", err);
+      if (!roomMessages.has(roomId)) {
+        roomMessages.set(roomId, []);
       }
+
+      const messages = roomMessages.get(roomId);
+      messages.push(message);
+
+      if (messages.length > 100) {
+        messages.shift();
+      }
+
+      io.to(`room:${roomId}`).emit("message:receive", message);
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
@@ -1675,55 +1631,154 @@ module.exports = (io) => {
     });
 
     socket.on("message:edit", async ({ roomId, messageId, newText }) => {
-      try {
-        const userId = socket.data.userId;
+      const userId = socket.data.userId;
 
-        const msg = await Message.findById(messageId);
-        if (!msg) return;
+      if (!roomId || !messageId || !newText) return;
 
-        // ✅ Only sender can edit
-        if (msg.sender.toString() !== userId.toString()) return;
+      let messages = roomMessages.get(roomId) || [];
+      const localMsg = messages.find((m) => m.id === messageId);
 
-        msg.content = newText;
-        await msg.save();
+      if (!localMsg) return;
 
-        io.to(`room:${roomId}`).emit("message:edited", {
-          messageId,
-          newText,
+      // =========================
+      // ✅ SAFETY CHECK
+      // =========================
+      if (!localMsg.dbId) return;
+
+      const msg = await Message.findById(localMsg.dbId);
+
+      if (!msg) return;
+
+      // =========================
+      // ❌ PREVENT EDIT AFTER DELETE
+      // =========================
+      if (msg.isDeletedForEveryone) {
+        return socket.emit("error", {
+          message: "Cannot edit deleted message",
         });
-
-      } catch (err) {
-        console.error("❌ Edit message error:", err);
       }
+
+      // =========================
+      // ❌ ONLY SENDER CAN EDIT
+      // =========================
+      if (msg.sender.toString() !== userId.toString()) {
+        return socket.emit("error", {
+          message: "You can only edit your own message",
+        });
+      }
+
+      // =========================
+      // ✅ UPDATE DB
+      // =========================
+      msg.content = newText;
+      await msg.save();
+
+      // =========================
+      // ✅ UPDATE MEMORY
+      // =========================
+      messages = messages.map((m) => {
+        if (m.id === messageId) {
+          return {
+            ...m,
+            text: newText,
+            edited: true,
+          };
+        }
+        return m;
+      });
+
+      roomMessages.set(roomId, messages);
+
+      // =========================
+      // 📡 EMIT UPDATE
+      // =========================
+      io.to(`room:${roomId}`).emit("message:edited", {
+        messageId,
+        newText,
+      });
+
+      console.log("✏️ Message edited:", messageId);
     });
 
     socket.on("message:delete", async ({ roomId, messageId, type }) => {
-      try {
-        const userId = socket.data.userId;
+      const userId = socket.data.userId;
 
-        const msg = await Message.findById(messageId);
-        if (!msg) return;
+      if (!roomId || !messageId) return;
 
-        // ✅ Only sender can delete
-        if (msg.sender.toString() !== userId.toString()) return;
+      let messages = roomMessages.get(roomId) || [];
+      const localMsg = messages.find((m) => m.id === messageId);
 
-        if (type === "me") {
-          socket.emit("message:deleted:me", { messageId });
+      if (!localMsg) return;
+
+      // =========================
+      // ✅ FIND DB MESSAGE
+      // =========================
+      if (!localMsg.dbId) return;
+
+      const msg = await Message.findById(localMsg.dbId);
+
+      if (!msg) return;
+
+      // =========================
+      // ✅ DELETE FOR ME
+      // =========================
+      if (type === "me") {
+        if (!msg.deletedFor.includes(userId)) {
+          msg.deletedFor.push(userId);
+          await msg.save();
         }
 
-        if (type === "everyone") {
-          msg.content = "This message was deleted";
-          msg.isDeletedForEveryone = true;
-          await msg.save();
+        // MEMORY UPDATE
+        messages = messages.map((m) => {
+          if (m.id === messageId) {
+            return {
+              ...m,
+              deletedFor: [...(m.deletedFor || []), userId],
+            };
+          }
+          return m;
+        });
 
-          io.to(`room:${roomId}`).emit("message:deleted:everyone", {
-            messageId,
-            text: msg.content,
+        roomMessages.set(roomId, messages);
+
+        socket.emit("message:deleted:me", { messageId });
+        return;
+      }
+
+      // =========================
+      // ✅ DELETE FOR EVERYONE
+      // =========================
+      if (type === "everyone") {
+        if (msg.sender.toString() !== userId.toString()) {
+          return socket.emit("error", {
+            message: "Only sender can delete",
           });
         }
 
-      } catch (err) {
-        console.error("❌ Delete message error:", err);
+        msg.isDeletedForEveryone = true;
+        msg.content = "🚫 This message was deleted";
+        msg.deletedAt = new Date();
+
+        await msg.save();
+
+        // MEMORY UPDATE
+        messages = messages.map((m) => {
+          if (m.id === messageId) {
+            return {
+              ...m,
+              text: "🚫 This message was deleted",
+              deletedForEveryone: true,
+            };
+          }
+          return m;
+        });
+
+        roomMessages.set(roomId, messages);
+
+        io.to(`room:${roomId}`).emit("message:deleted:everyone", {
+          messageId,
+          text: "🚫 This message was deleted",
+        });
       }
     });
 
