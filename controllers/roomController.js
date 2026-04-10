@@ -181,17 +181,15 @@ exports.createRoom = async (req, res) => {
     // ✅ GENERATE ROOM ID
     const roomId = uuidv4();
 
-    // ✅ DEFAULT VALUES (NO PAYLOAD)
-    const defaultMode = "Chat";
-    const defaultTitle = "My Room";
-    const defaultCategory = "Other";
+    // 🔥 FORCE MODE (NO PAYLOAD USED AT ALL)
+    const safeMode = "Chat";
 
     // ✅ CREATE ROOM
     const room = await Room.create({
       roomId,
-      mode: defaultMode,
-      title: defaultTitle,
-      category: defaultCategory,
+      mode: safeMode, // 💥 ALWAYS "Chat"
+      title: "My Room",
+      category: "Other",
       description: "",
 
       host: userId,
@@ -234,7 +232,6 @@ exports.createRoom = async (req, res) => {
       ],
     });
 
-    // ✅ RESPONSE
     return res.status(201).json({
       success: true,
       message: "Room created successfully",

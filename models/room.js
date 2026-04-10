@@ -1,4 +1,3 @@
-// models/Room.js
 const mongoose = require("mongoose");
 
 const roomSchema = new mongoose.Schema(
@@ -8,40 +7,45 @@ const roomSchema = new mongoose.Schema(
       unique: true,
     },
 
-    // models/Room.js
-    creatorName: {
-      type: String,
-    },
+    creatorName: String,
+
     creatorAvatar: {
       type: String,
       default: null,
     },
+
     creatorEmail: {
       type: String,
       default: null,
     },
+
     title: {
       type: String,
       trim: true,
       minlength: 3,
       maxlength: 100,
     },
-    // ✅ NEW FIELD (IMPORTANT)
+
+    // ✅ FIXED ENUM (safe)
     mode: {
       type: String,
-      enum: ["Game-Carrom", "Game-Ludo", "Chat"],
+      enum: ["Game-Carrom", "Game-Ludo", "Chat", "chat"], // 🔥 allow both
+      default: "Chat",
     },
+
+    // ✅ SINGLE description (clean)
     description: {
       type: String,
       default: "",
-      maxlength: 500,
+      maxlength: 150,
     },
-    // models/room.js (ADD THIS FIELD ONLY)
+
     activePK: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PKBattle",
       default: null,
     },
+
     category: {
       type: String,
       enum: [
@@ -54,17 +58,19 @@ const roomSchema = new mongoose.Schema(
       ],
       default: "Other",
     },
+
     host: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+
     creator: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
-    creatorRole: {
-      type: String,
-    },
+
+    creatorRole: String,
+
     participants: [
       {
         user: {
@@ -90,36 +96,45 @@ const roomSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+
     currentParticipants: {
       type: Number,
       default: 0,
     },
+
     seatCount: {
       type: Number,
       default: 12,
     },
+
     privacy: {
       type: String,
       enum: ["public", "private", "friends"],
       default: "public",
     },
+
     tags: [String],
+
     coverImage: {
       type: String,
       default: null,
     },
+
     isActive: {
       type: Boolean,
       default: true,
     },
+
     startedAt: {
       type: Date,
       default: Date.now,
     },
+
     endedAt: {
       type: Date,
       default: null,
     },
+
     stats: {
       totalJoins: {
         type: Number,
@@ -134,22 +149,19 @@ const roomSchema = new mongoose.Schema(
         default: 0,
       },
     },
+
     admins: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
+
     lockedSeats: {
-      type: [Number], // e.g. [1,2,3,4]
+      type: [Number],
       default: [],
     },
-    description: {
-      type: String,
-      default: "",
-      maxlength: 150,
-    },
-    // ⭐ ROOM-SPECIFIC USER PROFILES
+
     roomProfiles: [
       {
         userId: {
@@ -163,7 +175,7 @@ const roomSchema = new mongoose.Schema(
       },
     ],
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("Room", roomSchema);
