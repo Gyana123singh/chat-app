@@ -182,7 +182,7 @@ exports.createRoom = async (req, res) => {
     const roomId = uuidv4();
 
     // ✅ DEFAULT VALUES (NO PAYLOAD)
-    const defaultMode = "chat";
+    const defaultMode = "Chat";
     const defaultTitle = "My Room";
     const defaultCategory = "Other";
 
