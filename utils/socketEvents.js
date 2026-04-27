@@ -307,9 +307,7 @@ module.exports = (io) => {
           .lean();
 
         // ✅ STEP 3: Create fast lookup map
-        const userMap = new Map(
-          users.map((u) => [u._id.toString(), u])
-        );
+        const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
         // ✅ STEP 4: Build users list with displayId
         const usersInRoom = sockets
@@ -318,7 +316,7 @@ module.exports = (io) => {
             const userIdStr = s.data.userId?.toString();
             const dbUser = userMap.get(userIdStr);
             const seatSnapshot = new Set(
-              (seats.get(roomId) || []).map(id => id.toString())
+              (seats.get(roomId) || []).map((id) => id.toString()),
             );
             return {
               ...s.data.user,
@@ -397,7 +395,7 @@ module.exports = (io) => {
       socket.join(roomName);
 
       socket.data.roomId = roomId;
-      socket.data.userId = safeUser.id;  // FIRST
+      socket.data.userId = safeUser.id; // FIRST
       // ✅ ALWAYS JOIN AS WATCHER
       socket.data.isWatcher = true;
 
@@ -505,12 +503,10 @@ module.exports = (io) => {
           .lean();
 
         // ✅ Create fast lookup maps
-        const userMap = new Map(
-          users.map((u) => [u._id.toString(), u])
-        );
+        const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
         const frameMap = new Map(
-          users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null])
+          users.map((u) => [u._id.toString(), u.profile?.frame?.icon || null]),
         );
 
         const roomAvatarMap = new Map();
@@ -529,7 +525,7 @@ module.exports = (io) => {
             const userIdStr = user.id?.toString();
             const dbUser = userMap.get(userIdStr);
             const seatSnapshot = new Set(
-              (seats.get(roomId) || []).map(id => id.toString())
+              (seats.get(roomId) || []).map((id) => id.toString()),
             );
             return {
               id: user.id,
@@ -698,12 +694,10 @@ module.exports = (io) => {
           roomId,
           seatCount,
         });
-
       } catch (err) {
         console.error("❌ seatCount update error:", err);
       }
     });
-
 
     // ===============================
     // 📝 ROOM DESCRIPTION UPDATE
@@ -782,7 +776,10 @@ module.exports = (io) => {
       if (!userId || !roomId) return;
       // ✅ ADD THIS
       const roomSeats = seats.get(roomId) || [];
-      seats.set(roomId, roomSeats.filter(id => id !== userId));
+      seats.set(
+        roomId,
+        roomSeats.filter((id) => id !== userId),
+      );
       backgroundUsers.delete(userId.toString());
 
       socket.leave(`room:${roomId}`);
@@ -946,7 +943,7 @@ module.exports = (io) => {
         let luck = null;
         const amount = totalCost;
 
-        if (amount >= 5000 && (finalSendType !== "pk")) {
+        if (amount >= 5000 && finalSendType !== "pk") {
           luck = calculateProfitLoss(amount);
 
           console.log("🎰 PROFIT/LOSS DEBUG:", {
@@ -1782,7 +1779,6 @@ module.exports = (io) => {
       }
     });
 
-
     /* =========================
        TROPHY / LEADERBOARD
     ========================= */
@@ -2045,7 +2041,10 @@ module.exports = (io) => {
       const { roomId, userId, user } = socket.data;
       if (roomId && userId) {
         const roomSeats = seats.get(roomId) || [];
-        seats.set(roomId, roomSeats.filter(id => id !== userId));
+        seats.set(
+          roomId,
+          roomSeats.filter((id) => id !== userId),
+        );
       }
       try {
         // 🔥🔥🔥 MOST IMPORTANT FIX
