@@ -61,6 +61,17 @@ exports.createRoom = async (req, res) => {
       creatorName: user.username || user.email,
       creatorEmail: user.email,
       creatorAvatar: user.profile?.avatar || null,
+      status: "active",
+
+      hostOnline: true,
+
+      hostLeftAt: null,
+
+      allowAudienceStay: true,
+
+      currentUsers: 1,
+
+      lastActivityAt: new Date(),
 
       participants: [
         {

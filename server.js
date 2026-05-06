@@ -35,6 +35,8 @@ const chatUploadRouter = require("./router/chatUploadRouter");
 const privateImageUpload = require("./router/privateImageUpload");
 const MusicState = require("./models/musicState");
 const expireStoreGifts = require("./utils/storeGiftExpiryWorker");
+const Room = require("./models/room");
+const VideoRoom = require("./models/videoRoom");
 
 const app = express();
 connectMongose();
@@ -185,6 +187,29 @@ socketService.init(io);
 global.io = io;
 
 console.log("🚀 Socket.IO + Music Streaming ready");
+
+setInterval(
+  async () => {
+    try {
+      const zombieRooms = await Room.find({
+        currentUsers: 0,
+      });
+
+      for (const room of zombieRooms) {
+        console.log("🧹 Cleaning zombie room:", room.roomId);
+
+        await Room.deleteOne({ roomId: room.roomId });
+
+        await VideoRoom.deleteOne({ roomId: room.roomId });
+
+        await MusicState.deleteOne({ roomId: room.roomId });
+      }
+    } catch (err) {
+      console.error("❌ cleanup worker:", err.message);
+    }
+  },
+  5 * 60 * 1000,
+);
 
 /* ===================== CRON ===================== */
 const cron = require("./utils/cron");

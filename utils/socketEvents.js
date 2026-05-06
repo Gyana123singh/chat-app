@@ -400,6 +400,7 @@ module.exports = (io) => {
 
       socket.data.roomId = roomId;
       socket.data.userId = safeUser.id; // FIRST
+      socket.data.hasLeftRoom = false;
       // ✅ ALWAYS JOIN AS WATCHER
       socket.data.isWatcher = true;
 
@@ -424,6 +425,26 @@ module.exports = (io) => {
         // ✅ FETCH ROOM ONCE (IMPORTANT FIX)
         // ===============================
         const roomDoc = await Room.findOne({ roomId });
+        // ❌ ROOM NOT FOUND
+        if (!roomDoc) {
+          return socket.emit("room:error", {
+            message: "Room not found",
+          });
+        }
+
+        // ❌ ROOM ENDED
+        if (roomDoc.status === "ended") {
+          return socket.emit("room:error", {
+            message: "Room ended",
+          });
+        }
+
+        // ❌ HOST LEFT
+        if (roomDoc.status === "host_left") {
+          return socket.emit("room:expired", {
+            message: "Host left the room",
+          });
+        }
 
         // ===============================
         // 📝 SEND DESCRIPTION (FIXED)
@@ -456,6 +477,30 @@ module.exports = (io) => {
           roomUsers.set(roomId, new Set());
         }
         roomUsers.get(roomId).add(userId);
+        const alreadyJoined = roomDoc.participants.some(
+          (p) => p.user.toString() === userId.toString(),
+        );
+
+        if (!alreadyJoined) {
+          roomDoc.currentUsers += 1;
+
+          roomDoc.lastActivityAt = new Date();
+
+          roomDoc.participants.push({
+            user: userId,
+
+            role:
+              roomDoc.host.toString() === userId.toString()
+                ? "host"
+                : "listener",
+
+            avatar: dbUser?.profile?.avatar || safeUser.avatar,
+
+            joinedAt: new Date(),
+          });
+
+          await roomDoc.save();
+        }
 
         console.log(`📍 ${safeUser.username} joined ${roomName}`);
 
@@ -474,21 +519,27 @@ module.exports = (io) => {
           });
         }
 
-        await VideoRoom.findOneAndUpdate(
-          { roomId },
-          {
-            $addToSet: {
-              participants: {
-                userId,
-                role: "listener",
-                isReceivingVideo: false,
-                videoFPS: 0,
-                videoLatency: 0,
-                lastVideoFrameReceived: 0,
+        const existingVideoParticipant = videoRoom.participants.some(
+          (p) => p.userId.toString() === userId.toString(),
+        );
+
+        if (!existingVideoParticipant) {
+          await VideoRoom.findOneAndUpdate(
+            { roomId },
+            {
+              $push: {
+                participants: {
+                  userId,
+                  role: "listener",
+                  isReceivingVideo: false,
+                  videoFPS: 0,
+                  videoLatency: 0,
+                  lastVideoFrameReceived: 0,
+                },
               },
             },
-          },
-        );
+          );
+        }
 
         // ===============================
         // 👥 USERS LIST
@@ -774,22 +825,127 @@ module.exports = (io) => {
     // ===============================
     // 🔴 FULL LEAVE ROOM
     // ===============================
-    socket.on("room:leave", ({ roomId }) => {
-      const userId = socket.data.userId;
+    socket.on("room:leave", async ({ roomId }) => {
+      try {
+        const userId = socket.data.userId;
 
-      if (!userId || !roomId) return;
-      // ✅ ADD THIS
-      const roomSeats = seats.get(roomId) || [];
-      seats.set(
-        roomId,
-        roomSeats.filter((id) => id !== userId),
-      );
-      backgroundUsers.delete(userId.toString());
+        if (!userId || !roomId) return;
 
-      socket.leave(`room:${roomId}`);
-      socket.data.isBackground = false;
+        // ✅ PREVENT DOUBLE CLEANUP
+        if (socket.data.hasLeftRoom) return;
 
-      console.log("🔴 User fully left room:", userId);
+        socket.data.hasLeftRoom = true;
+
+        const room = await Room.findOne({ roomId });
+
+        if (!room) return;
+
+        // =========================
+        // REMOVE FROM SEATS
+        // =========================
+        const roomSeats = seats.get(roomId) || [];
+
+        seats.set(
+          roomId,
+          roomSeats.filter((id) => id.toString() !== userId.toString()),
+        );
+
+        // =========================
+        // UPDATE ROOM USERS
+        // =========================
+        room.currentUsers = Math.max(0, room.currentUsers - 1);
+        if (roomUsers.has(roomId)) {
+          roomUsers.get(roomId).delete(userId.toString());
+        }
+
+        room.lastActivityAt = new Date();
+
+        // =========================
+        // REMOVE PARTICIPANT
+        // =========================
+        room.participants = room.participants.filter(
+          (p) => p.user.toString() !== userId.toString(),
+        );
+
+        await VideoRoom.updateOne(
+          { roomId },
+          {
+            $pull: {
+              participants: {
+                userId,
+              },
+            },
+          },
+        );
+        // =========================
+        // HOST LEFT
+        // =========================
+        if (room.host && room.host.toString() === userId.toString()) {
+          room.hostOnline = false;
+
+          room.hostLeftAt = new Date();
+
+          room.status = "host_left";
+
+          room.isActive = false;
+
+          io.to(`room:${roomId}`).emit("room:hostLeft", {
+            roomId,
+          });
+
+          console.log("🚨 Host left:", roomId);
+        }
+
+        // =========================
+        // EMPTY ROOM
+        // =========================
+        if (room.currentUsers <= 0) {
+          room.status = "ended";
+
+          await room.save();
+
+          await Room.deleteOne({ roomId });
+
+          await VideoRoom.deleteOne({ roomId });
+
+          await MusicState.deleteOne({ roomId });
+
+          roomManager.stopMusic(roomId);
+
+          seats.delete(roomId);
+
+          roomUsers.delete(roomId);
+
+          roomMessages.delete(roomId);
+
+          typingUsers.delete(roomId);
+
+          backgroundUsers.delete(userId.toString());
+
+          io.to(`room:${roomId}`).emit("room:deleted");
+
+          socket.leave(`room:${roomId}`);
+
+          console.log("🗑 Room deleted:", roomId);
+
+          return;
+        }
+
+        // =========================
+        // SAVE ROOM
+        // =========================
+        await room.save();
+
+        backgroundUsers.delete(userId.toString());
+
+        socket.leave(`room:${roomId}`);
+
+        socket.data.isBackground = false;
+
+        console.log("🔴 User left room:", userId);
+      } catch (err) {
+        console.error("❌ room:leave error:", err);
+      }
     });
     // ===============================
     // 🥊 PK START (SOCKET BROADCAST)
@@ -2064,12 +2220,78 @@ module.exports = (io) => {
     ========================= */
     socket.on("disconnect", async () => {
       const { roomId, userId, user } = socket.data;
+      if (socket.data.hasLeftRoom) return;
       if (roomId && userId) {
         const roomSeats = seats.get(roomId) || [];
         seats.set(
           roomId,
           roomSeats.filter((id) => id !== userId),
         );
+      }
+
+      const room = await Room.findOne({ roomId });
+
+      if (room) {
+        room.currentUsers = Math.max(0, room.currentUsers - 1);
+
+        room.lastActivityAt = new Date();
+
+        // HOST DISCONNECTED
+        if (room.host && room.host.toString() === userId.toString()) {
+          room.hostOnline = false;
+
+          room.hostLeftAt = new Date();
+
+          room.status = "host_left";
+
+          room.isActive = false;
+
+          io.to(`room:${roomId}`).emit("room:hostLeft", {
+            roomId,
+          });
+        }
+
+        room.participants = room.participants.filter(
+          (p) => p.user.toString() !== userId.toString(),
+        );
+        await VideoRoom.updateOne(
+          { roomId },
+          {
+            $pull: {
+              participants: {
+                userId,
+              },
+            },
+          },
+        );
+        // EMPTY ROOM
+        if (room.currentUsers <= 0) {
+          room.status = "ended";
+
+          await room.save();
+
+          await Room.deleteOne({ roomId });
+
+          await VideoRoom.deleteOne({ roomId });
+
+          await MusicState.deleteOne({ roomId });
+
+          roomManager.stopMusic(roomId);
+
+          seats.delete(roomId);
+
+          roomUsers.delete(roomId);
+
+          roomMessages.delete(roomId);
+
+          typingUsers.delete(roomId);
+
+          console.log("🗑 Auto cleaned room:", roomId);
+
+          return;
+        }
+
+        await room.save();
       }
       try {
         // 🔥🔥🔥 MOST IMPORTANT FIX

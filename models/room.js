@@ -124,7 +124,36 @@ const roomSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    status: {
+      type: String,
+      enum: ["active", "host_left", "ended"],
+      default: "active",
+    },
 
+    hostOnline: {
+      type: Boolean,
+      default: true,
+    },
+
+    hostLeftAt: {
+      type: Date,
+      default: null,
+    },
+
+    allowAudienceStay: {
+      type: Boolean,
+      default: true,
+    },
+
+    currentUsers: {
+      type: Number,
+      default: 1,
+    },
+
+    lastActivityAt: {
+      type: Date,
+      default: Date.now,
+    },
     startedAt: {
       type: Date,
       default: Date.now,
@@ -175,7 +204,7 @@ const roomSchema = new mongoose.Schema(
       },
     ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("Room", roomSchema);
