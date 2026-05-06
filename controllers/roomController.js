@@ -4,142 +4,6 @@ const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 const VideoRoom = require("../models/videoRoom");
 
-// exports.createRoom = async (req, res) => {
-//   try {
-//     // ✅ AUTH CHECK
-//     if (!req.user?.id) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Unauthorized",
-//       });
-//     }
-
-//     const userId = req.user.id;
-
-//     const { mode, title, category, description } = req.body;
-
-//     // ✅ VALIDATION
-//     if (!mode) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Room mode required",
-//       });
-//     }
-
-//     // ✅ GET USER
-//     const user = await User.findById(userId).select(
-//       "username email profile.avatar"
-//     );
-
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "User not found",
-//       });
-//     }
-
-//     // 🔥 NEW LOGIC: CHECK EXISTING ACTIVE ROOM
-//     const existingRoom = await Room.findOne({
-//       creator: userId,
-//       isActive: true,
-//     });
-
-//     if (existingRoom) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "You already have an active room",
-//         roomId: existingRoom.roomId, // optional for redirect
-//       });
-//     }
-
-//     // ✅ GENERATE ROOM ID
-//     const roomId = uuidv4();
-
-//     // ✅ CATEGORY NORMALIZATION
-//     const allowedCategories = [
-//       "Gaming",
-//       "Music",
-//       "Sports",
-//       "Entertainment",
-//       "Education",
-//       "Other",
-//     ];
-
-//     let safeCategory = "Other";
-
-//     if (category) {
-//       const formatted =
-//         category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
-
-//       if (allowedCategories.includes(formatted)) {
-//         safeCategory = formatted;
-//       }
-//     }
-
-//     // ✅ CREATE ROOM
-//     const room = await Room.create({
-//       roomId,
-//       mode,
-//       title: title || `${mode} Room`,
-//       category: safeCategory,
-//       description: description || "",
-
-//       host: userId,
-//       creator: userId,
-//       creatorName: user.username || user.email,
-//       creatorEmail: user.email,
-//       creatorAvatar: user.profile?.avatar || null,
-
-//       participants: [
-//         {
-//           user: userId,
-//           role: "host",
-//           avatar: user.profile?.avatar || "/avatar.png",
-//           joinedAt: new Date(),
-//         },
-//       ],
-
-//       stats: {
-//         totalJoins: 1,
-//       },
-
-//       isActive: true,
-//     });
-
-//     // ✅ CREATE VIDEO ROOM
-//     await VideoRoom.create({
-//       roomId,
-//       hostId: userId,
-//       video: { isVisible: false },
-//       audio: { isMixing: false },
-//       participants: [
-//         {
-//           userId,
-//           role: "host",
-//           isReceivingVideo: false,
-//           videoFPS: 0,
-//           videoLatency: 0,
-//           lastVideoFrameReceived: 0,
-//         },
-//       ],
-//     });
-
-//     // ✅ RESPONSE
-//     return res.status(201).json({
-//       success: true,
-//       message: "Room created successfully",
-//       roomId: room.roomId,
-//       room,
-//     });
-//   } catch (err) {
-//     console.error("CREATE ROOM ERROR →", err);
-//     return res.status(500).json({
-//       success: false,
-//       message: err.message,
-//     });
-//   }
-// };
-
 exports.createRoom = async (req, res) => {
   try {
     // ✅ AUTH CHECK
@@ -154,7 +18,7 @@ exports.createRoom = async (req, res) => {
 
     // ✅ GET USER
     const user = await User.findById(userId).select(
-      "username email profile.avatar"
+      "username email profile.avatar",
     );
 
     if (!user) {
@@ -475,8 +339,8 @@ exports.recordVideoSession = async (req, res) => {
         100,
         Math.round(
           (safeFPS / 30) * 40 +
-          (safeLatency <= 100 ? 30 : 20) +
-          (safeDropped === 0 ? 30 : 10),
+            (safeLatency <= 100 ? 30 : 20) +
+            (safeDropped === 0 ? 30 : 10),
         ),
       ),
     );
@@ -539,7 +403,7 @@ exports.getVideoQualityMetrics = async (req, res) => {
       Math.round(
         (videoRoom.participants.reduce((sum, p) => sum + (p.videoFPS || 0), 0) /
           participantCount) *
-        10,
+          10,
       ) / 10;
 
     const avgLatency = Math.round(
@@ -552,12 +416,12 @@ exports.getVideoQualityMetrics = async (req, res) => {
     const sessionDuration = Math.max(
       1,
       (videoRoom.video.lastSyncTime?.getTime() || Date.now()) -
-      videoRoom.createdAt.getTime(),
+        videoRoom.createdAt.getTime(),
     );
     const bandwidthPerSecond =
       Math.round(
         ((videoRoom.stats.totalBandwidthUsed || 0) / (sessionDuration / 1000)) *
-        100,
+          100,
       ) / 100;
 
     // ✅ FIX #6: CLAMP QUALITY SCORE TO 0-100
@@ -567,8 +431,8 @@ exports.getVideoQualityMetrics = async (req, res) => {
         100,
         Math.round(
           (avgFPS / 30) * 40 +
-          (avgLatency <= 100 ? 30 : 20) +
-          (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
+            (avgLatency <= 100 ? 30 : 20) +
+            (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
         ),
       ),
     );
@@ -613,10 +477,10 @@ exports.getVideoQualityMetrics = async (req, res) => {
         // 🖥️ Host Info
         host: videoRoom.hostId
           ? {
-            id: videoRoom.hostId._id,
-            username: videoRoom.hostId.username || "Unknown",
-            avatar: videoRoom.hostId.profile?.avatar || null,
-          }
+              id: videoRoom.hostId._id,
+              username: videoRoom.hostId.username || "Unknown",
+              avatar: videoRoom.hostId.profile?.avatar || null,
+            }
           : null,
       },
     });
