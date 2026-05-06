@@ -21,6 +21,7 @@ async function getRoomSafe(roomId) {
 const pkTimers = new Map();
 const backgroundUsers = new Map(); // userId -> true
 const seats = new Map(); // ✅ roomId -> [userIds]
+const userSockets = new Map();
 
 // Permission Helper (Host/Admin Check)
 // Permission Helper (Host/Admin Check) - FIXED
@@ -243,6 +244,9 @@ module.exports = (io) => {
 
       onlineUsers.set(userId, socket.id);
       // ✅ RESET BACKGROUND STATE
+
+      userSockets.set(userId.toString(), socket.id);
+
       backgroundUsers.delete(userId.toString());
       socket.data.isBackground = false;
       // ✅ DEFAULT STATE (CRITICAL FIX)
@@ -1534,26 +1538,47 @@ module.exports = (io) => {
     });
 
     /* =========================
-       WEBRTC SIGNALING
-    ========================= */
+   VOICE WEBRTC SIGNALING
+========================= */
 
-    socket.on("call:offer", ({ to, offer }) => {
-      io.to(to.toString()).emit("call:offer", {
-        from: socket.data.userId,
+    // OFFER
+    socket.on("voice:offer", ({ targetUserId, offer }) => {
+      if (!targetUserId || !offer) return;
+
+      const targetSocketId = userSockets.get(targetUserId.toString());
+
+      if (!targetSocketId) return;
+
+      io.to(targetSocketId).emit("voice:offer", {
+        fromUserId: socket.data.userId,
         offer,
       });
     });
 
-    socket.on("call:answer", ({ to, answer }) => {
-      io.to(to.toString()).emit("call:answer", {
-        from: socket.data.userId,
+    // ANSWER
+    socket.on("voice:answer", ({ targetUserId, answer }) => {
+      if (!targetUserId || !answer) return;
+
+      const targetSocketId = userSockets.get(targetUserId.toString());
+
+      if (!targetSocketId) return;
+
+      io.to(targetSocketId).emit("voice:answer", {
+        fromUserId: socket.data.userId,
         answer,
       });
     });
 
-    socket.on("call:ice", ({ to, candidate }) => {
-      io.to(to.toString()).emit("call:ice", {
-        from: socket.data.userId,
+    // ICE
+    socket.on("voice:ice", ({ targetUserId, candidate }) => {
+      if (!targetUserId || !candidate) return;
+
+      const targetSocketId = userSockets.get(targetUserId.toString());
+
+      if (!targetSocketId) return;
+
+      io.to(targetSocketId).emit("voice:ice", {
+        fromUserId: socket.data.userId,
         candidate,
       });
     });
@@ -2055,6 +2080,8 @@ module.exports = (io) => {
 
         if (userId) {
           onlineUsers.delete(userId);
+          // ✅ ADD THIS
+          userSockets.delete(userId.toString());
           micStates.delete(userId);
 
           // ===============================
