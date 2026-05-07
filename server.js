@@ -7,6 +7,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const fs = require("fs-extra");
 const path = require("path");
+const mime = require("mime-types");
 
 dotenv.config();
 require("./config/passport");
@@ -140,39 +141,60 @@ const videoRouter = require("./router/videoRouter")(io);
 app.use("/api/video", videoRouter);
 
 app.get("/video-stream/:roomId/:filename", (req, res) => {
-  const filePath = path.resolve(
-    process.cwd(),
-    "uploads",
-    "videos",
-    req.params.roomId,
-    req.params.filename,
-  );
+  try {
+    const filePath = path.resolve(
+      process.cwd(),
+      "uploads",
+      "videos",
+      req.params.roomId,
+      req.params.filename,
+    );
 
-  if (!fs.existsSync(filePath)) return res.sendStatus(404);
+    if (!fs.existsSync(filePath)) {
+      return res.sendStatus(404);
+    }
 
-  const stat = fs.statSync(filePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
 
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    // ✅ Dynamic content type
+    const contentType = mime.lookup(filePath) || "video/mp4";
 
-    res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-      "Accept-Ranges": "bytes",
-      "Content-Length": end - start + 1,
-      "Content-Type": "video/mp4",
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+
+      const start = parseInt(parts[0], 10);
+
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      const chunkSize = end - start + 1;
+
+      res.writeHead(206, {
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize,
+        "Content-Type": contentType,
+      });
+
+      fs.createReadStream(filePath, {
+        start,
+        end,
+      }).pipe(res);
+    } else {
+      res.writeHead(200, {
+        "Content-Length": fileSize,
+        "Content-Type": contentType,
+      });
+
+      fs.createReadStream(filePath).pipe(res);
+    }
+  } catch (err) {
+    console.error("❌ video stream error:", err);
+
+    res.status(500).json({
+      message: "Video stream failed",
     });
-
-    fs.createReadStream(filePath, { start, end }).pipe(res);
-  } else {
-    res.writeHead(200, {
-      "Content-Length": fileSize,
-      "Content-Type": "video/mp4",
-    });
-    fs.createReadStream(filePath).pipe(res);
   }
 });
 
@@ -203,6 +225,9 @@ setInterval(
         await Room.deleteOne({ roomId: room.roomId });
 
         await VideoRoom.deleteOne({ roomId: room.roomId });
+        await fs.remove(
+          path.resolve(process.cwd(), "uploads", "videos", room.roomId),
+        );
 
         await MusicState.deleteOne({ roomId: room.roomId });
       }

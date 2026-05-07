@@ -1515,38 +1515,7 @@ module.exports = (io) => {
       io.to(`room:${roomId}`).emit("message:receive", message);
     });
 
-    /* =========================
-   VIDEO CONTROLS (ALL USERS)
-========================= */
 
-    socket.on("video:play", ({ roomId, userId }) => {
-      if (socket.data.isWatcher) return;
-      if (!roomId) return;
-
-      // ✅ socket only broadcasts (no DB write)
-      io.to(`room:${roomId}`).emit("video:started", {
-        startedBy: userId,
-      });
-    });
-
-    socket.on("video:pause", ({ roomId }) => {
-      if (socket.data.isWatcher) return;
-      if (!roomId) return;
-
-      io.to(`room:${roomId}`).emit("video:paused");
-    });
-
-    socket.on("video:resume", ({ roomId }) => {
-      if (!roomId) return;
-
-      io.to(`room:${roomId}`).emit("video:resumed");
-    });
-
-    socket.on("video:stop", ({ roomId }) => {
-      if (!roomId) return;
-
-      io.to(`room:${roomId}`).emit("video:stopped");
-    });
 
     /* =========================
    VIDEO STREAM SIGNALING (NEW)
