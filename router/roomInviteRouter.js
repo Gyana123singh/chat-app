@@ -4,6 +4,6 @@ const router = express.Router();
 
 const { getForYouInvites } = require("../controllers/roomInviteController");
 const { authMiddleware } = require("../middleware/auth");
-router.get("/for-you", authMiddleware, getForYouInvites);
+router.get("/invites", authMiddleware, getForYouInvites);
 
 module.exports = router;
