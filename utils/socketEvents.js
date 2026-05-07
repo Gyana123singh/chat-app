@@ -14,6 +14,7 @@ const registerStoreGiftSocket = require("../utils/giftSocketEvents");
 const StoreGiftInventory = require("../models/storeGiftInventory");
 const calculateProfitLoss = require("../utils/profitLossLuckEngine");
 const Message = require("../models/message");
+const RoomInvite = require("../models/roomInvite");
 async function getRoomSafe(roomId) {
   return await Room.findOne({ roomId });
 }
@@ -1738,6 +1739,57 @@ module.exports = (io) => {
         candidate,
       });
     });
+
+    // ===============================
+    // 🎉 ROOM INVITE
+    // ===============================
+    socket.on("room:invite", async ({ roomId, invitedUsers }) => {
+      try {
+        const inviterId = socket.data.userId;
+
+        if (!inviterId || !roomId) return;
+
+        const room = await Room.findOne({ roomId });
+
+        if (!room) {
+          return socket.emit("invite:error", {
+            message: "Room not found",
+          });
+        }
+
+        const inviter = await User.findById(inviterId);
+
+        const invite = await RoomInvite.create({
+          roomId,
+          roomTitle: room.title || "Live Room",
+          roomImage: room.backgroundImage || "",
+          hostId: room.host,
+          hostName: inviter.username,
+          hostAvatar: inviter.profile?.avatar,
+          invitedBy: inviterId,
+          invitedUsers,
+          type: "friend",
+        });
+
+        // SEND TO USERS
+        invitedUsers.forEach((userId) => {
+          io.to(userId.toString()).emit("room:invite:received", {
+            inviteId: invite._id,
+            roomId,
+            roomTitle: invite.roomTitle,
+            roomImage: invite.roomImage,
+            hostName: invite.hostName,
+            hostAvatar: invite.hostAvatar,
+          });
+        });
+
+        socket.emit("room:invite:success", {
+          success: true,
+        });
+      } catch (err) {
+        console.error("❌ room invite error:", err);
+      }
+    });
     /* =========================
        CHAT
     ========================= */
@@ -2060,27 +2112,6 @@ module.exports = (io) => {
         onMicUsers: usersStatus.filter((u) => !u.mic.muted),
         speakingUsers: usersStatus.filter((u) => u.mic.speaking),
       });
-    });
-
-    // INVITE USER TO ROOM
-    socket.on("room:invite", async ({ roomId, toUserId }) => {
-      const userId = socket.data.userId;
-
-      const room = await getRoomSafe(roomId);
-      if (!room || !room.host || room.host.toString() !== userId.toString()) {
-        return socket.emit("error:permission", {
-          message: "Only host can invite",
-        });
-      }
-
-      const targetSocket = onlineUsers.get(toUserId);
-      if (targetSocket) {
-        io.to(targetSocket).emit("room:invited", {
-          roomId,
-          fromUserId: userId,
-          fromUsername: socket.data.username,
-        });
-      }
     });
 
     // LOCK SEAT

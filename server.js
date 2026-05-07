@@ -31,6 +31,7 @@ const notificationRouter = require("./router/notificationRouter");
 const promotionRouter = require("./router/promotionRouter");
 const cpRouter = require("./router/cpRoutes");
 const pkRoutes = require("./router/pkRouter");
+const roomInviteRouter = require("./router/roomInviteRouter");
 const chatUploadRouter = require("./router/chatUploadRouter");
 const privateImageUpload = require("./router/privateImageUpload");
 const MusicState = require("./models/musicState");
@@ -95,6 +96,7 @@ app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
 app.use("/api/cp", cpRouter);
 app.use("/api/pk", pkRoutes);
+app.use("/api/room-invites", roomInviteRouter);
 app.use("/api/image-upload", chatUploadRouter);
 
 app.use("/api/private-upload", privateImageUpload);
