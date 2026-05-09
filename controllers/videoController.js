@@ -2,6 +2,14 @@ const VideoRoom = require("../models/videoRoom");
 const fs = require("fs-extra");
 const path = require("path");
 
+function canControlVideo(videoRoom, userId) {
+  if (!videoRoom || !videoRoom.video) return false;
+
+  return (
+    videoRoom.video.controllerId?.toString() ===
+    userId.toString()
+  );
+}
 function getCurrentVideoTime(video) {
   if (!video) return 0;
 
@@ -50,20 +58,20 @@ exports.uploadVideo = async (req, res, io) => {
             originalName: originalname,
             fileSize: size,
             mimeType: mimetype,
+            uploadedBy: userId,
           },
         },
         $set: {
-          video: {
-            isPlaying: false, // 🔥 IMPORTANT
-            isPaused: false,
-            currentTime: 0,
-            fileName: filename,
-            fileSize: size,
-            mimeType: mimetype,
-            isVisible: true,
-            startedAt: null,
-            pausedAt: null,
-          },
+          "video.isPlaying": false,
+          "video.isPaused": false,
+          "video.currentTime": 0,
+          "video.fileName": filename,
+          "video.fileSize": size,
+          "video.mimeType": mimetype,
+          "video.isVisible": true,
+          "video.controllerId": userId,
+          "video.startedAt": null,
+          "video.pausedAt": null,
         },
       },
     );
@@ -85,6 +93,11 @@ exports.playVideo = async (req, res, io) => {
     const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
+    if (!canControlVideo(videoRoom, userId)) {
+      return res.status(403).json({
+        error: "Only uploader can control video",
+      });
+    }
     if (!videoRoom || !videoRoom.video.fileName) {
       return res.status(400).json({ error: "No video uploaded" });
     }
@@ -105,6 +118,7 @@ exports.playVideo = async (req, res, io) => {
       videoUrl: `/video-stream/${roomId}/${videoRoom.video.fileName}`,
       currentTime,
       startedAt: Date.now(),
+      controllerId: videoRoom.video.controllerId,
     });
 
     res.json({ success: true });
@@ -153,8 +167,14 @@ exports.getVideoList = async (req, res) => {
 exports.pauseVideo = async (req, res, io) => {
   try {
     const { roomId } = req.params;
+    const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
+    if (!canControlVideo(videoRoom, userId)) {
+      return res.status(403).json({
+        error: "Only uploader can control video",
+      });
+    }
     if (!videoRoom) return res.json({ success: true });
 
     const currentTime = getCurrentVideoTime(videoRoom.video);
@@ -169,7 +189,10 @@ exports.pauseVideo = async (req, res, io) => {
       },
     );
 
-    io.to(`room:${roomId}`).emit("video:paused", { currentTime });
+    io.to(`room:${roomId}`).emit("video:paused", {
+      currentTime,
+      controllerId: videoRoom.video.controllerId,
+    });
 
     res.json({ success: true });
   } catch (err) {
@@ -181,8 +204,14 @@ exports.pauseVideo = async (req, res, io) => {
 exports.resumeVideo = async (req, res, io) => {
   try {
     const { roomId } = req.params;
+    const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
+    if (!canControlVideo(videoRoom, userId)) {
+      return res.status(403).json({
+        error: "Only uploader can control video",
+      });
+    }
     if (!videoRoom) return res.json({ success: true });
 
     await VideoRoom.findOneAndUpdate(
@@ -197,6 +226,7 @@ exports.resumeVideo = async (req, res, io) => {
     io.to(`room:${roomId}`).emit("video:resumed", {
       currentTime: videoRoom.video.currentTime,
       startedAt: Date.now(),
+      controllerId: videoRoom.video.controllerId,
     });
 
     res.json({ success: true });
@@ -209,22 +239,15 @@ exports.resumeVideo = async (req, res, io) => {
 exports.stopVideo = async (req, res, io) => {
   try {
     const { roomId } = req.params;
+    const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
-
-    if (videoRoom?.video?.fileName) {
-      const filePath = path.resolve(
-        process.cwd(),
-        "uploads",
-        "videos",
-        roomId,
-        videoRoom.video.fileName,
-      );
-
-      if (fs.existsSync(filePath)) {
-        await fs.remove(filePath);
-      }
+    if (!canControlVideo(videoRoom, userId)) {
+      return res.status(403).json({
+        error: "Only uploader can control video",
+      });
     }
+
 
     await VideoRoom.findOneAndUpdate(
       { roomId },
@@ -238,13 +261,18 @@ exports.stopVideo = async (req, res, io) => {
           fileSize: 0,
           mimeType: "video/mp4",
           isVisible: false,
+
+          controllerId: videoRoom.video.controllerId,
+
           startedAt: null,
           pausedAt: null,
         },
       },
     );
 
-    io.to(`room:${roomId}`).emit("video:stopped");
+    io.to(`room:${roomId}`).emit("video:stopped", {
+      controllerId: videoRoom.video.controllerId,
+    });
     res.json({ success: true });
   } catch (error) {
     console.error("❌ stopVideo:", error);
