@@ -4,6 +4,7 @@ const Leaderboard = require("../models/trophyLeaderBoard");
 const MusicState = require("../models/musicState");
 const restoreMusicState = require("../utils/restoreMusicState");
 const levelController = require("../controllers/levelController");
+const trophyController = require("../controllers/trophyController");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
 const User = require("../models/users"); // adjust path if needed
@@ -28,31 +29,52 @@ const userSockets = new Map();
 // Permission Helper (Host/Admin Check) - FIXED
 
 async function isHostOrAdmin(roomId, userId) {
+  if (!roomId || !userId) return false;
   const room = await Room.findOne({ roomId });
-
-  console.log("🔍 isHostOrAdmin check:", {
-    roomId,
-    userId,
-    foundRoom: !!room,
-    roomHost: room?.host,
-    roomAdmins: room?.admins,
-  });
 
   if (!room) return false;
 
   const uid = userId.toString();
 
-  // ✅ Host check (uses `host` from your schema)
+  // ✅ Host check
   if (room.host && room.host.toString() === uid) return true;
 
   // ✅ Admin check
   if (Array.isArray(room.admins)) {
-    if (room.admins.some((id) => id.toString() === uid)) {
+    if (room.admins.some((id) => id && id.toString() === uid)) {
       return true;
     }
   }
 
   return false;
+}
+
+// ✅ NEW: Strict Host Check
+async function isHost(roomId, userId) {
+  if (!roomId || !userId) return false;
+  const room = await Room.findOne({ roomId });
+  if (!room || !room.host) return false;
+  return room.host.toString() === userId.toString();
+}
+
+// ✅ NEW: Broadcast Watcher Count Helper
+async function broadcastWatcherCount(roomId, io) {
+  if (!roomId) return;
+  const roomName = `room:${roomId}`;
+  const sockets = await io.in(roomName).fetchSockets();
+  const seatSnapshot = new Set(
+    (seats.get(roomId) || []).map((id) => id.toString()),
+  );
+
+  const watcherCount = sockets.filter(s => {
+    const userIdStr = s.data.userId?.toString();
+    return userIdStr && !seatSnapshot.has(userIdStr);
+  }).length;
+
+  io.to(roomName).emit("room:watcherCount", {
+    roomId,
+    count: watcherCount,
+  });
 }
 
 // ===============================
@@ -218,6 +240,9 @@ async function endPKInternal(pkId, io) {
     leftScore: pk.leftUser.score,
     rightScore: pk.rightUser.score,
     winner: pk.winner,
+    winnerDisplayId: pk.winner
+      ? (pk.winner.toString() === leftId ? leftUser?.displayId : rightUser?.displayId)
+      : null,
   });
 }
 
@@ -285,26 +310,35 @@ module.exports = (io) => {
       socket.data.isWatcher = true;
 
       // ⭐ SAFE USER SETUP
-      socket.data.user = user;
+      socket.data.user = {
+        id: user.id || socket.data.userId,
+        username: user.username || socket.data.username,
+        avatar: user.avatar || socket.data.avatar,
+        displayId: socket.data.displayId,
+      };
       socket.data.userId = socket.data.userId || user.id;
-      socket.data.username = user.username;
-      socket.data.avatar = user.avatar;
+      socket.data.username = socket.data.user.username;
+      socket.data.avatar = socket.data.user.avatar;
 
       console.log("👀 User watching room:", roomId);
 
       try {
         // ===============================
-        // ✅ FETCH ROOM
+        // ✅ FETCH & UPDATE ROOM
         // ===============================
-        const roomDoc = await Room.findOne({ roomId });
+        const roomDoc = await Room.findOneAndUpdate(
+          { roomId },
+          { $inc: { currentUsers: 1 } },
+          { new: true }
+        );
 
         /* ===== USERS LIST ===== */
         const sockets = await io.in(roomName).fetchSockets();
 
-        // ✅ STEP 1: Collect user IDs
+        // ✅ STEP 1: Collect user IDs (Using userId for reliability)
         const userIds = sockets
-          .filter((s) => s.data.user)
-          .map((s) => s.data.user.id);
+          .map((s) => s.data.userId)
+          .filter(Boolean);
 
         // ✅ STEP 2: Fetch users from DB (INCLUDING displayId)
         const users = await User.find({ _id: { $in: userIds } })
@@ -316,18 +350,20 @@ module.exports = (io) => {
 
         // ✅ STEP 4: Build users list with displayId
         const usersInRoom = sockets
-          .filter((s) => s.data.user)
           .map((s) => {
             const userIdStr = s.data.userId?.toString();
+            if (!userIdStr) return null;
+
             const dbUser = userMap.get(userIdStr);
             const seatSnapshot = new Set(
               (seats.get(roomId) || []).map((id) => id.toString()),
             );
+
             return {
-              ...s.data.user,
-              displayId: dbUser?.displayId || null, // ✅ ADDED
-              username: dbUser?.username || s.data.user.username,
-              avatar: dbUser?.profile?.avatar || s.data.user.avatar,
+              id: userIdStr,
+              displayId: dbUser?.displayId || s.data.displayId || null,
+              username: dbUser?.username || s.data.username || "User",
+              avatar: dbUser?.profile?.avatar || s.data.avatar || null,
               isWatcher: !seatSnapshot.has(userIdStr),
               isBackground: backgroundUsers.has(userIdStr),
               mic: micStates.get(userIdStr) || {
@@ -335,9 +371,14 @@ module.exports = (io) => {
                 speaking: false,
               },
             };
-          });
+          })
+          .filter(Boolean);
 
-        socket.emit("room:users", usersInRoom);
+        // ✅ Broadcast updated users to EVERYONE
+        io.to(roomName).emit("room:users", usersInRoom);
+
+        // ✅ Broadcast Watcher Count
+        await broadcastWatcherCount(roomId, io);
 
         /* ===== MESSAGES ===== */
         socket.emit("room:messages", roomMessages.get(roomId) || []);
@@ -575,26 +616,23 @@ module.exports = (io) => {
         // ✅ Build users list (FIXED displayId)
         const usersInRoom = sockets
           .map((s) => {
-            const user = s.data.user;
-            if (!user) return null;
+            const userIdStr = s.data.userId?.toString();
+            if (!userIdStr) return null;
 
-            const userIdStr = user.id?.toString();
             const dbUser = userMap.get(userIdStr);
             const seatSnapshot = new Set(
               (seats.get(roomId) || []).map((id) => id.toString()),
             );
+
             return {
-              id: user.id,
-              username: user.username,
+              id: userIdStr,
+              username: dbUser?.username || s.data.username,
               avatar:
                 roomAvatarMap.get(userIdStr) ||
                 dbUser?.profile?.avatar ||
-                user.avatar,
-
-              // 🔥🔥 THIS IS THE MAIN FIX
-              displayId: user.displayId || null,
-
-              isWatcher: !seatSnapshot.has(s.data.userId?.toString()),
+                s.data.avatar,
+              displayId: dbUser?.displayId || s.data.displayId || null,
+              isWatcher: !seatSnapshot.has(userIdStr),
               isBackground: backgroundUsers.has(userIdStr),
               frame: frameMap.get(userIdStr) || null,
               mic: micStates.get(userIdStr) || {
@@ -607,6 +645,9 @@ module.exports = (io) => {
 
         // ✅ Broadcast updated users
         io.to(roomName).emit("room:users", usersInRoom);
+
+        // ✅ Broadcast Watcher Count
+        await broadcastWatcherCount(roomId, io);
 
         socket.to(roomName).emit("room:userJoined", {
           id: socket.data.user.id,
@@ -723,18 +764,18 @@ module.exports = (io) => {
           return socket.emit("error", { message: "User not authenticated" });
         }
 
-        const allowedSeats = [8, 10, 12];
+        const allowedSeats = [5, 10, 15, 20];
         if (!allowedSeats.includes(seatCount)) {
           return socket.emit("error", { message: "Invalid seat count" });
         }
 
         const room = await Room.findOne({ roomId });
-
         if (!room) {
           return socket.emit("error", { message: "Room not found" });
         }
 
-        if (room.host.toString() !== userId.toString()) {
+        const allowed = await isHost(roomId, userId);
+        if (!allowed) {
           return socket.emit("error:permission", {
             message: "Only host can change seat count",
           });
@@ -1224,6 +1265,11 @@ module.exports = (io) => {
           balance: finalBalance,
           transactionId: tx._id,
         });
+
+        // =========================
+        // 🏆 UPDATE TROPHY / LEADERBOARD
+        // =========================
+        await trophyController.updateLeaderboardOnGift(fromUserId, totalCost);
       } catch (err) {
         console.error("❌ gift:send FULL ERROR:", err);
         socket.emit("gift:error", { message: "Gift send failed" });
@@ -1298,6 +1344,7 @@ module.exports = (io) => {
         // ✅ Broadcast update
         io.to(`room:${roomId}`).emit("room:avatar:updated", {
           userId: userIdStr,
+          displayId: socket.data.displayId,
           avatar,
         });
 
@@ -1406,6 +1453,7 @@ module.exports = (io) => {
       // 🔥 EXTRA: FORCE REMOVE EVENT (UI SAFETY)
       io.to(roomName).emit("room:seat:removed", {
         userId,
+        displayId: socket.data.displayId,
       });
 
       console.log("✅ Seat removed globally:", userId);
@@ -1470,6 +1518,7 @@ module.exports = (io) => {
       // ✅ OPTIONAL (UI trigger)
       io.to(roomName).emit("room:seat:taken", {
         userId,
+        displayId: socket.data.displayId,
       });
 
       console.log("✅ Seat taken synced:", userId);
@@ -1576,6 +1625,7 @@ module.exports = (io) => {
 
       socket.to(`room:${roomId}`).emit("mic:update", {
         userId,
+        displayId: socket.data.displayId,
         muted: true,
         speaking: false,
       });
@@ -1594,6 +1644,7 @@ module.exports = (io) => {
 
       socket.to(`room:${roomId}`).emit("mic:update", {
         userId,
+        displayId: socket.data.displayId,
         muted: false,
         speaking: false,
       });
@@ -2064,17 +2115,18 @@ module.exports = (io) => {
       const sockets = await io.in(roomName).fetchSockets();
 
       const usersStatus = sockets
-        .filter((s) => s.data.user)
         .map((s) => ({
-          userId: s.data.user.id,
-          displayId: s.data.displayId, // ✅ ADD THIS
-          username: s.data.user.username,
-          avatar: s.data.user.avatar,
-          mic: micStates.get(s.data.user.id) || {
+          userId: s.data.userId || s.data.user?.id,
+          id: s.data.userId || s.data.user?.id,
+          displayId: s.data.displayId,
+          username: s.data.username || s.data.user?.username,
+          avatar: s.data.avatar || s.data.user?.avatar,
+          mic: micStates.get(s.data.userId?.toString()) || {
             muted: false,
             speaking: false,
           },
-        }));
+        }))
+        .filter(u => u.userId);
 
       socket.emit("room:usersStatus", {
         allUsers: usersStatus,
@@ -2083,16 +2135,15 @@ module.exports = (io) => {
       });
     });
 
-    // LOCK SEAT
+    // LOCK SEAT (HOST ONLY)
     socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can lock seats" });
 
       const room = await getRoomSafe(roomId);
-
-      const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return socket.emit("error:permission");
-
-      // ✅ FIXED VALIDATION
       if (!room || seatNumber < 1 || seatNumber > room.seatCount) {
         return socket.emit("error", { message: "Invalid seat number" });
       }
@@ -2105,26 +2156,20 @@ module.exports = (io) => {
       io.to(`room:${roomId}`).emit("room:seat:locked", { seatNumber });
     });
 
-    // UNLOCK SEAT
+    // UNLOCK SEAT (HOST ONLY)
     socket.on("room:seat:unlock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
 
-      const room = await getRoomSafe(roomId);
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can unlock seats" });
 
-      // ✅ FIX: prevent crash + invalid seat
+      const room = await getRoomSafe(roomId);
       if (!room || seatNumber < 1 || seatNumber > room.seatCount) {
         return socket.emit("error", { message: "Invalid seat number" });
       }
 
-      const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) {
-        return socket.emit("error:permission", {
-          message: "Not host or admin",
-        });
-      }
-
-      await Room.findOneAndUpdate(
+      await Room.updateOne(
         { roomId },
         { $pull: { lockedSeats: seatNumber } },
       );
@@ -2132,17 +2177,19 @@ module.exports = (io) => {
       io.to(`room:${roomId}`).emit("room:seat:unlocked", { seatNumber });
     });
 
-    // MIC OFF (Force mute one user)
+    // MIC OFF (Force mute one user - HOST ONLY)
     socket.on("room:mic:forceOff", async ({ roomId, targetUserId }) => {
       const userId = socket.data.userId;
+      if (!userId || !roomId || !targetUserId) return;
 
-      const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return socket.emit("error:permission");
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can force mute" });
 
       micStates.set(targetUserId, { muted: true, speaking: false });
 
       io.to(`room:${roomId}`).emit("mic:update", {
         userId: targetUserId,
+        displayId: null, // We don't have it here easily, but the ID is enough for the UI to find the user
         muted: true,
         speaking: false,
       });
@@ -2153,42 +2200,37 @@ module.exports = (io) => {
       }
     });
 
-    // MUTE EVERYONE
+    // MUTE EVERYONE (HOST ONLY)
     socket.on("room:mic:muteAll", async ({ roomId }) => {
       const userId = socket.data.userId;
+      if (!userId || !roomId) return;
 
-      const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return socket.emit("error:permission");
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can mute all" });
 
       const sockets = await io.in(`room:${roomId}`).fetchSockets();
 
       sockets.forEach((s) => {
         const uid = s.data.userId;
         if (!uid) return;
-
         micStates.set(uid, { muted: true, speaking: false });
       });
 
       io.to(`room:${roomId}`).emit("room:mic:mutedAll");
     });
 
-    // LOCK ALL SEATS
+    // LOCK ALL SEATS (HOST ONLY)
     socket.on("room:seats:lockAll", async ({ roomId }) => {
       const userId = socket.data.userId;
+      if (!userId || !roomId) return;
+
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can lock all seats" });
 
       const room = await getRoomSafe(roomId);
+      if (!room) return socket.emit("error", { message: "Room not found" });
 
-      // ✅ FIX: prevent crash
-      if (!room) {
-        return socket.emit("error", { message: "Room not found" });
-      }
-
-      const allowed = await isHostOrAdmin(roomId, userId);
-      if (!allowed) return socket.emit("error:permission");
-
-      // ✅ dynamic seats (already correct)
       const allSeats = Array.from({ length: room.seatCount }, (_, i) => i + 1);
-
       room.lockedSeats = allSeats;
       await room.save();
 
@@ -2200,19 +2242,80 @@ module.exports = (io) => {
     // GIVE ADMIN (ONLY HOST CAN DO THIS)
     socket.on("room:giveAdmin", async ({ roomId, targetUserId }) => {
       const userId = socket.data.userId;
+      if (!userId || !roomId || !targetUserId) return;
 
-      const room = await getRoomSafe(roomId);
-      if (!room || !room.host || room.host.toString() !== userId.toString()) {
-        return socket.emit("error:permission", {
-          message: "Only host can assign admin",
-        });
-      }
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can assign admin" });
 
       await Room.updateOne({ roomId }, { $addToSet: { admins: targetUserId } });
 
       io.to(`room:${roomId}`).emit("room:adminAdded", {
         userId: targetUserId,
       });
+    });
+
+    // ===============================
+    // 👑 ADMIN COMMANDS (Help Rooms & Roles)
+    // ===============================
+
+    // MARK AS HELP ROOM (ADMIN ONLY)
+    socket.on("room:setHelpRoom", async ({ roomId, isHelp }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId) return;
+
+        const user = await User.findById(userId);
+        if (!user || user.role !== "admin") {
+          return socket.emit("error", { message: "Only Global Admins can do this" });
+        }
+
+        const room = await Room.findOne({ roomId });
+        if (!room) return socket.emit("error", { message: "Room not found" });
+
+        room.isHelpRoom = isHelp === true;
+        await room.save();
+
+        console.log(`🔒 Room ${roomId} set as Help Room: ${room.isHelpRoom}`);
+
+        socket.emit("room:helpStatus", {
+          roomId,
+          isHelpRoom: room.isHelpRoom,
+          message: room.isHelpRoom ? "Room is now a permanent Help Room" : "Room is now a regular room",
+        });
+
+        // Broadcast update to refresh list for everyone
+        io.emit("room:listUpdate");
+      } catch (err) {
+        console.error("❌ setHelpRoom error:", err);
+      }
+    });
+
+    // SET USER ROLE (ADMIN ONLY)
+    socket.on("user:setRole", async ({ targetUserId, role }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !targetUserId || !role) return;
+
+        const adminUser = await User.findById(userId);
+        if (!adminUser || adminUser.role !== "admin") {
+          return socket.emit("error", { message: "Unauthorized" });
+        }
+
+        const allowedRoles = ["user", "host", "admin"];
+        if (!allowedRoles.includes(role)) {
+          return socket.emit("error", { message: "Invalid role" });
+        }
+
+        await User.findByIdAndUpdate(targetUserId, { role });
+
+        socket.emit("user:roleUpdated", {
+          targetUserId,
+          role,
+          message: `User role updated to ${role}`,
+        });
+      } catch (err) {
+        console.error("❌ setRole error:", err);
+      }
     });
 
     /* =========================
@@ -2239,12 +2342,13 @@ module.exports = (io) => {
         // HOST DISCONNECTED
         if (room.host && room.host.toString() === userId.toString()) {
           room.hostOnline = false;
-
           room.hostLeftAt = new Date();
 
-          room.status = "host_left";
-
-          room.isActive = false;
+          // ✅ HELP ROOM EXCEPTION: Never mark as host_left or inactive
+          if (!room.isHelpRoom) {
+            room.status = "host_left";
+            room.isActive = false;
+          }
 
           io.to(`room:${roomId}`).emit("room:hostLeft", {
             roomId,
@@ -2277,7 +2381,6 @@ module.exports = (io) => {
           await MusicState.deleteOne({ roomId });
 
           roomManager.stopMusic(roomId);
-
           seats.delete(roomId);
 
           roomUsers.delete(roomId);
@@ -2358,10 +2461,17 @@ module.exports = (io) => {
           }
         }
 
-        if (roomId && user) {
+        if (roomId) {
+          // ✅ Update DB count
+          await Room.updateOne({ roomId }, { $inc: { currentUsers: -1 } });
+
           socket.to(`room:${roomId}`).emit("room:userLeft", {
-            userId: user.id,
+            userId: socket.data.userId,
+            displayId: socket.data.displayId,
           });
+
+          // ✅ Broadcast updated Watcher Count after someone leaves
+          await broadcastWatcherCount(roomId, io);
         }
 
         console.log("❌ Socket disconnected:", socket.id);

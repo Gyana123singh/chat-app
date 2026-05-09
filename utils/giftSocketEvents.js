@@ -3,6 +3,7 @@ const StoreGift = require("../models/storeGift");
 const StoreGiftInventory = require("../models/storeGiftInventory");
 const StoreGiftTransaction = require("../models/storeGiftTransaction");
 const User = require("../models/users");
+const trophyController = require("../controllers/trophyController");
 
 module.exports = (socket, io) => {
   /* =========================================================
@@ -274,6 +275,9 @@ module.exports = (socket, io) => {
       socket.emit("store:gift:success", {
         balance: sender.coins,
       });
+
+      // 🏆 Update Leaderboard
+      await trophyController.updateLeaderboardOnGift(senderId, gift.price);
     } catch (err) {
       console.error("❌ Store gift send error:", err);
       socket.emit("store:gift:error", { message: "Store gift failed" });
@@ -468,6 +472,9 @@ module.exports = (socket, io) => {
         duration: finalDuration,
         balance: user.coins,
       });
+
+      // 🏆 Update Leaderboard
+      await trophyController.updateLeaderboardOnGift(userId, gift.price);
     } catch (err) {
       console.error("❌ Store buy error:", err);
       socket.emit("store:gift:error", {

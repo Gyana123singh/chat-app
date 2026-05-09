@@ -591,7 +591,7 @@ exports.getAllRooms = async (req, res) => {
 
     const rooms = await Room.find(query)
       .populate("host", "username profile.avatar stats")
-      .sort({ createdAt: -1 })
+      .sort({ isHelpRoom: -1, currentUsers: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
@@ -686,6 +686,13 @@ exports.deleteRoom = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: "Only host can delete room",
+      });
+    }
+
+    if (room.isHelpRoom) {
+      return res.status(403).json({
+        success: false,
+        message: "Help Rooms cannot be deleted",
       });
     }
 

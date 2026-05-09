@@ -203,6 +203,10 @@ const roomSchema = new mongoose.Schema(
         },
       },
     ],
+    isHelpRoom: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );

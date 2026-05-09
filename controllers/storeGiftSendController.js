@@ -3,6 +3,7 @@ const StoreGift = require("../models/storeGift");
 const StoreGiftInventory = require("../models/storeGiftInventory");
 const GiftTransaction = require("../models/giftTransaction");
 const User = require("../models/users");
+const trophyController = require("./trophyController");
 
 // ===============================
 // 🎁 BUY / SEND GIFT
@@ -10,7 +11,7 @@ const User = require("../models/users");
 exports.sendGift = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const senderId = req.user.userId;
+    const senderId = req.user.id;
     const {
       giftId,
       receiverIds,
@@ -169,6 +170,9 @@ exports.sendGift = async (req, res) => {
         animationUrl: gift.animationUrl,
       });
     }
+
+    // 🏆 Update Leaderboard
+    await trophyController.updateLeaderboardOnGift(senderId, totalCost);
 
     return res.json({
       success: true,
