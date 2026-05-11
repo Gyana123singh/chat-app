@@ -104,7 +104,7 @@ const roomSchema = new mongoose.Schema(
 
     seatCount: {
       type: Number,
-      default: 12,
+      default: 10,
     },
 
     privacy: {

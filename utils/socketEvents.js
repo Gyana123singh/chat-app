@@ -395,7 +395,7 @@ module.exports = (io) => {
         /* ===== SEAT COUNT ===== */
         socket.emit("room:seatCount", {
           roomId,
-          seatCount: roomDoc?.seatCount || 12,
+          seatCount: roomDoc?.seatCount || 10,
         });
 
         /* ===== DESCRIPTION ===== */
@@ -659,7 +659,7 @@ module.exports = (io) => {
         //room:seatCount
         socket.emit("room:seatCount", {
           roomId,
-          seatCount: roomDoc?.seatCount || 12,
+          seatCount: roomDoc?.seatCount || 10,
         });
         // ===============================
         // 💬 MESSAGES
@@ -764,8 +764,10 @@ module.exports = (io) => {
           return socket.emit("error", { message: "User not authenticated" });
         }
 
-        const allowedSeats = [5, 10, 15, 20];
-        if (!allowedSeats.includes(seatCount)) {
+        const parsedSeatCount = Number(seatCount);
+        const allowedSeats = [5, 10, 12, 15, 20];
+
+        if (isNaN(parsedSeatCount) || !allowedSeats.includes(parsedSeatCount)) {
           return socket.emit("error", { message: "Invalid seat count" });
         }
 
@@ -781,15 +783,15 @@ module.exports = (io) => {
           });
         }
 
-        if (room.seatCount === seatCount) return;
+        if (room.seatCount === parsedSeatCount) return;
 
-        room.seatCount = seatCount;
+        room.seatCount = parsedSeatCount;
         await room.save();
 
         // ✅ FIXED (added roomId)
         io.to(`room:${roomId}`).emit("room:seatCount", {
           roomId,
-          seatCount,
+          seatCount: parsedSeatCount,
         });
       } catch (err) {
         console.error("❌ seatCount update error:", err);
