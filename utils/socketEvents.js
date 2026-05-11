@@ -765,7 +765,7 @@ module.exports = (io) => {
         }
 
         const parsedSeatCount = Number(seatCount);
-        const allowedSeats = [5, 10, 12, 15, 20];
+        const allowedSeats = [5, 10, 15, 20];
 
         if (isNaN(parsedSeatCount) || !allowedSeats.includes(parsedSeatCount)) {
           return socket.emit("error", { message: "Invalid seat count" });
