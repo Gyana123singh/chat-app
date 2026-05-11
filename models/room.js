@@ -225,6 +225,10 @@ const roomSchema = new mongoose.Schema(
         },
       },
     ],
+    isChatEnabled: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true },
 );

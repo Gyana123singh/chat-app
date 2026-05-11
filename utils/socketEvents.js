@@ -1749,6 +1749,20 @@ module.exports = (io) => {
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !text || !userId) return;
+ 
+       // ✅ CHECK IF CHAT IS ENABLED
+       const room = await Room.findOne({ roomId }).select("isChatEnabled host admins");
+       if (!room) return;
+ 
+       if (!room.isChatEnabled) {
+         // Allow Host/Admins to bypass the chat restriction
+         const isHost = room.host?.toString() === userId.toString();
+         const isAdmin = room.admins?.some((id) => id.toString() === userId.toString());
+ 
+         if (!isHost && !isAdmin) {
+           return socket.emit("error", { message: "Chat is currently disabled by host" });
+         }
+       }
 
       // ✅ SAVE TO DB (ONLY ADD THIS)
       const newMessage = await Message.create({
@@ -2347,6 +2361,53 @@ module.exports = (io) => {
         console.log(`🚫 User ${targetUserId} blocked from ${roomId}`);
       } catch (err) {
         console.error("❌ room:blockUser error:", err);
+      }
+    });
+
+    // CLEAN CHAT (ONLY HOST/ADMIN)
+    socket.on("room:chat:clean", async ({ roomId }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId) return;
+
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can clean chat" });
+
+        // 1. Clear from DB
+        await Message.deleteMany({ room: roomId });
+
+        // 2. Clear from In-Memory
+        roomMessages.set(roomId, []);
+
+        // 3. Broadcast to everyone
+        io.to(`room:${roomId}`).emit("room:chat:cleaned", { roomId });
+
+        console.log(`🧹 Chat cleaned in room: ${roomId}`);
+      } catch (err) {
+        console.error("❌ room:chat:clean error:", err);
+      }
+    });
+
+    // TOGGLE PUBLIC CHAT (ONLY HOST/ADMIN)
+    socket.on("room:chat:toggle", async ({ roomId, isEnabled }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId) return;
+
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can toggle chat" });
+
+        await Room.updateOne({ roomId }, { isChatEnabled: isEnabled });
+
+        io.to(`room:${roomId}`).emit("room:chat:toggled", { 
+          roomId, 
+          isEnabled,
+          message: isEnabled ? "Chat is now public" : "Chat is now restricted to Host/Admins"
+        });
+
+        console.log(`📢 Room ${roomId} chat enabled: ${isEnabled}`);
+      } catch (err) {
+        console.error("❌ room:chat:toggle error:", err);
       }
     });
 
