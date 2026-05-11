@@ -2370,19 +2370,22 @@ module.exports = (io) => {
         const userId = socket.data.userId;
         if (!userId || !roomId) return;
 
-        const allowed = await isHostOrAdmin(roomId, userId);
+        const rId = roomId.toString();
+
+        const allowed = await isHostOrAdmin(rId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can clean chat" });
 
         // 1. Clear from DB
-        await Message.deleteMany({ room: roomId });
+        await Message.deleteMany({ room: rId });
 
-        // 2. Clear from In-Memory
-        roomMessages.set(roomId, []);
+        // 2. Clear from In-Memory Map (Force refresh for everyone)
+        roomMessages.set(rId, []);
 
-        // 3. Broadcast to everyone
-        io.to(`room:${roomId}`).emit("room:chat:cleaned", { roomId });
+        // 3. Broadcast specific event AND empty messages array to everyone
+        io.to(`room:${rId}`).emit("room:chat:cleaned", { roomId: rId });
+        io.to(`room:${rId}`).emit("room:messages", []); 
 
-        console.log(`🧹 Chat cleaned in room: ${roomId}`);
+        console.log(`🧹 Chat cleaned in room: ${rId} by ${userId}`);
       } catch (err) {
         console.error("❌ room:chat:clean error:", err);
       }
