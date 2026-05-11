@@ -401,7 +401,8 @@ module.exports = (io) => {
         await broadcastWatcherCount(roomId, io);
 
         /* ===== MESSAGES ===== */
-        socket.emit("room:messages", roomMessages.get(roomId) || []);
+        const rIdStr = roomId.toString();
+        socket.emit("room:messages", roomMessages.get(rIdStr) || []);
 
         /* ===== MUSIC ===== */
         const currentMusicState = roomManager.getState(roomId);
@@ -631,7 +632,8 @@ module.exports = (io) => {
         // ===============================
         // 💬 MESSAGES
         // ===============================
-        socket.emit("room:messages", roomMessages.get(roomId) || []);
+        const rIdStr = roomId.toString();
+        socket.emit("room:messages", roomMessages.get(rIdStr) || []);
 
         // ===============================
         // 🎵 MUSIC STATE
@@ -948,12 +950,10 @@ module.exports = (io) => {
 
           roomManager.stopMusic(roomId);
 
-          seats.delete(roomId);
-
+          const rIdStr = roomId.toString();
+          seats.delete(roomId); // seats Map seems to use roomId as-is in some places, but let's be safe
           roomUsers.delete(roomId);
-
-          roomMessages.delete(roomId);
-
+          roomMessages.delete(rIdStr);
           typingUsers.delete(roomId);
 
           backgroundUsers.delete(userId.toString());
@@ -1480,11 +1480,12 @@ module.exports = (io) => {
         timestamp: new Date().toISOString(),
       };
 
-      if (!roomMessages.has(roomId)) {
-        roomMessages.set(roomId, []);
+      const rIdStr = roomId.toString();
+      if (!roomMessages.has(rIdStr)) {
+        roomMessages.set(rIdStr, []);
       }
 
-      const messages = roomMessages.get(roomId);
+      const messages = roomMessages.get(rIdStr);
 
       messages.push(message);
 
@@ -1493,7 +1494,7 @@ module.exports = (io) => {
         messages.shift();
       }
 
-      io.to(`room:${roomId}`).emit("message:receive", message);
+      io.to(`room:${rIdStr}`).emit("message:receive", message);
     });
 
 
@@ -1791,18 +1792,19 @@ module.exports = (io) => {
         deletedFor: [],
       };
 
-      if (!roomMessages.has(roomId)) {
-        roomMessages.set(roomId, []);
+      const rIdStr = roomId.toString();
+      if (!roomMessages.has(rIdStr)) {
+        roomMessages.set(rIdStr, []);
       }
 
-      const messages = roomMessages.get(roomId);
+      const messages = roomMessages.get(rIdStr);
       messages.push(message);
 
       if (messages.length > 100) {
         messages.shift();
       }
 
-      io.to(`room:${roomId}`).emit("message:receive", message);
+      io.to(`room:${rIdStr}`).emit("message:receive", message);
     });
 
     socket.on("message:typing", ({ roomId, isTyping }) => {
@@ -1831,7 +1833,8 @@ module.exports = (io) => {
 
       if (!roomId || !messageId || !newText) return;
 
-      let messages = roomMessages.get(roomId) || [];
+      const rIdStr = roomId.toString();
+      let messages = roomMessages.get(rIdStr) || [];
       const localMsg = messages.find((m) => m.id === messageId);
 
       if (!localMsg) return;
@@ -1883,12 +1886,12 @@ module.exports = (io) => {
         return m;
       });
 
-      roomMessages.set(roomId, messages);
+      roomMessages.set(rIdStr, messages);
 
       // =========================
       // 📡 EMIT UPDATE
       // =========================
-      io.to(`room:${roomId}`).emit("message:edited", {
+      io.to(`room:${rIdStr}`).emit("message:edited", {
         messageId,
         newText,
       });
@@ -1899,9 +1902,8 @@ module.exports = (io) => {
     socket.on("message:delete", async ({ roomId, messageId, type }) => {
       const userId = socket.data.userId;
 
-      if (!roomId || !messageId) return;
-
-      let messages = roomMessages.get(roomId) || [];
+      const rIdStr = roomId.toString();
+      let messages = roomMessages.get(rIdStr) || [];
       const localMsg = messages.find((m) => m.id === messageId);
 
       if (!localMsg) return;
@@ -1935,7 +1937,7 @@ module.exports = (io) => {
           return m;
         });
 
-        roomMessages.set(roomId, messages);
+        roomMessages.set(rIdStr, messages);
 
         socket.emit("message:deleted:me", { messageId });
         return;
@@ -1969,9 +1971,9 @@ module.exports = (io) => {
           return m;
         });
 
-        roomMessages.set(roomId, messages);
+        roomMessages.set(rIdStr, messages);
 
-        io.to(`room:${roomId}`).emit("message:deleted:everyone", {
+        io.to(`room:${rIdStr}`).emit("message:deleted:everyone", {
           messageId,
           text: "🚫 This message was deleted",
         });
@@ -2381,9 +2383,10 @@ module.exports = (io) => {
         // 2. Clear from In-Memory Map (Force refresh for everyone)
         roomMessages.set(rId, []);
 
-        // 3. Broadcast specific event AND empty messages array to everyone
-        io.to(`room:${rId}`).emit("room:chat:cleaned", { roomId: rId });
-        io.to(`room:${rId}`).emit("room:messages", []); 
+        // 3. Broadcast specific events to everyone in the room
+        const roomName = `room:${rId}`;
+        io.to(roomName).emit("room:chat:cleaned", { roomId: rId });
+        io.to(roomName).emit("room:messages", []); 
 
         console.log(`🧹 Chat cleaned in room: ${rId} by ${userId}`);
       } catch (err) {
