@@ -756,10 +756,26 @@ module.exports = (io) => {
     // ===============================
     // 🎯 UPDATE ROOM SEAT COUNT
     // ===============================
-    socket.on("room:seatCount:update", async ({ roomId, seatCount }) => {
+    socket.on("room:seatCount:update", async (data, arg2) => {
       try {
-        const userId = socket.data.userId;
+        let roomId, seatCount;
 
+        // ✅ Support both ({roomId, seatCount}) and (roomId, seatCount)
+        if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+          roomId = data.roomId;
+          seatCount = data.seatCount;
+        } else {
+          roomId = data;
+          seatCount = arg2;
+        }
+
+        console.log("📥 [SeatCount Update] Received:", { roomId, seatCount });
+
+        if (!roomId) {
+          return socket.emit("error", { message: "Missing Room ID" });
+        }
+
+        const userId = socket.data.userId;
         if (!userId) {
           return socket.emit("error", { message: "User not authenticated" });
         }
@@ -768,6 +784,7 @@ module.exports = (io) => {
         const allowedSeats = [5, 10, 15, 20];
 
         if (isNaN(parsedSeatCount) || !allowedSeats.includes(parsedSeatCount)) {
+          console.error("❌ Invalid seat count attempt:", seatCount);
           return socket.emit("error", { message: "Invalid seat count" });
         }
 
@@ -801,9 +818,17 @@ module.exports = (io) => {
     // ===============================
     // 📝 ROOM DESCRIPTION UPDATE
     // ===============================
-    socket.on("room:description:update", async ({ roomId, description }) => {
+    socket.on("room:description:update", async (data, arg2) => {
       try {
-        const userId = socket.data.userId;
+        let roomId, description;
+
+        if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+          roomId = data.roomId;
+          description = data.description;
+        } else {
+          roomId = data;
+          description = arg2;
+        }
 
         if (!roomId || typeof description !== "string") {
           return socket.emit("error", { message: "Invalid data" });
