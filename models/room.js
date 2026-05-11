@@ -79,7 +79,7 @@ const roomSchema = new mongoose.Schema(
         },
         role: {
           type: String,
-          enum: ["host", "listener"],
+          enum: ["host", "listener", "admin"],
           default: "listener",
         },
         isMuted: { type: Boolean, default: false },
@@ -207,6 +207,24 @@ const roomSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    blockedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    kickedUsers: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        kickedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   { timestamps: true },
 );
