@@ -210,3 +210,42 @@ exports.getBalance = async (req, res) => {
     });
   }
 };
+// GET /api/coins/history
+exports.getPurchaseHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 50, skip = 0 } = req.query;
+
+    const transactions = await Transaction.find({
+      userId,
+      type: "COIN_RECHARGE",
+      status: "SUCCESS",
+    })
+      .populate("packageId")
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip(Number(skip))
+      .lean();
+
+    const total = await Transaction.countDocuments({
+      userId,
+      type: "COIN_RECHARGE",
+      status: "SUCCESS",
+    });
+
+    return res.json({
+      success: true,
+      history: transactions,
+      total,
+      limit: Number(limit),
+      skip: Number(skip),
+    });
+  } catch (error) {
+    console.error("Error fetching purchase history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching purchase history",
+      error: error.message,
+    });
+  }
+};

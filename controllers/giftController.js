@@ -399,11 +399,11 @@ exports.getGiftWall = async (req, res) => {
     const paginated = allTransactions.slice(Number(skip), Number(skip) + Number(limit));
 
     // Calculate totals across BOTH collections for the tab counters
-    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId }) + 
-                          await StoreGiftTransaction.countDocuments({ senderId: userId });
-                          
+    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId }) +
+      await StoreGiftTransaction.countDocuments({ senderId: userId });
+
     const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId }) +
-                             await StoreGiftTransaction.countDocuments({ receiverIds: userId });
+      await StoreGiftTransaction.countDocuments({ receiverIds: userId });
 
     res.status(200).json({
       success: true,
@@ -425,6 +425,64 @@ exports.getGiftWall = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching gift wall",
+    });
+  }
+};
+/**
+ * 🔥 GET SENT GIFT HISTORY (DETAILED)
+ */
+exports.getSentGiftHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 50, skip = 0 } = req.query;
+
+    const [transactions1, transactions2] = await Promise.all([
+      GiftTransaction.find({ senderId: userId })
+        .populate("recipientIds", "username profile.avatar displayId")
+        .populate("giftId", "name icon rarity price")
+        .sort({ createdAt: -1 })
+        .lean(),
+      StoreGiftTransaction.find({ senderId: userId })
+        .populate("receiverIds", "username profile.avatar displayId")
+        .populate("giftId", "name icon rarity price")
+        .sort({ createdAt: -1 })
+        .lean(),
+    ]);
+
+    // Normalize
+    const normalized2 = transactions2.map((t) => ({
+      ...t,
+      recipientIds: t.receiverIds,
+      quantity: t.quantitySent || 1,
+      type: "store",
+    }));
+
+    const normalized1 = transactions1.map((t) => ({
+      ...t,
+      type: "room",
+    }));
+
+    const allTransactions = [...normalized1, ...normalized2].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    );
+
+    const paginated = allTransactions.slice(
+      Number(skip),
+      Number(skip) + Number(limit),
+    );
+
+    res.status(200).json({
+      success: true,
+      history: paginated,
+      total: allTransactions.length,
+      limit: Number(limit),
+      skip: Number(skip),
+    });
+  } catch (error) {
+    console.error("❌ getSentGiftHistory error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching gift history",
     });
   }
 };
