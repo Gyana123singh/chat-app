@@ -62,7 +62,7 @@ exports.uploadVideo = async (req, res, io) => {
           },
         },
         $set: {
-          "video.isPlaying": false,
+          "video.isPlaying": true, // 🔥 AUTO PLAY START
           "video.isPaused": false,
           "video.currentTime": 0,
           "video.fileName": filename,
@@ -70,17 +70,22 @@ exports.uploadVideo = async (req, res, io) => {
           "video.mimeType": mimetype,
           "video.isVisible": true,
           "video.controllerId": userId,
-          "video.startedAt": null,
+          "video.startedAt": new Date(), // 🔥 START TIME
           "video.pausedAt": null,
         },
       },
     );
 
-    io.to(`room:${roomId}`).emit("video:uploaded", {
+    // 🔥 EMIT PLAY TO ALL USERS (AUTO PLAY)
+    io.to(`room:${roomId}`).emit("video:play", {
+      videoUrl: `/video-stream/${roomId}/${filename}`,
+      currentTime: 0,
+      startedAt: Date.now(),
+      controllerId: userId,
       fileName: originalname,
     });
 
-    res.json({ success: true, message: "Video uploaded (waiting for play)" });
+    res.json({ success: true, message: "Video uploaded and streaming started" });
   } catch (err) {
     console.error("❌ uploadVideo:", err);
     res.status(500).json({ error: err.message });
