@@ -347,3 +347,59 @@ exports.getGiftAnalytics = async (req, res) => {
     });
   }
 };
+
+/**
+ * 🔥 GET GIFT WALL (SENT & RECEIVED BY SPECIFIC USER)
+ */
+exports.getGiftWall = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { type = "received", limit = 50, skip = 0 } = req.query;
+
+    let query = {};
+    if (type === "sent") {
+      query = { senderId: userId };
+    } else if (type === "received") {
+      query = { recipientIds: userId };
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid type. Use 'sent' or 'received'" });
+    }
+
+    const transactions = await GiftTransaction.find(query)
+      .populate("senderId", "username profile.avatar displayId level")
+      .populate("recipientIds", "username profile.avatar displayId level")
+      .populate("giftId", "name icon rarity price")
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip(Number(skip))
+      .lean();
+
+    const total = await GiftTransaction.countDocuments(query);
+
+    // Calculate total summary counts for the tabs
+    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId });
+    const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        transactions,
+        summary: {
+          totalSentGifts,
+          totalReceivedGifts,
+        },
+        pagination: {
+          total,
+          limit: Number(limit),
+          skip: Number(skip),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("❌ getGiftWall error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching gift wall",
+    });
+  }
+};

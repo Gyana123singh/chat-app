@@ -33,4 +33,7 @@ router.get(
 // Get gift sending analytics for a user
 router.get("/analytics", authMiddleware, giftController.getGiftAnalytics);
 
+// Get gift wall (sent and received history) for any specific user profile
+router.get("/wall/:userId", authMiddleware, giftController.getGiftWall);
+
 module.exports = router;
