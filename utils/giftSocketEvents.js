@@ -207,9 +207,9 @@ module.exports = (socket, io) => {
           frame:
             gift.effectType === "FRAME"
               ? {
-                  icon: gift.icon,
-                  expiresAt,
-                }
+                icon: gift.icon,
+                expiresAt,
+              }
               : null,
           ring: gift.effectType === "RING" ? gift.icon : null,
           bubble: gift.effectType === "BUBBLE" ? gift.icon : null,
@@ -453,9 +453,9 @@ module.exports = (socket, io) => {
           frame:
             gift.effectType === "FRAME"
               ? {
-                  icon: gift.icon,
-                  expiresAt,
-                }
+                icon: gift.icon,
+                expiresAt,
+              }
               : null,
           ring: gift.effectType === "RING" ? gift.icon : null,
           bubble: gift.effectType === "BUBBLE" ? gift.icon : null,

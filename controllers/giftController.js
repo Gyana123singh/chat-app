@@ -4,6 +4,7 @@ const Category = require("../models/category");
 const Room = require("../models/room");
 const Gift = require("../models/gifts");
 const GiftTransaction = require("../models/giftTransaction");
+const StoreGiftTransaction = require("../models/storeGiftTransaction");
 const trophyController = require("../controllers/trophyController");
 const PKBattle = require("../models/pkBattle");
 
@@ -332,9 +333,9 @@ exports.getGiftAnalytics = async (req, res) => {
         sendTypeBreakdown,
         mostSentGift: mostSentGift
           ? {
-              name: mostSentGift[0],
-              count: mostSentGift[1],
-            }
+            name: mostSentGift[0],
+            count: mostSentGift[1],
+          }
           : null,
       },
     });
@@ -356,40 +357,64 @@ exports.getGiftWall = async (req, res) => {
     const { userId } = req.params;
     const { type = "received", limit = 50, skip = 0 } = req.query;
 
-    let query = {};
+    let query1 = {};
+    let query2 = {};
     if (type === "sent") {
-      query = { senderId: userId };
+      query1 = { senderId: userId };
+      query2 = { senderId: userId };
     } else if (type === "received") {
-      query = { recipientIds: userId };
+      query1 = { recipientIds: userId };
+      query2 = { receiverIds: userId };
     } else {
       return res.status(400).json({ success: false, message: "Invalid type. Use 'sent' or 'received'" });
     }
 
-    const transactions = await GiftTransaction.find(query)
-      .populate("senderId", "username profile.avatar displayId level")
-      .populate("recipientIds", "username profile.avatar displayId level")
-      .populate("giftId", "name icon rarity price")
-      .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .skip(Number(skip))
-      .lean();
+    // Fetch from BOTH collections simultaneously
+    const [transactions1, transactions2] = await Promise.all([
+      GiftTransaction.find(query1)
+        .populate("senderId", "username profile.avatar displayId level")
+        .populate("recipientIds", "username profile.avatar displayId level")
+        .populate("giftId", "name icon rarity price")
+        .sort({ createdAt: -1 })
+        .lean(),
+      StoreGiftTransaction.find(query2)
+        .populate("senderId", "username profile.avatar displayId level")
+        .populate("receiverIds", "username profile.avatar displayId level")
+        .populate("giftId", "name icon rarity price")
+        .sort({ createdAt: -1 })
+        .lean()
+    ]);
 
-    const total = await GiftTransaction.countDocuments(query);
+    // Normalize StoreGiftTransaction fields to match the GiftTransaction UI structure
+    const normalized2 = transactions2.map(t => ({
+      ...t,
+      recipientIds: t.receiverIds,
+      quantity: t.quantitySent || 1,
+    }));
 
-    // Calculate total summary counts for the tabs
-    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId });
-    const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId });
+    // Merge and sort by time
+    const allTransactions = [...transactions1, ...normalized2]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const paginated = allTransactions.slice(Number(skip), Number(skip) + Number(limit));
+
+    // Calculate totals across BOTH collections for the tab counters
+    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId }) + 
+                          await StoreGiftTransaction.countDocuments({ senderId: userId });
+                          
+    const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId }) +
+                             await StoreGiftTransaction.countDocuments({ receiverIds: userId });
 
     res.status(200).json({
       success: true,
       data: {
-        transactions,
+        transactions: paginated,
         summary: {
           totalSentGifts,
           totalReceivedGifts,
         },
         pagination: {
-          total,
+          total: allTransactions.length,
           limit: Number(limit),
           skip: Number(skip),
         },
