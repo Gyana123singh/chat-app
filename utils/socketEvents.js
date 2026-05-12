@@ -1750,20 +1750,20 @@ module.exports = (io) => {
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !text || !userId) return;
- 
-       // ✅ CHECK IF CHAT IS ENABLED
-       const room = await Room.findOne({ roomId }).select("isChatEnabled host admins");
-       if (!room) return;
- 
-       if (!room.isChatEnabled) {
-         // Allow Host/Admins to bypass the chat restriction
-         const isHost = room.host?.toString() === userId.toString();
-         const isAdmin = room.admins?.some((id) => id.toString() === userId.toString());
- 
-         if (!isHost && !isAdmin) {
-           return socket.emit("error", { message: "Chat is currently disabled by host" });
-         }
-       }
+
+      // ✅ CHECK IF CHAT IS ENABLED
+      const room = await Room.findOne({ roomId }).select("isChatEnabled host admins");
+      if (!room) return;
+
+      if (!room.isChatEnabled) {
+        // Allow Host/Admins to bypass the chat restriction
+        const isHost = room.host?.toString() === userId.toString();
+        const isAdmin = room.admins?.some((id) => id.toString() === userId.toString());
+
+        if (!isHost && !isAdmin) {
+          return socket.emit("error", { message: "Chat is currently disabled by host" });
+        }
+      }
 
       // ✅ SAVE TO DB (ONLY ADD THIS)
       const newMessage = await Message.create({
@@ -2126,7 +2126,9 @@ module.exports = (io) => {
     });
 
     // MIC OFF (Force mute one user - HOST/ADMIN ONLY)
-    socket.on("room:mic:forceOff", async ({ roomId, targetUserId }) => {
+    socket.on("room:mic:forceOff", async (payload) => {
+      const roomId = payload.roomId;
+      const targetUserId = payload.targetUserId || payload.userId;
       const userId = socket.data.userId;
       if (!userId || !roomId || !targetUserId) return;
 
@@ -2188,8 +2190,10 @@ module.exports = (io) => {
     });
 
     // GIVE ADMIN (ONLY HOST CAN DO THIS)
-    socket.on("room:giveAdmin", async ({ roomId, targetUserId }) => {
+    socket.on("room:giveAdmin", async (payload) => {
       try {
+        const roomId = payload.roomId;
+        const targetUserId = payload.targetUserId || payload.userId;
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
@@ -2197,12 +2201,12 @@ module.exports = (io) => {
         if (!allowed) return socket.emit("error:permission", { message: "Only host can assign admin" });
 
         await Room.updateOne(
-          { roomId }, 
-          { 
+          { roomId },
+          {
             $addToSet: { admins: targetUserId },
             $set: { "participants.$[elem].role": "admin" }
           },
-          { arrayFilters: [{ "elem.user": targetUserId }] }
+          { arrayFilters: [{ "elem.user": new mongoose.Types.ObjectId(targetUserId) }] }
         );
 
         io.to(`room:${roomId}`).emit("room:adminAdded", {
@@ -2218,8 +2222,10 @@ module.exports = (io) => {
     });
 
     // REMOVE ADMIN (ONLY HOST CAN DO THIS)
-    socket.on("room:removeAdmin", async ({ roomId, targetUserId }) => {
+    socket.on("room:removeAdmin", async (payload) => {
       try {
+        const roomId = payload.roomId;
+        const targetUserId = payload.targetUserId || payload.userId;
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
@@ -2227,12 +2233,12 @@ module.exports = (io) => {
         if (!allowed) return socket.emit("error:permission", { message: "Only host can remove admin" });
 
         await Room.updateOne(
-          { roomId }, 
-          { 
+          { roomId },
+          {
             $pull: { admins: targetUserId },
             $set: { "participants.$[elem].role": "listener" }
           },
-          { arrayFilters: [{ "elem.user": targetUserId }] }
+          { arrayFilters: [{ "elem.user": new mongoose.Types.ObjectId(targetUserId) }] }
         );
 
         io.to(`room:${roomId}`).emit("room:adminRemoved", {
@@ -2248,8 +2254,10 @@ module.exports = (io) => {
     });
 
     // REMOVE FROM SEAT (FORCE)
-    socket.on("room:seat:forceLeave", async ({ roomId, targetUserId }) => {
+    socket.on("room:seat:forceLeave", async (payload) => {
       try {
+        const roomId = payload.roomId;
+        const targetUserId = payload.targetUserId || payload.userId;
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
@@ -2283,17 +2291,19 @@ module.exports = (io) => {
     });
 
     // KICK OUT FROM ROOM
-    socket.on("room:kickOut", async ({ roomId, targetUserId }) => {
+    socket.on("room:kickOut", async (payload) => {
       try {
+        const roomId = payload.roomId;
+        const targetUserId = payload.targetUserId || payload.userId;
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can kick out" });
 
-        await Room.updateOne({ roomId }, { 
+        await Room.updateOne({ roomId }, {
           $push: { kickedUsers: { userId: targetUserId, kickedAt: new Date() } },
-          $pull: { participants: { user: targetUserId } },
+          $pull: { participants: { user: new mongoose.Types.ObjectId(targetUserId) } },
           $inc: { currentUsers: -1 }
         });
 
@@ -2325,17 +2335,19 @@ module.exports = (io) => {
     });
 
     // BLOCK USER FROM ROOM
-    socket.on("room:blockUser", async ({ roomId, targetUserId }) => {
+    socket.on("room:blockUser", async (payload) => {
       try {
+        const roomId = payload.roomId;
+        const targetUserId = payload.targetUserId || payload.userId;
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can block user" });
 
-        await Room.updateOne({ roomId }, { 
+        await Room.updateOne({ roomId }, {
           $addToSet: { blockedUsers: targetUserId },
-          $pull: { participants: { user: targetUserId } },
+          $pull: { participants: { user: new mongoose.Types.ObjectId(targetUserId) } },
           $inc: { currentUsers: -1 }
         });
 
@@ -2386,7 +2398,7 @@ module.exports = (io) => {
         // 3. Broadcast specific events to everyone in the room
         const roomName = `room:${rId}`;
         io.to(roomName).emit("room:chat:cleaned", { roomId: rId });
-        io.to(roomName).emit("room:messages", []); 
+        io.to(roomName).emit("room:messages", []);
 
         console.log(`🧹 Chat cleaned in room: ${rId} by ${userId}`);
       } catch (err) {
@@ -2405,8 +2417,8 @@ module.exports = (io) => {
 
         await Room.updateOne({ roomId }, { isChatEnabled: isEnabled });
 
-        io.to(`room:${roomId}`).emit("room:chat:toggled", { 
-          roomId, 
+        io.to(`room:${roomId}`).emit("room:chat:toggled", {
+          roomId,
           isEnabled,
           message: isEnabled ? "Chat is now public" : "Chat is now restricted to Host/Admins"
         });
