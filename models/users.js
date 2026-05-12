@@ -194,6 +194,17 @@ const userSchema = new mongoose.Schema(
       enum: ["+91", "+92", "+880"],
     },
 
+    gender: {
+      type: String,
+      enum: ["Male", "Female", "Other"],
+      default: "Other",
+    },
+
+    age: {
+      type: Number,
+      default: 18,
+    },
+
     totalSpent: {
       type: Number,
       default: 0,

@@ -264,7 +264,7 @@ module.exports = (io) => {
       const userIds = sockets.map((s) => s.data.userId?.toString()).filter(Boolean);
 
       const users = await User.find({ _id: { $in: userIds } })
-        .select("displayId username profile.avatar profile.frame")
+        .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
         .lean();
 
       const userMap = new Map(users.map((u) => [u._id.toString(), u]));
@@ -301,6 +301,11 @@ module.exports = (io) => {
             isAdmin: admins.has(userIdStr),
             isHost: userIdStr === hostId,
             frame: dbUser?.profile?.frame?.icon || null,
+            bubble: dbUser?.profile?.bubble || null,
+            level: dbUser?.level?.personal?.level || 1,
+            country: dbUser?.country || "Unknown",
+            gender: dbUser?.gender || "Other",
+            age: dbUser?.age || 18,
             mic: micStates.get(userIdStr) || {
               muted: false,
               speaking: false,
@@ -348,7 +353,7 @@ module.exports = (io) => {
 
       // 🔥 Cache profile data
       const user = await User.findById(userId)
-        .select("profile.bubble profile.frame level displayId")
+        .select("profile.bubble profile.frame level displayId country gender age")
         .lean();
       socket.data.displayId = user?.displayId; // ✅ ADD THIS LINE
       socket.data.displayId = user?.displayId; // ✅ REQUIRED
@@ -356,6 +361,9 @@ module.exports = (io) => {
         bubble: user?.profile?.bubble || null,
         frame: user?.profile?.frame?.icon || null,
         level: user?.level?.personal?.level || 1,
+        country: user?.country || "Unknown",
+        gender: user?.gender || "Other",
+        age: user?.age || 18,
       };
     });
 
@@ -470,7 +478,7 @@ module.exports = (io) => {
       // ❌ DO NOT ADD TO SEATS HERE
       // 🔥 attach displayId into user object
       const dbUser = await User.findById(safeUser.id)
-        .select("displayId username profile.avatar")
+        .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
         .lean();
 
       socket.data.user = {
@@ -478,6 +486,12 @@ module.exports = (io) => {
         username: dbUser?.username || safeUser.username,
         avatar: dbUser?.profile?.avatar || safeUser.avatar,
         displayId: dbUser?.displayId || socket.data.displayId || null, // ✅ FIX
+        level: dbUser?.level?.personal?.level || 1,
+        country: dbUser?.country || "Unknown",
+        gender: dbUser?.gender || "Other",
+        age: dbUser?.age || 18,
+        bubble: dbUser?.profile?.bubble || null,
+        frame: dbUser?.profile?.frame?.icon || null,
       };
       socket.data.userId = safeUser.id;
 
@@ -2069,6 +2083,12 @@ module.exports = (io) => {
           displayId: s.data.displayId,
           username: s.data.username || s.data.user?.username,
           avatar: s.data.avatar || s.data.user?.avatar,
+          level: s.data.user?.level || s.data.profile?.level || 1,
+          country: s.data.user?.country || s.data.profile?.country || "Unknown",
+          gender: s.data.user?.gender || s.data.profile?.gender || "Other",
+          age: s.data.user?.age || s.data.profile?.age || 18,
+          frame: s.data.user?.frame || s.data.profile?.frame || null,
+          bubble: s.data.user?.bubble || s.data.profile?.bubble || null,
           mic: micStates.get(s.data.userId?.toString()) || {
             muted: false,
             speaking: false,
@@ -2081,6 +2101,36 @@ module.exports = (io) => {
         onMicUsers: usersStatus.filter((u) => !u.mic.muted),
         speakingUsers: usersStatus.filter((u) => u.mic.speaking),
       });
+    });
+
+    // GET USER PROFILE FOR ROOM POPUP
+    socket.on("room:user:profile", async ({ roomId, targetUserId }) => {
+      try {
+        if (!targetUserId) return;
+        const dbUser = await User.findById(targetUserId)
+          .select("username displayId profile.avatar profile.frame profile.bubble country gender age level.personal.level")
+          .lean();
+
+        if (!dbUser) return;
+
+        const isInRoom = roomUsers.has(roomId) && roomUsers.get(roomId).has(targetUserId.toString());
+        
+        socket.emit("room:user:profile:response", {
+          userId: dbUser._id,
+          displayId: dbUser.displayId,
+          username: dbUser.username,
+          avatar: dbUser.profile?.avatar || null,
+          frame: dbUser.profile?.frame?.icon || null,
+          bubble: dbUser.profile?.bubble || null,
+          level: dbUser.level?.personal?.level || 1,
+          gender: dbUser.gender || "Other",
+          age: dbUser.age || 18,
+          country: dbUser.country || "Unknown",
+          isInRoom
+        });
+      } catch (error) {
+        console.error("❌ room:user:profile error:", error);
+      }
     });
 
     // LOCK SEAT (HOST ONLY)
