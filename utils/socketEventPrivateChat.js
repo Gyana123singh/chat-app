@@ -1,6 +1,7 @@
 const Message = require("../models/privateMessage");
 const Conversation = require("../models/conversation");
 const Notification = require("../models/notification");
+const Block = require("../models/blockUsers");
 const mongoose = require("mongoose");
 
 module.exports = (io) => {
@@ -106,6 +107,20 @@ module.exports = (io) => {
               error: "Invalid ID format",
             });
             return;
+          }
+
+          // ✅ BLOCK CHECK (MUTUAL)
+          const isBlocked = await Block.findOne({
+            $or: [
+              { blocker: senderId, blocked: recipientId },
+              { blocker: recipientId, blocked: senderId },
+            ],
+          });
+
+          if (isBlocked) {
+            return socket.emit("private:message:error", {
+              error: "You cannot message this user due to blocking",
+            });
           }
 
           const conversation = await Conversation.findById(conversationId);

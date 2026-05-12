@@ -16,6 +16,7 @@ const StoreGiftInventory = require("../models/storeGiftInventory");
 const calculateProfitLoss = require("../utils/profitLossLuckEngine");
 const Message = require("../models/message");
 const RoomInvite = require("../models/roomInvite");
+const Block = require("../models/blockUsers");
 async function getRoomSafe(roomId) {
   return await Room.findOne({ roomId });
 }
@@ -1059,6 +1060,11 @@ module.exports = (io) => {
           return socket.emit("gift:error", { message: "Room not found" });
         }
 
+        // ✅ BLOCK CHECK
+        if (room.blockedUsers?.some(id => id.toString() === fromUserId.toString())) {
+          return socket.emit("gift:error", { message: "You are blocked from this room" });
+        }
+
         // =========================
         // 1️⃣ Combo Logic
         // =========================
@@ -1471,10 +1477,16 @@ module.exports = (io) => {
     });
 
     // masage image part
-    socket.on("message:image", ({ roomId, imageUrl, width, height }) => {
+    socket.on("message:image", async ({ roomId, imageUrl, width, height }) => {
       const { userId, username, avatar } = socket.data;
 
       if (!roomId || !imageUrl) return;
+
+      // ✅ BLOCK CHECK
+      const roomDoc = await Room.findOne({ roomId }).select("blockedUsers").lean();
+      if (roomDoc?.blockedUsers?.some(id => id.toString() === userId.toString())) {
+        return socket.emit("error", { message: "You are blocked from this room" });
+      }
 
       const message = {
         id: `${userId}-${Date.now()}`,
@@ -1766,17 +1778,20 @@ module.exports = (io) => {
       if (!roomId || !text || !userId) return;
 
       // ✅ CHECK IF CHAT IS ENABLED
-      const room = await Room.findOne({ roomId }).select("isChatEnabled host admins");
+      const room = await Room.findOne({ roomId }).select("isChatEnabled host admins blockedUsers");
       if (!room) return;
 
       if (!room.isChatEnabled) {
-        // Allow Host/Admins to bypass the chat restriction
         const isHost = room.host?.toString() === userId.toString();
         const isAdmin = room.admins?.some((id) => id.toString() === userId.toString());
-
         if (!isHost && !isAdmin) {
           return socket.emit("error", { message: "Chat is currently disabled by host" });
         }
+      }
+
+      // ✅ BLOCK CHECK
+      if (room.blockedUsers?.some(id => id.toString() === userId.toString())) {
+        return socket.emit("error", { message: "You are blocked from this room" });
       }
 
       // ✅ SAVE TO DB (ONLY ADD THIS)
@@ -2115,7 +2130,16 @@ module.exports = (io) => {
 
         const isInRoom = roomUsers.has(roomId) && roomUsers.get(roomId).has(targetUserId.toString());
         
+        // ✅ CHECK BLOCK STATUS (INSIDE ROOM & OUTSIDE/PERSONAL)
+        const roomDoc = await Room.findOne({ roomId }).select("blockedUsers").lean();
+        const isBlockedInRoom = roomDoc?.blockedUsers?.some(id => id.toString() === targetUserId.toString()) || false;
+
+        const personalBlock = await Block.findOne({ blocker: socket.data.userId, blocked: targetUserId }).lean();
+        const isBlockedByMe = !!personalBlock;
+
         socket.emit("room:user:profile:response", {
+          isBlockedInRoom,
+          isBlockedByMe,
           userId: dbUser._id,
           displayId: dbUser.displayId,
           username: dbUser.username,
@@ -2396,10 +2420,15 @@ module.exports = (io) => {
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can block user" });
 
         await Room.updateOne({ roomId }, {
-          $addToSet: { blockedUsers: targetUserId },
+          $addToSet: { blockedUsers: new mongoose.Types.ObjectId(targetUserId) },
           $pull: { participants: { user: new mongoose.Types.ObjectId(targetUserId) } },
           $inc: { currentUsers: -1 }
         });
+
+        // ✅ CLEAN SERVER MEMORY
+        if (roomUsers.has(roomId)) roomUsers.get(roomId).delete(targetUserId.toString());
+        if (typingUsers.has(roomId)) typingUsers.get(roomId).delete(targetUserId.toString());
+        backgroundUsers.delete(targetUserId.toString());
 
         // ✅ REMOVE FROM SEATS
         let roomSeats = seats.get(roomId) || [];
@@ -2425,6 +2454,112 @@ module.exports = (io) => {
         console.log(`🚫 User ${targetUserId} blocked from ${roomId}`);
       } catch (err) {
         console.error("❌ room:blockUser error:", err);
+      }
+    });
+
+    // ===============================
+    // 🚫 ROOM BLOCK MANAGEMENT
+    // ===============================
+
+    // GET BLOCKED USERS LIST IN ROOM
+    socket.on("room:blockedList", async ({ roomId }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId) return;
+
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can see block list" });
+
+        const room = await Room.findOne({ roomId })
+          .populate("blockedUsers", "username displayId profile.avatar")
+          .lean();
+
+        if (!room) return;
+
+        socket.emit("room:blockedList:response", {
+          roomId,
+          blockedUsers: (room.blockedUsers || []).map(u => ({
+            userId: u._id,
+            username: u.username,
+            displayId: u.displayId,
+            avatar: u.profile?.avatar || null
+          }))
+        });
+      } catch (err) {
+        console.error("❌ room:blockedList error:", err);
+      }
+    });
+
+    // UNBLOCK USER FROM ROOM
+    socket.on("room:unblockUser", async ({ roomId, targetUserId }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId || !targetUserId) return;
+
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can unblock" });
+
+        await Room.updateOne({ roomId }, {
+          $pull: { blockedUsers: new mongoose.Types.ObjectId(targetUserId) }
+        });
+
+        socket.emit("room:unblocked", {
+          roomId,
+          targetUserId,
+          message: "User unblocked successfully"
+        });
+
+        console.log(`✅ User ${targetUserId} unblocked in ${roomId}`);
+      } catch (err) {
+        console.error("❌ room:unblockUser error:", err);
+      }
+    });
+
+    // ===============================
+    // 🚫 PERSONAL BLOCK MANAGEMENT
+    // ===============================
+
+    // GET PERSONAL BLOCK LIST
+    socket.on("user:blockList", async () => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId) return;
+
+        const blockedEntries = await Block.find({ blocker: userId })
+          .populate("blocked", "username displayId profile.avatar")
+          .lean();
+
+        socket.emit("user:blockList:response", {
+          blockedUsers: blockedEntries.filter(e => e.blocked).map(e => ({
+            userId: e.blocked._id,
+            username: e.blocked.username,
+            displayId: e.blocked.displayId,
+            avatar: e.blocked.profile?.avatar || null,
+            blockedAt: e.createdAt
+          }))
+        });
+      } catch (err) {
+        console.error("❌ user:blockList error:", err);
+      }
+    });
+
+    // UNBLOCK USER GLOBALLY
+    socket.on("user:unblock", async ({ targetUserId }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !targetUserId) return;
+
+        await Block.findOneAndDelete({
+          blocker: userId,
+          blocked: targetUserId
+        });
+
+        socket.emit("user:unblocked", {
+          targetUserId,
+          message: "User unblocked successfully"
+        });
+      } catch (err) {
+        console.error("❌ user:unblock error:", err);
       }
     });
 

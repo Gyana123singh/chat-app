@@ -3,6 +3,8 @@ const StoreGift = require("../models/storeGift");
 const StoreGiftInventory = require("../models/storeGiftInventory");
 const StoreGiftTransaction = require("../models/storeGiftTransaction");
 const User = require("../models/users");
+const Block = require("../models/blockUsers");
+const Room = require("../models/room");
 const trophyController = require("../controllers/trophyController");
 
 module.exports = (socket, io) => {
@@ -20,6 +22,28 @@ module.exports = (socket, io) => {
 
       if (!senderId || !giftId || !receiverId) {
         return socket.emit("store:gift:error", { message: "Missing fields" });
+      }
+
+      // ✅ BLOCK CHECK (ROOM)
+      if (roomId) {
+        const room = await Room.findOne({ roomId }).select("blockedUsers").lean();
+        if (room?.blockedUsers?.some(id => id.toString() === senderId.toString())) {
+          return socket.emit("store:gift:error", { message: "You are blocked from this room" });
+        }
+      }
+
+      // ✅ BLOCK CHECK (PERSONAL MUTUAL)
+      const isBlocked = await Block.findOne({
+        $or: [
+          { blocker: senderId, blocked: receiverId },
+          { blocker: receiverId, blocked: senderId },
+        ],
+      }).lean();
+
+      if (isBlocked) {
+        return socket.emit("store:gift:error", {
+          message: "You cannot send gifts to this user due to blocking",
+        });
       }
 
       if (receiverId.toString() === senderId.toString()) {
