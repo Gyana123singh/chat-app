@@ -259,7 +259,7 @@ module.exports = (io) => {
     try {
       const roomName = `room:${roomId}`;
       const roomDoc = await Room.findOne({ roomId }).lean();
-      if (!roomDoc) return;
+      if (!roomDoc) return [];
 
       const sockets = await io.in(roomName).fetchSockets();
       const userIds = sockets.map((s) => s.data.userId?.toString()).filter(Boolean);
@@ -316,8 +316,10 @@ module.exports = (io) => {
         .filter(Boolean);
 
       io.to(roomName).emit("room:users", usersInRoom);
+      return usersInRoom;
     } catch (err) {
       console.error("❌ broadcastRoomUsers error:", err.message);
+      return [];
     }
   };
 
@@ -372,39 +374,89 @@ module.exports = (io) => {
    ROOM WATCH (AUDIENCE MODE)
 ========================= */
     socket.on("room:watch", async ({ roomId, user }) => {
-      if (!roomId || !user) return;
+      if (!roomId) return;
 
+      const safeUser = user || socket.data.user;
+      if (!safeUser || !safeUser.id) {
+        console.error("❌ room:watch without user identity", { roomId });
+        return;
+      }
+
+      const userId = safeUser.id;
       const roomName = `room:${roomId}`;
       socket.join(roomName);
 
       socket.data.roomId = roomId;
+      socket.data.userId = userId;
       socket.data.isWatcher = true;
 
-      // ⭐ SAFE USER SETUP
-      socket.data.user = {
-        id: user.id || socket.data.userId,
-        username: user.username || socket.data.username,
-        avatar: user.avatar || socket.data.avatar,
-        displayId: socket.data.displayId,
-      };
-      socket.data.userId = socket.data.userId || user.id;
-      socket.data.username = socket.data.user.username;
-      socket.data.avatar = socket.data.user.avatar;
+      // ⭐ FETCH FULL USER (for metadata/displayId)
+      const dbUser = await User.findById(userId)
+        .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
+        .lean();
 
-      console.log("👀 User watching room:", roomId);
+      socket.data.user = {
+        id: userId,
+        username: dbUser?.username || safeUser.username || "User",
+        avatar: dbUser?.profile?.avatar || safeUser.avatar || null,
+        displayId: dbUser?.displayId || socket.data.displayId || null,
+        level: dbUser?.level?.personal?.level || 1,
+        country: dbUser?.country || "Unknown",
+        gender: dbUser?.gender || "Other",
+        age: dbUser?.age || 18,
+        bubble: dbUser?.profile?.bubble || null,
+        frame: dbUser?.profile?.frame?.icon || null,
+      };
+
+      console.log("👀 User watching room:", { roomId, userId, username: socket.data.user.username });
 
       try {
         // ===============================
-        // ✅ FETCH & UPDATE ROOM
+        // ✅ FETCH & CHECK ROOM
         // ===============================
-        const roomDoc = await Room.findOneAndUpdate(
-          { roomId },
-          { $inc: { currentUsers: 1 } },
-          { new: true }
+        const roomDoc = await Room.findOne({ roomId });
+        if (!roomDoc) {
+          return socket.emit("room:error", { message: "Room not found" });
+        }
+
+        // ❌ BLOCKED USER CHECK
+        if (roomDoc.blockedUsers && roomDoc.blockedUsers.some(id => id.toString() === userId.toString())) {
+          return socket.emit("room:error", { message: "You are blocked from this room" });
+        }
+
+        // ===============================
+        // 👥 TRACK USERS (Consistency with room:join)
+        // ===============================
+        if (!roomUsers.has(roomId)) {
+          roomUsers.set(roomId, new Set());
+        }
+        roomUsers.get(roomId).add(userId.toString());
+
+        const alreadyJoined = roomDoc.participants.some(
+          (p) => p.user.toString() === userId.toString(),
         );
 
+        if (!alreadyJoined) {
+          roomDoc.currentUsers += 1;
+          roomDoc.lastActivityAt = new Date();
+          roomDoc.participants.push({
+            user: userId,
+            role: roomDoc.host.toString() === userId.toString() ? "host" : "listener",
+            avatar: socket.data.user.avatar,
+            joinedAt: new Date(),
+          });
+          await roomDoc.save();
+        } else {
+          // Even if already joined, update currentUsers count if they were not active? 
+          // (room:join logic incremented it, so we should too if we want parity)
+          // But usually room:watch is used when re-entering or as a passive mode.
+        }
+
         // ✅ BROADCAST USERS (REFACTORED)
-        await broadcastRoomUsers(roomId);
+        const usersInRoom = await broadcastRoomUsers(roomId);
+
+        // ✅ DIRECT SEND FOR IMMEDIATE FEEDBACK
+        socket.emit("room:users", usersInRoom);
 
         // ✅ Broadcast Watcher Count
         await broadcastWatcherCount(roomId, io);
@@ -436,7 +488,6 @@ module.exports = (io) => {
 
         /* ===== VIDEO ===== */
         const videoRoom = await VideoRoom.findOne({ roomId });
-
         if (videoRoom) {
           socket.emit("room:videoState", {
             video: videoRoom.video,
