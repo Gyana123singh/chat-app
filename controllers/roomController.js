@@ -3,6 +3,21 @@ const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 const VideoRoom = require("../models/videoRoom");
+const mongoose = require("mongoose");
+
+const findRoomByIdOrUuid = async (roomId, populateField = "") => {
+  const query = {
+    $or: [
+      { roomId },
+      ...(mongoose.Types.ObjectId.isValid(roomId) ? [{ _id: roomId }] : []),
+    ],
+  };
+  let q = Room.findOne(query);
+  if (populateField) {
+    q = q.populate(populateField, "username avatar");
+  }
+  return await q;
+};
 
 exports.createRoom = async (req, res) => {
   try {
@@ -542,10 +557,7 @@ exports.getRoomById = async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await Room.findOne({ roomId }).populate(
-      "participants.user",
-      "username avatar",
-    );
+    const room = await findRoomByIdOrUuid(roomId, "participants.user");
 
     if (!room) {
       return res.status(404).json({
@@ -623,7 +635,7 @@ exports.updateRoom = async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await Room.findOne({ roomId }); // ✅ FIX
+    const room = await findRoomByIdOrUuid(roomId);
 
     if (!room) {
       return res.status(404).json({
@@ -677,7 +689,7 @@ exports.deleteRoom = async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await Room.findOne({ roomId });
+    const room = await findRoomByIdOrUuid(roomId);
 
     if (!room) {
       return res.status(404).json({
@@ -736,7 +748,7 @@ exports.joinRoom = async (req, res) => {
       });
     }
 
-    const room = await Room.findOne({ roomId });
+    const room = await findRoomByIdOrUuid(roomId);
 
     if (!room) {
       return res.status(404).json({
@@ -851,7 +863,7 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
-    const room = await Room.findOne({ roomId });
+    const room = await findRoomByIdOrUuid(roomId);
 
     if (!room) {
       return res.status(404).json({
