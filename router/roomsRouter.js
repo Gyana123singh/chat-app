@@ -8,8 +8,8 @@ router.get("/get-all-rooms", roomController.getAllRooms); //done get all rooms w
 router.get("/my-rooms", authMiddleware, roomController.getMyRooms);
 router.get("/:roomId", authMiddleware, roomController.getRoomById); //done get data user by id
 router.post("/create", authMiddleware, roomController.createRoom); //done create room
-router.put("/:id", authMiddleware, roomController.updateRoom);
-router.delete("/:id", authMiddleware, roomController.deleteRoom);
+router.put("/update-room-name/:roomId", authMiddleware, roomController.updateRoom);
+router.delete("/delete-room-name/:roomId", authMiddleware, roomController.deleteRoom);
 router.post("/:roomId/join", authMiddleware, roomController.joinRoom);
 router.post("/:roomId/leave", authMiddleware, roomController.leaveRoom);
 router.get("get-popular-rooms", roomController.getPopularRooms);

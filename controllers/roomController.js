@@ -18,7 +18,7 @@ exports.createRoom = async (req, res) => {
 
     // ✅ GET USER
     const user = await User.findById(userId).select(
-      "username email profile.avatar",
+      "username email profile.avatar roomName",
     );
 
     if (!user) {
@@ -52,7 +52,7 @@ exports.createRoom = async (req, res) => {
     const room = await Room.create({
       roomId,
       mode: safeMode, // 💥 ALWAYS "Chat"
-      title: "My Room",
+      title: user.roomName || "My Room",
       category: "Other",
       description: "",
 
@@ -642,7 +642,11 @@ exports.updateRoom = async (req, res) => {
     const { title, description, category, privacy, maxParticipants, tags } =
       req.body;
 
-    room.title = title || room.title;
+    if (title && title.trim()) {
+      room.title = title.trim();
+      // Save it to User model so it is persisted for the next room creation
+      await User.findByIdAndUpdate(req.user.id, { roomName: title.trim() });
+    }
     room.description = description || room.description;
     room.category = category || room.category;
     room.privacy = privacy || room.privacy;
