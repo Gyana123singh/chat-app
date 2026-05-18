@@ -1,6 +1,7 @@
 const Message = require("../models/privateMessage");
 const Conversation = require("../models/conversation");
 const User = require("../models/users");
+const Room = require("../models/room");
 const mongoose = require("mongoose");
 
 /* ===========================
@@ -22,10 +23,27 @@ exports.getConversations = async (req, res) => {
       })
       .sort({ lastMessageTime: -1 });
 
+    const enhancedConversations = [];
+    for (const conv of conversations) {
+      const convObj = conv.toObject();
+      if (convObj.participants && Array.isArray(convObj.participants)) {
+        for (const p of convObj.participants) {
+          const roomStatus = await Room.findOne({
+            isActive: true,
+            status: "active",
+            "participants.user": p._id,
+          }).select("roomId");
+          p.inRoom = !!roomStatus;
+          p.roomId = roomStatus ? roomStatus.roomId : null;
+        }
+      }
+      enhancedConversations.push(convObj);
+    }
+
     res.status(200).json({
       success: true,
-      count: conversations.length,
-      data: conversations,
+      count: enhancedConversations.length,
+      data: enhancedConversations,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -69,7 +87,20 @@ exports.getConversationById = async (req, res) => {
       });
     }
 
-    res.status(200).json({ success: true, data: conversation });
+    const convObj = conversation.toObject();
+    if (convObj.participants && Array.isArray(convObj.participants)) {
+      for (const p of convObj.participants) {
+        const roomStatus = await Room.findOne({
+          isActive: true,
+          status: "active",
+          "participants.user": p._id,
+        }).select("roomId");
+        p.inRoom = !!roomStatus;
+        p.roomId = roomStatus ? roomStatus.roomId : null;
+      }
+    }
+
+    res.status(200).json({ success: true, data: convObj });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -123,9 +154,22 @@ exports.getOrCreateConversation = async (req, res) => {
       await conversation.populate("participants", "username profile.avatar");
     }
 
+    const convObj = conversation.toObject();
+    if (convObj.participants && Array.isArray(convObj.participants)) {
+      for (const p of convObj.participants) {
+        const roomStatus = await Room.findOne({
+          isActive: true,
+          status: "active",
+          "participants.user": p._id,
+        }).select("roomId");
+        p.inRoom = !!roomStatus;
+        p.roomId = roomStatus ? roomStatus.roomId : null;
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      data: conversation,
+      data: convObj,
     });
   } catch (error) {
     console.error("❌ getOrCreateConversation error:", error);

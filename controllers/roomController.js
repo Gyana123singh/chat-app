@@ -918,3 +918,44 @@ exports.getPopularRooms = async (req, res) => {
     });
   }
 };
+
+// ================= GET USER IN ROOM STATUS =================
+exports.getUserInRoomStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    const activeRoom = await Room.findOne({
+      isActive: true,
+      status: "active",
+      "participants.user": userId,
+    });
+
+    if (activeRoom) {
+      return res.status(200).json({
+        success: true,
+        inRoom: true,
+        roomId: activeRoom.roomId,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      inRoom: false,
+      roomId: null,
+    });
+  } catch (error) {
+    console.error("❌ getUserInRoomStatus error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to check user room status",
+      error: error.message,
+    });
+  }
+};
