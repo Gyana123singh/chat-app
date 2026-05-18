@@ -11,7 +11,7 @@ router.get("/:roomId", authMiddleware, roomController.getRoomById); //done get d
 router.post("/create", authMiddleware, roomController.createRoom); //done create room
 // router.put("/update-room-name/:roomId", authMiddleware, roomController.updateRoom);
 router.put("/:roomId", authMiddleware, roomController.updateRoom);
-router.delete("/delete-room-name/:roomId", authMiddleware, roomController.deleteRoom);
+// router.delete("/delete-room-name/:roomId", authMiddleware, roomController.deleteRoom);
 router.delete("/:roomId", authMiddleware, roomController.deleteRoom);
 router.post("/:roomId/join", authMiddleware, roomController.joinRoom);
 router.post("/:roomId/leave", authMiddleware, roomController.leaveRoom);
