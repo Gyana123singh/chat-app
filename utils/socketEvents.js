@@ -2625,18 +2625,57 @@ module.exports = (io) => {
         const allowed = await isHostOrAdmin(rId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can clean chat" });
 
+        // Fetch user's current username and profile details for the system message
+        const dbUser = await User.findById(userId)
+          .select("username displayId profile.avatar level")
+          .lean();
+        const username = dbUser?.username || socket.data.user?.username || socket.data.username || "Host/Admin";
+
         // 1. Clear from DB
         await Message.deleteMany({ room: rId });
 
-        // 2. Clear from In-Memory Map (Force refresh for everyone)
-        roomMessages.set(rId, []);
+        // 2. Create the system notification message in DB
+        const systemText = `${username} cleared the chat message`;
+        const newMessage = await Message.create({
+          content: systemText,
+          sender: userId,
+          room: rId,
+          messageType: "system",
+        });
 
-        // 3. Broadcast specific events to everyone in the room
+        // 3. Construct system message payload matching front-end expectation
+        const systemMessagePayload = {
+          id: `system-${userId}-${Date.now()}`,
+          dbId: newMessage._id,
+          roomId: rId,
+          userId,
+          displayId: dbUser?.displayId || socket.data.displayId || null,
+          username,
+          avatar: dbUser?.profile?.avatar || socket.data.avatar || null,
+          text: systemText,
+          messageType: "system",
+          bubble: null,
+          frame: null,
+          level: dbUser?.level?.personal?.level || 1,
+          timestamp: new Date().toISOString(),
+          deletedForEveryone: false,
+          deletedFor: [],
+        };
+
+        // 4. Clear from In-Memory Map and seed with the system message
+        roomMessages.set(rId, [systemMessagePayload]);
+
+        // 5. Broadcast specific events to everyone in the room
         const roomName = `room:${rId}`;
-        io.to(roomName).emit("room:chat:cleaned", { roomId: rId });
-        io.to(roomName).emit("room:messages", []);
+        io.to(roomName).emit("room:chat:cleaned", { 
+          roomId: rId, 
+          clearedBy: username,
+          message: systemMessagePayload
+        });
+        io.to(roomName).emit("room:messages", [systemMessagePayload]);
+        io.to(roomName).emit("message:receive", systemMessagePayload);
 
-        console.log(`🧹 Chat cleaned in room: ${rId} by ${userId}`);
+        console.log(`🧹 Chat cleaned in room: ${rId} by ${username} (${userId})`);
       } catch (err) {
         console.error("❌ room:chat:clean error:", err);
       }
