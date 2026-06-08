@@ -1485,7 +1485,7 @@ module.exports = (io) => {
       await broadcastRoomUsers(roomId);
 
       // 🔥 EXTRA: FORCE REMOVE EVENT (UI SAFETY)
-      io.to(roomName).emit("room:seat:removed", {
+      io.to(`room:${roomId}`).emit("room:seat:removed", {
         userId,
         displayId: socket.data.displayId,
       });
@@ -1519,7 +1519,7 @@ module.exports = (io) => {
       await broadcastRoomUsers(roomId);
 
       // ✅ OPTIONAL (UI trigger)
-      io.to(roomName).emit("room:seat:taken", {
+      io.to(`room:${roomId}`).emit("room:seat:taken", {
         userId,
         displayId: socket.data.displayId,
       });
@@ -2180,7 +2180,7 @@ module.exports = (io) => {
         if (!dbUser) return;
 
         const isInRoom = roomUsers.has(roomId) && roomUsers.get(roomId).has(targetUserId.toString());
-        
+
         // ✅ CHECK BLOCK STATUS (INSIDE ROOM & OUTSIDE/PERSONAL)
         const roomDoc = await Room.findOne({ roomId }).select("blockedUsers").lean();
         const isBlockedInRoom = roomDoc?.blockedUsers?.some(id => id.toString() === targetUserId.toString()) || false;
@@ -2667,8 +2667,8 @@ module.exports = (io) => {
 
         // 5. Broadcast specific events to everyone in the room
         const roomName = `room:${rId}`;
-        io.to(roomName).emit("room:chat:cleaned", { 
-          roomId: rId, 
+        io.to(roomName).emit("room:chat:cleaned", {
+          roomId: rId,
           clearedBy: username,
           message: systemMessagePayload
         });

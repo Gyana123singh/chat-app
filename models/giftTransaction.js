@@ -29,7 +29,7 @@ const giftTransactionSchema = new mongoose.Schema(
 
     sendType: {
       type: String,
-      enum: ["individual", "all_in_room", "all_on_mic", "pk"],
+      enum: ["individual", "all_in_room", "all_on_mic", "pk", "self"],
       required: true,
     },
 
