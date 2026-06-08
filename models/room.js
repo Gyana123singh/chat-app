@@ -113,6 +113,16 @@ const roomSchema = new mongoose.Schema(
       default: "public",
     },
 
+    password: {
+      type: String,
+      default: null,
+    },
+
+    isLocked: {
+      type: Boolean,
+      default: false,
+    },
+
     tags: [String],
 
     coverImage: {

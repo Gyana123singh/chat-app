@@ -374,7 +374,7 @@ module.exports = (io) => {
     /* =========================
    ROOM WATCH (AUDIENCE MODE)
 ========================= */
-    socket.on("room:watch", async ({ roomId, user }) => {
+    socket.on("room:watch", async ({ roomId, user, password }) => {
       if (!roomId) return;
 
       const safeUser = user || socket.data.user;
@@ -438,6 +438,18 @@ module.exports = (io) => {
         );
 
         if (!alreadyJoined) {
+          const hostId = roomDoc.host?.toString();
+          const creatorId = roomDoc.creator?.toString();
+          const userIdString = userId.toString();
+          if (roomDoc.isLocked && hostId !== userIdString && creatorId !== userIdString) {
+            if (!password || password !== roomDoc.password) {
+              return socket.emit("room:error", {
+                message: "Incorrect or missing password for this room",
+                isLocked: true,
+              });
+            }
+          }
+
           roomDoc.currentUsers += 1;
           roomDoc.lastActivityAt = new Date();
           roomDoc.participants.push({
@@ -510,7 +522,7 @@ module.exports = (io) => {
     /* =========================
        ROOM JOIN
     ========================= */
-    socket.on("room:join", async ({ roomId, user }) => {
+    socket.on("room:join", async ({ roomId, user, password }) => {
       if (!roomId) return;
 
       const safeUser = user || socket.data.user;
@@ -619,6 +631,18 @@ module.exports = (io) => {
         );
 
         if (!alreadyJoined) {
+          const hostId = roomDoc.host?.toString();
+          const creatorId = roomDoc.creator?.toString();
+          const userIdString = userId.toString();
+          if (roomDoc.isLocked && hostId !== userIdString && creatorId !== userIdString) {
+            if (!password || password !== roomDoc.password) {
+              return socket.emit("room:error", {
+                message: "Incorrect or missing password for this room",
+                isLocked: true,
+              });
+            }
+          }
+
           roomDoc.currentUsers += 1;
 
           roomDoc.lastActivityAt = new Date();

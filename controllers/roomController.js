@@ -785,6 +785,25 @@ exports.joinRoom = async (req, res) => {
       });
     }
 
+    // ✅ Password Lock Verification
+    if (room.isLocked && hostId !== userIdString && creatorId !== userIdString) {
+      const { password } = req.body;
+      if (!password) {
+        return res.status(403).json({
+          success: false,
+          isLocked: true,
+          message: "Password required to enter this room",
+        });
+      }
+      if (password !== room.password) {
+        return res.status(400).json({
+          success: false,
+          isLocked: true,
+          message: "Incorrect room password",
+        });
+      }
+    }
+
     // Check room capacity
     if (
       room.maxParticipants &&
@@ -967,6 +986,108 @@ exports.getUserInRoomStatus = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to check user room status",
+      error: error.message,
+    });
+  }
+};
+
+exports.setPassword = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "Password is required",
+      });
+    }
+
+    const room = await findRoomByIdOrUuid(roomId);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    if (room.host.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the host can set a room password",
+      });
+    }
+
+    room.password = password;
+    room.isLocked = true;
+    await room.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`room:${room.roomId}`).emit("room:lockedState", {
+        roomId: room.roomId,
+        isLocked: true,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Room password updated and locked successfully",
+      room,
+    });
+  } catch (error) {
+    console.error("❌ setPassword error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to set room password",
+      error: error.message,
+    });
+  }
+};
+
+exports.unlockRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const room = await findRoomByIdOrUuid(roomId);
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    if (room.host.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Only the host can unlock the room",
+      });
+    }
+
+    room.password = null;
+    room.isLocked = false;
+    await room.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`room:${room.roomId}`).emit("room:lockedState", {
+        roomId: room.roomId,
+        isLocked: false,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Room unlocked successfully",
+      room,
+    });
+  } catch (error) {
+    console.error("❌ unlockRoom error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to unlock room",
       error: error.message,
     });
   }
