@@ -13,6 +13,7 @@ const {
   deductCoinsFromUser,
   getProfitLossConfig,
   updateProfitLossConfig,
+  getDashboardStats,
 } = require("../controllers/adminContrroler");
 
 router.post("/register", registerUser);
@@ -32,5 +33,8 @@ router.post("/deduct-coins", deductCoinsFromUser);
 // profit & loss configuration endpoints
 router.get("/profit-loss-config", getProfitLossConfig);
 router.post("/profit-loss-config", updateProfitLossConfig);
+
+// dashboard statistics
+router.get("/dashboard/stats", getDashboardStats);
 
 module.exports = router;
