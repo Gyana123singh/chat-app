@@ -71,7 +71,7 @@ module.exports = (socket, io) => {
         });
       }
 
-      const receiver = await User.findById(receiverId).select("_id").lean();
+      const receiver = await User.findById(receiverId).select("_id username profile.avatar displayId").lean();
 
       if (!receiver) {
         return socket.emit("store:gift:error", {
@@ -280,7 +280,40 @@ module.exports = (socket, io) => {
         console.log("🚀 Gift payload:", payload);
 
         io.to(`room:${roomId}`).emit("room:effect", payload);
-        io.to(`room:${roomId}`).emit("gift:received", payload);
+
+        // Populate recipients for gift:received compatibility
+        const recipients = receiver ? [{
+          userId: receiver._id,
+          username: receiver.username,
+          avatar: receiver.profile?.avatar,
+          displayId: receiver.displayId
+        }] : [];
+
+        io.to(`room:${roomId}`).emit("gift:received", {
+          ...payload,
+          recipientIds: [receiverId],
+          recipients,
+          quantity: 1,
+          sendType: "individual"
+        });
+
+        // 🔔 Broad-cast simple notification details
+        io.to(`room:${roomId}`).emit("gift:notification", {
+          fromUserId: senderId,
+          fromUsername: senderUsername || "User",
+          fromAvatar: senderAvatar || null,
+          fromDisplayId: sender ? sender.displayId : null,
+          recipients,
+          gift: {
+            _id: gift._id,
+            name: gift.name,
+            icon: gift.icon,
+            animationUrl: gift.animationUrl || gift.icon,
+            price: gift.price,
+          },
+          quantity: 1,
+          text: `${senderUsername || "User"} sent ${gift.name} x1 to ${receiver ? receiver.username : "User"}`
+        });
       }
 
       /* ===============================

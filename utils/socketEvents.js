@@ -1260,9 +1260,6 @@ module.exports = (io) => {
         }
 
         // =========================
-        // 6️⃣ Save Transaction
-        // =========================
-        // =========================
         // 6️⃣ Save Transaction (FIXED ObjectId TYPES)
         // =========================
         const tx = await GiftTransaction.create({
@@ -1287,12 +1284,24 @@ module.exports = (io) => {
         // =========================
         // 7️⃣ Broadcast Animation
         // =========================
+        const recipientsList = await User.find({ _id: { $in: recipientIds } })
+          .select("username profile.avatar displayId")
+          .lean();
+
+        const recipients = recipientsList.map(r => ({
+          userId: r._id,
+          username: r.username,
+          avatar: r.profile?.avatar,
+          displayId: r.displayId
+        }));
+
         io.to(`room:${roomId}`).emit("gift:received", {
           fromUserId,
           fromDisplayId: socket.data.displayId, // ✅ ADD
           fromUsername: socket.data.username,
           fromAvatar: socket.data.avatar,
           recipientIds,
+          recipients, // ✅ ADDED populated recipients list
           gift: {
             _id: gift._id,
             name: gift.name,
@@ -1305,6 +1314,24 @@ module.exports = (io) => {
           quantity,
           sendType: finalSendType, // ✅ FIXED
           pkId: sendType === "pk" ? pkId : null,
+        });
+
+        // 🔔 Broad-cast simple notification details
+        io.to(`room:${roomId}`).emit("gift:notification", {
+          fromUserId,
+          fromUsername: socket.data.username,
+          fromAvatar: socket.data.avatar,
+          fromDisplayId: socket.data.displayId,
+          recipients,
+          gift: {
+            _id: gift._id,
+            name: gift.name,
+            icon: gift.icon,
+            animationUrl: gift.animationUrl || gift.icon,
+            price: gift.price,
+          },
+          quantity,
+          text: `${socket.data.username} sent ${gift.name} x${quantity} to ${recipients.map(r => r.username).join(", ")}`
         });
 
         // 🎰 Profit/Loss Animation

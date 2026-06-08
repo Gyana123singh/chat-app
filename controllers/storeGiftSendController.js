@@ -163,12 +163,63 @@ exports.sendGift = async (req, res) => {
       io.to(rid.toString()).emit("gift:received", payload);
     });
 
-    // Entrance broadcast to room
-    if (roomId && gift.effectType === "ENTRANCE") {
-      io.to(`room:${roomId}`).emit("room:entranceEffect", {
-        userIds: filteredReceivers,
-        animationUrl: gift.animationUrl,
+    // Room broadcast and notification
+    if (roomId) {
+      const recipientsList = await User.find({ _id: { $in: filteredReceivers } })
+        .select("username profile.avatar displayId")
+        .lean();
+
+      const recipients = recipientsList.map(r => ({
+        userId: r._id,
+        username: r.username,
+        avatar: r.profile?.avatar,
+        displayId: r.displayId
+      }));
+
+      io.to(`room:${roomId}`).emit("gift:received", {
+        fromUserId: senderId,
+        fromDisplayId: sender.displayId,
+        fromUsername: sender.username,
+        fromAvatar: sender.profile?.avatar || null,
+        recipientIds: filteredReceivers,
+        recipients,
+        gift: {
+          _id: gift._id,
+          name: gift.name,
+          icon: gift.icon,
+          animationUrl: gift.animationUrl || gift.icon,
+          price: gift.price,
+          rarity: gift.rarity,
+          effectType: gift.effectType,
+        },
+        quantity,
+        sendType: "all_in_room"
       });
+
+      io.to(`room:${roomId}`).emit("gift:notification", {
+        fromUserId: senderId,
+        fromUsername: sender.username,
+        fromAvatar: sender.profile?.avatar || null,
+        fromDisplayId: sender.displayId,
+        recipients,
+        gift: {
+          _id: gift._id,
+          name: gift.name,
+          icon: gift.icon,
+          animationUrl: gift.animationUrl || gift.icon,
+          price: gift.price,
+        },
+        quantity,
+        text: `${sender.username} sent ${gift.name} x${quantity} to ${recipients.map(r => r.username).join(", ")}`
+      });
+
+      // Entrance broadcast to room
+      if (gift.effectType === "ENTRANCE") {
+        io.to(`room:${roomId}`).emit("room:entranceEffect", {
+          userIds: filteredReceivers,
+          animationUrl: gift.animationUrl,
+        });
+      }
     }
 
     // 🏆 Update Leaderboard
