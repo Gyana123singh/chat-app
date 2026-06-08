@@ -80,6 +80,7 @@ app.use(passport.session());
 /* ===================== ROUTES ===================== */
 app.use("/auth", authRoutes);
 app.use("/api", adminRoutes);
+app.use("/", adminRoutes); // ✅ Support /admin/login directly for admin panel without breaking /api/admin/login
 app.use("/api/users", usersRouter);
 app.use("/api/rooms", roomsRouter);
 app.use("/api/auth/otp", firebaseOtpRouter);

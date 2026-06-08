@@ -11,6 +11,8 @@ const {
   deleteRechargePlan,
   addCoinsToUser,
   deductCoinsFromUser,
+  getProfitLossConfig,
+  updateProfitLossConfig,
 } = require("../controllers/adminContrroler");
 
 router.post("/register", registerUser);
@@ -26,4 +28,9 @@ router.get("/get-recharge-plans", getRechargePlans); // api for get all recharge
 router.delete("/delete-recharge-plan/:id", deleteRechargePlan); // api for get all recharge-plans
 router.post("/add-coins", addCoinsToUser);
 router.post("/deduct-coins", deductCoinsFromUser);
+
+// profit & loss configuration endpoints
+router.get("/profit-loss-config", getProfitLossConfig);
+router.post("/profit-loss-config", updateProfitLossConfig);
+
 module.exports = router;

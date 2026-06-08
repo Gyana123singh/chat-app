@@ -3,6 +3,8 @@ const { signToken } = require("../utils/jwtAuth");
 const User = require("../models/users");
 const coinMapping = require("../models/coinMapping");
 const CoinPlan = require("../models/coinPlan");
+const generateDisplayId = require("../utils/generateDisplayId");
+const ProfitLossConfig = require("../models/profitLossConfig");
 
 exports.adminLogin = async (req, res) => {
   try {
@@ -27,6 +29,13 @@ exports.adminLogin = async (req, res) => {
     }
 
     // 3️⃣ Compare password
+    if (!admin.password) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, admin.password);
     if (!isMatch) {
       return res.status(401).json({
@@ -43,10 +52,13 @@ exports.adminLogin = async (req, res) => {
       success: true,
       message: "Admin login successful",
       token,
+      userId: admin._id,
       user: {
+        _id: admin._id,
         id: admin._id,
         email: admin.email,
         username: admin.username,
+        role: admin.role,
       },
     });
   } catch (error) {
@@ -81,6 +93,7 @@ exports.registerUser = async (req, res) => {
 
     // 3️⃣ Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
+    const displayId = await generateDisplayId();
 
     // 4️⃣ Create user
     const user = await User.create({
@@ -88,6 +101,7 @@ exports.registerUser = async (req, res) => {
       email,
       password: hashedPassword,
       role: "user",
+      displayId,
     });
 
     // 5️⃣ Generate token
@@ -103,6 +117,7 @@ exports.registerUser = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        displayId: user.displayId,
       },
     });
   } catch (error) {
@@ -356,6 +371,118 @@ exports.deductCoinsFromUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error",
+    });
+  }
+};
+
+// ===============================
+// PROFIT & LOSS CONFIGURATION
+// ===============================
+
+// GET /api/profit-loss-config
+exports.getProfitLossConfig = async (req, res) => {
+  try {
+    let config = await ProfitLossConfig.findOne();
+
+    // If config does not exist, initialize it with default values
+    if (!config) {
+      const defaultOutcomes = [
+        { type: "big_profit", chance: 20, percent: 30 },
+        { type: "profit", chance: 20, percent: 10 },
+        { type: "neutral", chance: 20, percent: 0 },
+        { type: "loss", chance: 25, percent: -10 },
+        { type: "big_loss", chance: 15, percent: -25 },
+      ];
+      config = await ProfitLossConfig.create({
+        outcomes: defaultOutcomes,
+        minCoinsRequired: 5000,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: config,
+    });
+  } catch (error) {
+    console.error("GET PROFIT LOSS CONFIG ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error retrieving settings",
+    });
+  }
+};
+
+// POST /api/profit-loss-config
+exports.updateProfitLossConfig = async (req, res) => {
+  try {
+    const { outcomes, minCoinsRequired } = req.body;
+
+    if (!Array.isArray(outcomes) || outcomes.length !== 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Exactly 5 outcomes must be provided",
+      });
+    }
+
+    // Validate that the sum of chances is exactly 100%
+    const totalChance = outcomes.reduce((sum, item) => sum + Number(item.chance || 0), 0);
+    if (totalChance !== 100) {
+      return res.status(400).json({
+        success: false,
+        message: `Sum of chances must be exactly 100%. Current sum: ${totalChance}%`,
+      });
+    }
+
+    // Validate that all types are correct and percentages/chances are valid numbers
+    const validTypes = ["big_profit", "profit", "neutral", "loss", "big_loss"];
+    for (const item of outcomes) {
+      if (!validTypes.includes(item.type)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid outcome type: ${item.type}`,
+        });
+      }
+      if (isNaN(item.chance) || item.chance < 0 || item.chance > 100) {
+        return res.status(400).json({
+          success: false,
+          message: `Chance for ${item.type} must be a number between 0 and 100`,
+        });
+      }
+      if (isNaN(item.percent)) {
+        return res.status(400).json({
+          success: false,
+          message: `Percent for ${item.type} must be a valid number`,
+        });
+      }
+    }
+
+    const minCoins = Number(minCoinsRequired);
+    if (isNaN(minCoins) || minCoins < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "minCoinsRequired must be a valid positive number",
+      });
+    }
+
+    let config = await ProfitLossConfig.findOne();
+    if (!config) {
+      config = new ProfitLossConfig();
+    }
+
+    config.outcomes = outcomes;
+    config.minCoinsRequired = minCoins;
+    await config.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Profit & Loss configuration updated successfully",
+      data: config,
+    });
+  } catch (error) {
+    console.error("UPDATE PROFIT LOSS CONFIG ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error saving settings",
     });
   }
 };

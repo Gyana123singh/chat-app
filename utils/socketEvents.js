@@ -17,6 +17,7 @@ const calculateProfitLoss = require("../utils/profitLossLuckEngine");
 const Message = require("../models/message");
 const RoomInvite = require("../models/roomInvite");
 const Block = require("../models/blockUsers");
+const ProfitLossConfig = require("../models/profitLossConfig");
 async function getRoomSafe(roomId) {
   return await Room.findOne({ roomId });
 }
@@ -1210,8 +1211,19 @@ module.exports = (io) => {
         let luck = null;
         const amount = totalCost;
 
-        if (amount >= 5000 && finalSendType !== "pk") {
-          luck = calculateProfitLoss(amount);
+        // Fetch dynamic min coins required from ProfitLossConfig database
+        let minCoins = 5000;
+        try {
+          const plConfig = await ProfitLossConfig.findOne().lean();
+          if (plConfig && typeof plConfig.minCoinsRequired === "number") {
+            minCoins = plConfig.minCoinsRequired;
+          }
+        } catch (e) {
+          console.error("Error fetching minCoinsRequired from DB:", e);
+        }
+
+        if (amount >= minCoins && finalSendType !== "pk") {
+          luck = await calculateProfitLoss(amount);
 
           console.log("🎰 PROFIT/LOSS DEBUG:", {
             amount,
