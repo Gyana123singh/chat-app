@@ -27,6 +27,50 @@ const backgroundUsers = new Map(); // userId -> true
 const seats = new Map(); // ✅ roomId -> [userIds]
 const userSockets = new Map();
 
+// Helper functions to support multiple sockets per user (backwards compatible)
+function addUserSocket(userId, socketId) {
+  if (!userId || !socketId) return;
+  const key = userId.toString();
+  const existing = userSockets.get(key);
+  if (!existing) {
+    // store as Set
+    userSockets.set(key, new Set([socketId]));
+    return;
+  }
+  if (typeof existing === "string") {
+    // migrate legacy single value to Set
+    const s = new Set([existing, socketId]);
+    userSockets.set(key, s);
+    return;
+  }
+  // existing is a Set
+  existing.add(socketId);
+}
+
+function removeUserSocket(userId, socketId) {
+  if (!userId || !socketId) return;
+  const key = userId.toString();
+  const existing = userSockets.get(key);
+  if (!existing) return;
+  if (typeof existing === "string") {
+    // legacy single value
+    if (existing === socketId) userSockets.delete(key);
+    return;
+  }
+  // Set
+  existing.delete(socketId);
+  if (existing.size === 0) userSockets.delete(key);
+}
+
+function getUserSocketIds(userId) {
+  if (!userId) return [];
+  const key = userId.toString();
+  const existing = userSockets.get(key);
+  if (!existing) return [];
+  if (typeof existing === "string") return [existing];
+  return Array.from(existing);
+}
+
 // Permission Helper (Host/Admin Check)
 // Permission Helper (Host/Admin Check) - FIXED
 
@@ -345,7 +389,7 @@ module.exports = (io) => {
       onlineUsers.set(userId, socket.id);
       // ✅ RESET BACKGROUND STATE
 
-      userSockets.set(userId.toString(), socket.id);
+      addUserSocket(userId, socket.id);
 
       backgroundUsers.delete(userId.toString());
       socket.data.isBackground = false;
@@ -1988,13 +2032,17 @@ module.exports = (io) => {
     socket.on("voice:offer", ({ targetUserId, offer }) => {
       if (!targetUserId || !offer) return;
 
-      const targetSocketId = userSockets.get(targetUserId.toString());
+      const targetSocketIds = getUserSocketIds(targetUserId);
+      if (!targetSocketIds.length) {
+        console.warn("voice:offer target offline:", targetUserId);
+        return socket.emit("voice:error", { message: "Target offline" });
+      }
 
-      if (!targetSocketId) return;
-
-      io.to(targetSocketId).emit("voice:offer", {
-        fromUserId: socket.data.userId,
-        offer,
+      targetSocketIds.forEach((ts) => {
+        io.to(ts).emit("voice:offer", {
+          fromUserId: socket.data.userId,
+          offer,
+        });
       });
     });
 
@@ -2002,13 +2050,17 @@ module.exports = (io) => {
     socket.on("voice:answer", ({ targetUserId, answer }) => {
       if (!targetUserId || !answer) return;
 
-      const targetSocketId = userSockets.get(targetUserId.toString());
+      const targetSocketIds = getUserSocketIds(targetUserId);
+      if (!targetSocketIds.length) {
+        console.warn("voice:answer target offline:", targetUserId);
+        return socket.emit("voice:error", { message: "Target offline" });
+      }
 
-      if (!targetSocketId) return;
-
-      io.to(targetSocketId).emit("voice:answer", {
-        fromUserId: socket.data.userId,
-        answer,
+      targetSocketIds.forEach((ts) => {
+        io.to(ts).emit("voice:answer", {
+          fromUserId: socket.data.userId,
+          answer,
+        });
       });
     });
 
@@ -2016,13 +2068,17 @@ module.exports = (io) => {
     socket.on("voice:ice", ({ targetUserId, candidate }) => {
       if (!targetUserId || !candidate) return;
 
-      const targetSocketId = userSockets.get(targetUserId.toString());
+      const targetSocketIds = getUserSocketIds(targetUserId);
+      if (!targetSocketIds.length) {
+        // don't spam logs for frequent ICE candidates
+        return;
+      }
 
-      if (!targetSocketId) return;
-
-      io.to(targetSocketId).emit("voice:ice", {
-        fromUserId: socket.data.userId,
-        candidate,
+      targetSocketIds.forEach((ts) => {
+        io.to(ts).emit("voice:ice", {
+          fromUserId: socket.data.userId,
+          candidate,
+        });
       });
     });
 
@@ -2742,13 +2798,15 @@ module.exports = (io) => {
         seats.set(roomId, roomSeats);
         micStates.set(targetUserId.toString(), { muted: true, speaking: false });
 
-        const targetSocketId = userSockets.get(targetUserId.toString());
-        if (targetSocketId) {
-          const targetSocket = io.sockets.sockets.get(targetSocketId);
-          if (targetSocket) {
-            targetSocket.data.isWatcher = true;
-          }
-          io.to(targetSocketId).emit("room:seat:forceRemoved", { roomId });
+        const targetSocketIds = getUserSocketIds(targetUserId);
+        if (targetSocketIds.length) {
+          targetSocketIds.forEach((ts) => {
+            const targetSocket = io.sockets.sockets.get(ts);
+            if (targetSocket) {
+              targetSocket.data.isWatcher = true;
+            }
+            io.to(ts).emit("room:seat:forceRemoved", { roomId });
+          });
         }
 
         // Broadcast full state update
@@ -2782,15 +2840,17 @@ module.exports = (io) => {
           .filter((id) => id !== targetUserId.toString());
         seats.set(roomId, roomSeats);
 
-        const targetSocketId = userSockets.get(targetUserId.toString());
-        if (targetSocketId) {
-          io.to(targetSocketId).emit("room:kicked", { roomId, message: "You have been kicked from the room" });
-          const targetSocket = io.sockets.sockets.get(targetSocketId);
-          if (targetSocket) {
-            targetSocket.data.hasLeftRoom = true;
-            targetSocket.leave(`room:${roomId}`);
-            targetSocket.data.roomId = null;
-          }
+        const targetSocketIds = getUserSocketIds(targetUserId);
+        if (targetSocketIds.length) {
+          targetSocketIds.forEach((ts) => {
+            io.to(ts).emit("room:kicked", { roomId, message: "You have been kicked from the room" });
+            const targetSocket = io.sockets.sockets.get(ts);
+            if (targetSocket) {
+              targetSocket.data.hasLeftRoom = true;
+              targetSocket.leave(`room:${roomId}`);
+              targetSocket.data.roomId = null;
+            }
+          });
         }
 
         // Broadcast updated users list
@@ -2831,15 +2891,17 @@ module.exports = (io) => {
           .filter((id) => id !== targetUserId.toString());
         seats.set(roomId, roomSeats);
 
-        const targetSocketId = userSockets.get(targetUserId.toString());
-        if (targetSocketId) {
-          io.to(targetSocketId).emit("room:blocked", { roomId, message: "You have been blocked from this room" });
-          const targetSocket = io.sockets.sockets.get(targetSocketId);
-          if (targetSocket) {
-            targetSocket.data.hasLeftRoom = true;
-            targetSocket.leave(`room:${roomId}`);
-            targetSocket.data.roomId = null;
-          }
+        const targetSocketIds = getUserSocketIds(targetUserId);
+        if (targetSocketIds.length) {
+          targetSocketIds.forEach((ts) => {
+            io.to(ts).emit("room:blocked", { roomId, message: "You have been blocked from this room" });
+            const targetSocket = io.sockets.sockets.get(ts);
+            if (targetSocket) {
+              targetSocket.data.hasLeftRoom = true;
+              targetSocket.leave(`room:${roomId}`);
+              targetSocket.data.roomId = null;
+            }
+          });
         }
 
         // Broadcast updated users list
@@ -3229,11 +3291,17 @@ module.exports = (io) => {
         }
 
         if (userId) {
-          onlineUsers.delete(userId);
-          // ✅ ADD THIS
-          userSockets.delete(userId.toString());
-          micStates.delete(userId);
-          deafenStates.delete(userId.toString());
+          // ✅ Remove this socket from user's socket set
+          removeUserSocket(userId, socket.id);
+          const remaining = getUserSocketIds(userId);
+          if (remaining.length === 0) {
+            onlineUsers.delete(userId);
+            micStates.delete(userId);
+            deafenStates.delete(userId.toString());
+          } else {
+            // keep onlineUsers mapped to one active socket
+            onlineUsers.set(userId, remaining[0]);
+          }
 
           // ===============================
           // 🔥 CLEAR LEVEL TIMERS (SAFE)
