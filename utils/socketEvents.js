@@ -251,6 +251,7 @@ async function endPKInternal(pkId, io) {
 module.exports = (io) => {
   const onlineUsers = new Map();
   const micStates = new Map(); // userId -> { muted, speaking }
+  const deafenStates = new Map(); // userId -> boolean (sound status)
   const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
@@ -312,6 +313,8 @@ module.exports = (io) => {
               muted: false,
               speaking: false,
             },
+            deafened: deafenStates.get(userIdStr) || false,
+            soundMuted: deafenStates.get(userIdStr) || false,
           };
         })
         .filter(Boolean);
@@ -964,6 +967,10 @@ module.exports = (io) => {
         if (socket.data.hasLeftRoom) return;
 
         socket.data.hasLeftRoom = true;
+
+        deafenStates.delete(userId.toString());
+        micStates.delete(userId.toString());
+        micStates.delete(userId);
 
         const room = await Room.findOne({ roomId });
 
@@ -1775,6 +1782,52 @@ module.exports = (io) => {
     });
 
     /* =========================
+       SOUND CONTROLS (DEAFEN)
+    ========================= */
+    const handleSoundChange = async (isMuted) => {
+      const { userId, roomId } = socket.data;
+      if (!userId || !roomId) return;
+
+      const userIdStr = userId.toString();
+      deafenStates.set(userIdStr, isMuted);
+
+      // Emit specific update to the room for quick status change
+      io.to(`room:${roomId}`).emit("sound:update", {
+        userId: userIdStr,
+        displayId: socket.data.displayId,
+        deafened: isMuted,
+        soundMuted: isMuted,
+      });
+
+      // Broadcast full room users list to keep state in sync
+      await broadcastRoomUsers(roomId);
+    };
+
+    socket.on("sound:mute", () => handleSoundChange(true));
+    socket.on("sound:unmute", () => handleSoundChange(false));
+    socket.on("sound:off", () => handleSoundChange(true));
+    socket.on("sound:on", () => handleSoundChange(false));
+    socket.on("user:deafen", () => handleSoundChange(true));
+    socket.on("user:undeafen", () => handleSoundChange(false));
+    socket.on("deafen:mute", () => handleSoundChange(true));
+    socket.on("deafen:unmute", () => handleSoundChange(false));
+    socket.on("sound:state", (payload) => {
+      let isMuted = true;
+      if (payload !== null && typeof payload === "object") {
+        isMuted = payload.muted !== undefined ? payload.muted : (payload.deafened !== undefined ? payload.deafened : true);
+      } else if (typeof payload === "boolean") {
+        isMuted = payload;
+      }
+      handleSoundChange(isMuted);
+    });
+    socket.on("sound:toggle", () => {
+      const { userId } = socket.data;
+      if (!userId) return;
+      const current = deafenStates.get(userId.toString()) || false;
+      handleSoundChange(!current);
+    });
+
+    /* =========================
        EMOJI
     ========================= */
     socket.on("send_emoji", ({ roomId, userId, emoji }) => {
@@ -2222,6 +2275,8 @@ module.exports = (io) => {
             muted: false,
             speaking: false,
           },
+          deafened: deafenStates.get(s.data.userId?.toString()) || false,
+          soundMuted: deafenStates.get(s.data.userId?.toString()) || false,
         }))
         .filter(u => u.userId);
 
@@ -2921,6 +2976,7 @@ module.exports = (io) => {
           // ✅ ADD THIS
           userSockets.delete(userId.toString());
           micStates.delete(userId);
+          deafenStates.delete(userId.toString());
 
           // ===============================
           // 🔥 CLEAR LEVEL TIMERS (SAFE)
