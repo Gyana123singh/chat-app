@@ -1670,6 +1670,73 @@ module.exports = (io) => {
       }
     });
 
+    // ===============================
+    // 🔎 SEARCH BY ROOM ID OR USER ID
+    // Payload: { type: 'room'|'user', id: string }
+    // Emits: 'search:result' with { success, type, data }
+    // ===============================
+    socket.on("search:lookup", async (payload) => {
+      try {
+        if (!payload || typeof payload !== "object") {
+          return socket.emit("search:result", { success: false, message: "Invalid payload" });
+        }
+
+        const { type, id } = payload;
+        if (!type || !id) {
+          return socket.emit("search:result", { success: false, message: "Missing type or id" });
+        }
+
+        if (type === "room") {
+          const roomDoc = await Room.findOne({ roomId: id }).lean();
+          if (!roomDoc) {
+            return socket.emit("search:result", { success: true, type: "room", data: null });
+          }
+
+          const hostId = roomDoc.host?.toString();
+          let host = null;
+          if (hostId) {
+            host = await User.findById(hostId)
+              .select("_id username displayId profile.avatar")
+              .lean();
+          }
+
+          return socket.emit("search:result", {
+            success: true,
+            type: "room",
+            data: {
+              room: roomDoc,
+              host,
+            },
+          });
+        }
+
+        if (type === "user") {
+          let userDoc = null;
+
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            userDoc = await User.findById(id)
+              .select("_id username displayId profile.avatar country gender age level")
+              .lean();
+          }
+
+          if (!userDoc) {
+            userDoc = await User.findOne({
+              $or: [{ displayId: id }, { username: id }],
+            })
+              .select("_id username displayId profile.avatar country gender age level")
+              .lean();
+          }
+
+          return socket.emit("search:result", { success: true, type: "user", data: userDoc || null });
+        }
+
+        return socket.emit("search:result", { success: false, message: "Unknown type" });
+      } catch (err) {
+        console.error("❌ search:lookup error:", err.message);
+        return socket.emit("search:result", { success: false, message: "Search failed" });
+      }
+    });
+
     // masage image part
     socket.on("message:image", async ({ roomId, imageUrl, width, height }) => {
       const { userId, username, avatar } = socket.data;
