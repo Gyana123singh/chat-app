@@ -2466,6 +2466,46 @@ module.exports = (io) => {
       }
     });
 
+    // GET ROOM MEMBERS FOR MEMBER TAB
+    socket.on("room:members", async ({ roomId }) => {
+      try {
+        if (!roomId) return socket.emit("room:members:response", { success: false, message: "Missing roomId" });
+
+        const roomDoc = await Room.findOne({ roomId }).lean();
+        if (!roomDoc) {
+          return socket.emit("room:members:response", { success: true, members: [] });
+        }
+
+        const participantIds = (roomDoc.participants || []).map((p) => p.user.toString());
+
+        const users = await User.find({ _id: { $in: participantIds } })
+          .select("_id username displayId profile.avatar profile.frame profile.bubble country gender age level")
+          .lean();
+
+        const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+        const members = (roomDoc.participants || []).map((p) => {
+          const uid = p.user.toString();
+          const u = userMap.get(uid) || {};
+          return {
+            userId: uid,
+            username: u.username || null,
+            displayId: u.displayId || null,
+            avatar: u.profile?.avatar || p.avatar || null,
+            frame: u.profile?.frame?.icon || null,
+            bubble: u.profile?.bubble || null,
+            role: p.role || (roomDoc.host?.toString() === uid ? "host" : "listener"),
+            joinedAt: p.joinedAt || null,
+          };
+        });
+
+        socket.emit("room:members:response", { success: true, members });
+      } catch (err) {
+        console.error("❌ room:members error:", err);
+        socket.emit("room:members:response", { success: false, message: "Server error" });
+      }
+    });
+
     // LOCK SEAT (HOST ONLY)
     socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
@@ -2583,13 +2623,42 @@ module.exports = (io) => {
         const allowed = await isHost(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host can assign admin" });
 
+        // Fetch room to validate current admins and participants
+        const room = await Room.findOne({ roomId }).select("admins host participants").lean();
+        if (!room) return socket.emit("error", { message: "Room not found" });
+
+        const uid = targetUserId.toString();
+
+        // Prevent promoting the host
+        if (room.host && room.host.toString() === uid) {
+          return socket.emit("error", { message: "Cannot promote host to admin" });
+        }
+
+        const currentAdmins = (room.admins || []).map((a) => a.toString());
+
+        // Already an admin
+        if (currentAdmins.includes(uid)) {
+          return socket.emit("error", { message: "User is already an admin" });
+        }
+
+        // Limit admins to max 3
+        if (currentAdmins.length >= 3) {
+          return socket.emit("error", { message: "Maximum 3 admins allowed" });
+        }
+
+        // Ensure target is a participant (optional but recommended)
+        const isParticipant = (room.participants || []).some((p) => p.user && p.user.toString() === uid);
+        if (!isParticipant) {
+          return socket.emit("error", { message: "User is not a participant of this room" });
+        }
+
         await Room.updateOne(
           { roomId },
           {
-            $addToSet: { admins: targetUserId },
-            $set: { "participants.$[elem].role": "admin" }
+            $addToSet: { admins: new mongoose.Types.ObjectId(targetUserId) },
+            $set: { "participants.$[elem].role": "admin" },
           },
-          { arrayFilters: [{ "elem.user": new mongoose.Types.ObjectId(targetUserId) }] }
+          { arrayFilters: [{ "elem.user": new mongoose.Types.ObjectId(targetUserId) }] },
         );
 
         io.to(`room:${roomId}`).emit("room:adminAdded", {
@@ -2598,6 +2667,7 @@ module.exports = (io) => {
 
         await broadcastRoomUsers(roomId);
 
+        socket.emit("room:giveAdmin:success", { userId: targetUserId });
         console.log(`👑 User ${targetUserId} promoted to Admin in ${roomId}`);
       } catch (err) {
         console.error("❌ room:giveAdmin error:", err);
@@ -2615,20 +2685,35 @@ module.exports = (io) => {
         const allowed = await isHost(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host can remove admin" });
 
+        const room = await Room.findOne({ roomId }).select("admins host").lean();
+        if (!room) return socket.emit("error", { message: "Room not found" });
+
+        const uid = targetUserId.toString();
+
+        // Prevent removing host
+        if (room.host && room.host.toString() === uid) {
+          return socket.emit("error", { message: "Cannot remove host from admin" });
+        }
+
+        const currentAdmins = (room.admins || []).map((a) => a.toString());
+        if (!currentAdmins.includes(uid)) {
+          return socket.emit("error", { message: "User is not an admin" });
+        }
+
         await Room.updateOne(
           { roomId },
           {
-            $pull: { admins: targetUserId },
-            $set: { "participants.$[elem].role": "listener" }
+            $pull: { admins: new mongoose.Types.ObjectId(targetUserId) },
+            $set: { "participants.$[elem].role": "listener" },
           },
-          { arrayFilters: [{ "elem.user": new mongoose.Types.ObjectId(targetUserId) }] }
+          { arrayFilters: [{ "elem.user": new mongoose.Types.ObjectId(targetUserId) }] },
         );
 
-        io.to(`room:${roomId}`).emit("room:adminRemoved", {
-          userId: targetUserId,
-        });
+        io.to(`room:${roomId}`).emit("room:adminRemoved", { userId: targetUserId });
 
         await broadcastRoomUsers(roomId);
+
+        socket.emit("room:removeAdmin:success", { userId: targetUserId });
 
         console.log(`🚫 User ${targetUserId} removed from Admin in ${roomId}`);
       } catch (err) {
