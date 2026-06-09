@@ -1586,38 +1586,88 @@ module.exports = (io) => {
       console.log("✅ Seat removed globally:", userId);
     });
 
-    socket.on("room:takeSeat", async ({ roomId }) => {
+    socket.on("room:takeSeat", async (payload) => {
+      const { roomId, seatNumber, seatIndex } = payload || {};
       const userId = socket.data.userId?.toString();
       if (!userId || !roomId) return;
 
-      console.log("🪑 User taking seat:", userId);
+      console.log("🪑 User taking seat:", userId, "payload:", payload);
 
-      // ✅ UPDATE USER STATE
-      socket.data.isWatcher = false;
-      micStates.set(userId, { muted: false, speaking: false });
+      try {
+        // Fetch the room once
+        const room = await Room.findOne({ roomId }).select("host admins lockedSeats seatCount").lean();
+        if (!room) {
+          socket.emit("error", { message: "Room not found" });
+          socket.emit("room:error", { message: "Room not found" });
+          return;
+        }
 
-      // ✅ GET CURRENT SEATS
-      let roomSeats = seats.get(roomId) || [];
+        // Check if user is host or admin (they can take any seat, even locked ones)
+        const uid = userId.toString();
+        const isHost = room.host && room.host.toString() === uid;
+        const isAdmin = Array.isArray(room.admins) && room.admins.some((id) => id && id.toString() === uid);
+        const isHostOrAdminUser = isHost || isAdmin;
 
-      // ✅ STRING SAFE + PREVENT DUPLICATE
-      roomSeats = roomSeats.map((id) => id.toString());
+        // ✅ GET CURRENT SEATS
+        let roomSeats = seats.get(roomId) || [];
+        roomSeats = roomSeats.map((id) => id.toString());
 
-      if (!roomSeats.includes(userId)) {
-        roomSeats.push(userId);
+        if (!isHostOrAdminUser) {
+          const lockedSeatsList = room.lockedSeats || [];
+
+          // Determine target seat number (1-based index)
+          let targetSeat = null;
+          if (seatNumber !== undefined && seatNumber !== null) {
+            targetSeat = Number(seatNumber);
+          } else if (seatIndex !== undefined && seatIndex !== null) {
+            targetSeat = Number(seatIndex) + 1;
+          }
+
+          if (targetSeat !== null) {
+            if (lockedSeatsList.includes(targetSeat)) {
+              console.log(`❌ Blocked user ${userId} from locked seat ${targetSeat}`);
+              socket.emit("error", { message: "This seat is locked" });
+              socket.emit("error:permission", { message: "This seat is locked" });
+              socket.emit("room:error", { message: "This seat is locked" });
+              return;
+            }
+          } else {
+            // If no specific seat is requested, check if the sequential seat they would occupy is locked,
+            // or if all seats are locked.
+            const nextSeatNumber = roomSeats.length + 1;
+            if (lockedSeatsList.includes(nextSeatNumber) || lockedSeatsList.length >= (room.seatCount || 10)) {
+              console.log(`❌ Blocked user ${userId} from joining seats (all/next seat locked). Locked count: ${lockedSeatsList.length}`);
+              socket.emit("error", { message: "Seats are locked" });
+              socket.emit("error:permission", { message: "Seats are locked" });
+              socket.emit("room:error", { message: "Seats are locked" });
+              return;
+            }
+          }
+        }
+
+        // ✅ UPDATE USER STATE
+        socket.data.isWatcher = false;
+        micStates.set(userId, { muted: false, speaking: false });
+
+        if (!roomSeats.includes(userId)) {
+          roomSeats.push(userId);
+        }
+
+        seats.set(roomId, roomSeats);
+
+        // ✅ BROADCAST FULL STATE
+        await broadcastRoomUsers(roomId);
+
+        // ✅ OPTIONAL (UI trigger)
+        io.to(`room:${roomId}`).emit("room:seat:taken", {
+          userId,
+          displayId: socket.data.displayId,
+        });
+
+        console.log("✅ Seat taken synced:", userId);
+      } catch (err) {
+        console.error("❌ room:takeSeat error:", err);
       }
-
-      seats.set(roomId, roomSeats);
-
-      // ✅ BROADCAST FULL STATE
-      await broadcastRoomUsers(roomId);
-
-      // ✅ OPTIONAL (UI trigger)
-      io.to(`room:${roomId}`).emit("room:seat:taken", {
-        userId,
-        displayId: socket.data.displayId,
-      });
-
-      console.log("✅ Seat taken synced:", userId);
     });
 
     // masage image part
