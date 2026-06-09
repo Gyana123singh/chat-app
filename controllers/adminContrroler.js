@@ -633,3 +633,188 @@ exports.getDashboardStats = async (req, res) => {
     });
   }
 };
+
+// ===============================
+// ADMIN: HELP ROOM MANAGEMENT
+// ===============================
+
+exports.getHelpRooms = async (req, res) => {
+  try {
+    const rooms = await Room.find({ isHelpRoom: true })
+      .populate("host", "username email profile.avatar")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      rooms,
+    });
+  } catch (error) {
+    console.error("❌ getHelpRooms error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch Help Rooms",
+      error: error.message,
+    });
+  }
+};
+
+exports.createHelpRoom = async (req, res) => {
+  try {
+    const { title, description, helpEmails, category = "Other", privacy = "public" } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Room title is required",
+      });
+    }
+
+    const creatorId = req.user.id; // The logged-in admin
+    
+    // Generate unique roomId (e.g. 8-digit numeric string)
+    let roomId;
+    let unique = false;
+    while (!unique) {
+      roomId = String(Math.floor(10000000 + Math.random() * 90000000));
+      const existing = await Room.findOne({ roomId });
+      if (!existing) unique = true;
+    }
+
+    // Parse helpEmails
+    let emails = [];
+    if (Array.isArray(helpEmails)) {
+      emails = helpEmails.slice(0, 3).map(e => String(e).trim());
+    }
+
+    const newRoom = await Room.create({
+      roomId,
+      title: title.trim(),
+      description: description || "",
+      category,
+      privacy,
+      host: creatorId,
+      creator: creatorId,
+      isHelpRoom: true,
+      createdByAdmin: true,
+      helpEmails: emails,
+      currentUsers: 0,
+      isActive: true,
+      status: "active",
+      participants: []
+    });
+
+    // Create associated VideoRoom
+    await VideoRoom.create({
+      roomId,
+      hostId: creatorId,
+      video: { isVisible: false },
+      audio: { isMixing: false },
+      participants: []
+    });
+
+    // Notify active socket clients to refresh their lists
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("room:listUpdate");
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Help Room created successfully by Admin",
+      room: newRoom,
+    });
+  } catch (error) {
+    console.error("❌ createHelpRoom error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create Help Room",
+      error: error.message,
+    });
+  }
+};
+
+exports.updateHelpRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { title, description, helpEmails, isActive, category, privacy } = req.body;
+
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    if (title && title.trim()) room.title = title.trim();
+    if (description !== undefined) room.description = description;
+    if (category) room.category = category;
+    if (privacy) room.privacy = privacy;
+    if (isActive !== undefined) room.isActive = isActive;
+
+    if (helpEmails !== undefined) {
+      if (Array.isArray(helpEmails)) {
+        room.helpEmails = helpEmails.slice(0, 3).map(e => String(e).trim());
+      } else {
+        room.helpEmails = [];
+      }
+    }
+
+    await room.save();
+
+    // Notify active socket clients to refresh their lists
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("room:listUpdate");
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Help Room updated successfully",
+      room,
+    });
+  } catch (error) {
+    console.error("❌ updateHelpRoom error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update Help Room",
+      error: error.message,
+    });
+  }
+};
+
+exports.deleteHelpRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    await VideoRoom.deleteOne({ roomId });
+    await Room.deleteOne({ roomId });
+
+    // Notify active socket clients to refresh
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`room:${roomId}`).emit("room:closed");
+      io.emit("room:listUpdate");
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Help Room deleted successfully",
+    });
+  } catch (error) {
+    console.error("❌ deleteHelpRoom error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete Help Room",
+      error: error.message,
+    });
+  }
+};

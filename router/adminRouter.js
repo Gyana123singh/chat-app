@@ -14,7 +14,22 @@ const {
   getProfitLossConfig,
   updateProfitLossConfig,
   getDashboardStats,
+  getHelpRooms,
+  createHelpRoom,
+  updateHelpRoom,
+  deleteHelpRoom,
 } = require("../controllers/adminContrroler");
+const { authMiddleware } = require("../middleware/auth");
+
+const adminCheck = (req, res, next) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Access denied. Admin role required.",
+    });
+  }
+  next();
+};
 
 router.post("/register", registerUser);
 router.post("/admin/login", adminLogin);
@@ -36,5 +51,11 @@ router.post("/profit-loss-config", updateProfitLossConfig);
 
 // dashboard statistics
 router.get("/dashboard/stats", getDashboardStats);
+
+// Help Room management
+router.get("/help-room", authMiddleware, adminCheck, getHelpRooms);
+router.post("/help-room", authMiddleware, adminCheck, createHelpRoom);
+router.put("/help-room/:roomId", authMiddleware, adminCheck, updateHelpRoom);
+router.delete("/help-room/:roomId", authMiddleware, adminCheck, deleteHelpRoom);
 
 module.exports = router;

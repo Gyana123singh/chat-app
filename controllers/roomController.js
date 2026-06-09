@@ -698,17 +698,20 @@ exports.deleteRoom = async (req, res) => {
       });
     }
 
-    if (room.host.toString() !== req.user.id) {
+    const isHost = room.host.toString() === req.user.id;
+    const isAdmin = req.user.role === "admin";
+
+    if (!isHost && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only host can delete room",
+        message: "Only the host or an admin can delete the room",
       });
     }
 
-    if (room.isHelpRoom) {
+    if ((room.isHelpRoom || room.createdByAdmin) && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Help Rooms cannot be deleted",
+        message: "Help or Admin-created Rooms can only be deleted by a Global Admin",
       });
     }
 
@@ -934,7 +937,7 @@ exports.getPopularRooms = async (req, res) => {
   try {
     const rooms = await Room.find({ isActive: true, privacy: "public" })
       .populate("host", "username profile.avatar")
-      .sort({ "stats.totalJoins": -1 })
+      .sort({ isHelpRoom: -1, "stats.totalJoins": -1 })
       .limit(10);
 
     res.status(200).json({

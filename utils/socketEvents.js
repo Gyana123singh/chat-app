@@ -1021,9 +1021,10 @@ module.exports = (io) => {
 
           room.hostLeftAt = new Date();
 
-          room.status = "host_left";
-
-          room.isActive = false;
+          if (!room.isHelpRoom) {
+            room.status = "host_left";
+            room.isActive = false;
+          }
 
           io.to(`room:${roomId}`).emit("room:hostLeft", {
             roomId,
@@ -1036,33 +1037,55 @@ module.exports = (io) => {
         // EMPTY ROOM
         // =========================
         if (room.currentUsers <= 0) {
-          room.status = "ended";
+          // Keep help rooms or admin-created rooms persistent
+          if (room.isHelpRoom || room.createdByAdmin) {
+            // Keep help room active but clear participants list
+            room.status = "active";
+            room.isActive = true;
+            room.participants = [];
+            await room.save();
 
-          await room.save();
+            await VideoRoom.updateOne(
+              { roomId },
+              { $set: { participants: [], "video.isPlaying": false } }
+            );
 
-          await Room.deleteOne({ roomId });
+            seats.delete(roomId);
+            roomUsers.delete(roomId);
+            typingUsers.delete(roomId);
 
-          await VideoRoom.deleteOne({ roomId });
+            socket.leave(`room:${roomId}`);
+            console.log("ℹ️ Help/Admin Room kept active on leave:", roomId);
+            return;
+          } else {
+            room.status = "ended";
 
-          await MusicState.deleteOne({ roomId });
+            await room.save();
 
-          roomManager.stopMusic(roomId);
+            await Room.deleteOne({ roomId });
 
-          const rIdStr = roomId.toString();
-          seats.delete(roomId); // seats Map seems to use roomId as-is in some places, but let's be safe
-          roomUsers.delete(roomId);
-          roomMessages.delete(rIdStr);
-          typingUsers.delete(roomId);
+            await VideoRoom.deleteOne({ roomId });
 
-          backgroundUsers.delete(userId.toString());
+            await MusicState.deleteOne({ roomId });
 
-          io.to(`room:${roomId}`).emit("room:deleted");
+            roomManager.stopMusic(roomId);
 
-          socket.leave(`room:${roomId}`);
+            const rIdStr = roomId.toString();
+            seats.delete(roomId); // seats Map seems to use roomId as-is in some places, but let's be safe
+            roomUsers.delete(roomId);
+            roomMessages.delete(rIdStr);
+            typingUsers.delete(roomId);
 
-          console.log("🗑 Room deleted:", roomId);
+            backgroundUsers.delete(userId.toString());
 
-          return;
+            io.to(`room:${roomId}`).emit("room:deleted");
+
+            socket.leave(`room:${roomId}`);
+
+            console.log("🗑 Room deleted:", roomId);
+
+            return;
+          }
         }
 
         // =========================
@@ -2827,7 +2850,7 @@ module.exports = (io) => {
     // ===============================
 
     // MARK AS HELP ROOM (ADMIN ONLY)
-    socket.on("room:setHelpRoom", async ({ roomId, isHelp }) => {
+    socket.on("room:setHelpRoom", async ({ roomId, isHelp, helpEmails }) => {
       try {
         const userId = socket.data.userId;
         if (!userId || !roomId) return;
@@ -2841,13 +2864,24 @@ module.exports = (io) => {
         if (!room) return socket.emit("error", { message: "Room not found" });
 
         room.isHelpRoom = isHelp === true;
+        // When admin marks as help, also mark as admin-created (persistent)
+        room.createdByAdmin = isHelp === true;
+        if (helpEmails !== undefined) {
+          if (Array.isArray(helpEmails)) {
+            // Keep up to 3 support/alternative emails
+            room.helpEmails = helpEmails.slice(0, 3).map(email => String(email).trim());
+          } else {
+            room.helpEmails = [];
+          }
+        }
         await room.save();
 
-        console.log(`🔒 Room ${roomId} set as Help Room: ${room.isHelpRoom}`);
+        console.log(`🔒 Room ${roomId} set as Help Room: ${room.isHelpRoom}, emails: ${room.helpEmails}`);
 
         socket.emit("room:helpStatus", {
           roomId,
           isHelpRoom: room.isHelpRoom,
+          helpEmails: room.helpEmails,
           message: room.isHelpRoom ? "Room is now a permanent Help Room" : "Room is now a regular room",
         });
 
@@ -2855,6 +2889,7 @@ module.exports = (io) => {
         io.emit("room:listUpdate");
       } catch (err) {
         console.error("❌ setHelpRoom error:", err);
+        
       }
     });
 
@@ -2938,28 +2973,48 @@ module.exports = (io) => {
         );
         // EMPTY ROOM
         if (room.currentUsers <= 0) {
-          room.status = "ended";
+          // Keep help rooms or admin-created rooms persistent
+          if (room.isHelpRoom || room.createdByAdmin) {
+            // Keep help room active but clear participants list
+            room.status = "active";
+            room.isActive = true;
+            room.participants = [];
+            await room.save();
 
-          await room.save();
+            await VideoRoom.updateOne(
+              { roomId },
+              { $set: { participants: [], "video.isPlaying": false } }
+            );
 
-          await Room.deleteOne({ roomId });
+            seats.delete(roomId);
+            roomUsers.delete(roomId);
+            typingUsers.delete(roomId);
 
-          await VideoRoom.deleteOne({ roomId });
+            console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
+          } else {
+            room.status = "ended";
 
-          await MusicState.deleteOne({ roomId });
+            await room.save();
 
-          roomManager.stopMusic(roomId);
-          seats.delete(roomId);
+            await Room.deleteOne({ roomId });
 
-          roomUsers.delete(roomId);
+            await VideoRoom.deleteOne({ roomId });
 
-          roomMessages.delete(roomId);
+            await MusicState.deleteOne({ roomId });
 
-          typingUsers.delete(roomId);
+            roomManager.stopMusic(roomId);
+            seats.delete(roomId);
 
-          console.log("🗑 Auto cleaned room:", roomId);
+            roomUsers.delete(roomId);
 
-          return;
+            roomMessages.delete(roomId);
+
+            typingUsers.delete(roomId);
+
+            console.log("🗑 Auto cleaned room:", roomId);
+
+            return;
+          }
         }
 
         await room.save();

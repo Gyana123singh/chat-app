@@ -216,8 +216,11 @@ console.log("🚀 Socket.IO + Music Streaming ready");
 setInterval(
   async () => {
     try {
+      // Find rooms with zero users that are NOT help rooms and NOT admin-created
       const zombieRooms = await Room.find({
         currentUsers: 0,
+        isHelpRoom: { $ne: true },
+        createdByAdmin: { $ne: true },
       });
 
       for (const room of zombieRooms) {

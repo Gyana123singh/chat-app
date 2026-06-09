@@ -217,6 +217,15 @@ const roomSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Mark rooms created by admin (permanent/help-line rooms)
+    createdByAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    helpEmails: {
+      type: [String],
+      default: [],
+    },
     blockedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
