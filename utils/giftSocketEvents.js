@@ -12,7 +12,7 @@ module.exports = (socket, io) => {
        🎁 SEND STORE GIFT TO ANOTHER USER
     ========================================================== */
 
-  socket.on("store:gift:send", async (payload) => {
+  socket.on("store:gift:send", async (payload, callback) => {
     try {
       const senderId = socket.data.userId;
       const senderUsername = socket.data.username;
@@ -333,11 +333,16 @@ module.exports = (socket, io) => {
         balance: sender.coins,
       });
 
+      if (typeof callback === "function") {
+        callback({ success: true, balance: sender.coins });
+      }
+
       // 🏆 Update Leaderboard
       await trophyController.updateLeaderboardOnGift(senderId, gift.price);
     } catch (err) {
       console.error("❌ Store gift send error:", err);
       socket.emit("store:gift:error", { message: "Store gift failed" });
+      if (typeof callback === "function") callback({ success: false, message: "Store gift failed" });
     }
   });
 
@@ -345,7 +350,7 @@ module.exports = (socket, io) => {
        🛒 BUY STORE GIFT FOR SELF
     ========================================================== */
 
-  socket.on("store:gift:buy", async (payload) => {
+  socket.on("store:gift:buy", async (payload, callback) => {
     try {
       const userId = socket.data.userId;
       const { giftId, duration = 1 } = payload;
@@ -520,7 +525,8 @@ module.exports = (socket, io) => {
         completedAt: new Date(),
       });
 
-      socket.emit("store:gift:bought", {
+
+      const boughtPayload = {
         giftId: gift._id,
         name: gift.name,
         icon: gift.icon,
@@ -528,7 +534,10 @@ module.exports = (socket, io) => {
         effectType: gift.effectType,
         duration: finalDuration,
         balance: user.coins,
-      });
+      };
+
+      socket.emit("store:gift:bought", boughtPayload);
+      if (typeof callback === "function") callback({ success: true, data: boughtPayload });
 
       // 🏆 Update Leaderboard
       await trophyController.updateLeaderboardOnGift(userId, gift.price);
@@ -537,6 +546,7 @@ module.exports = (socket, io) => {
       socket.emit("store:gift:error", {
         message: "Store gift purchase failed",
       });
+      if (typeof callback === "function") callback({ success: false, message: "Store gift purchase failed" });
     }
   });
 };
