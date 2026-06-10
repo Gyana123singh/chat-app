@@ -1139,6 +1139,16 @@ module.exports = (io) => {
 
         backgroundUsers.delete(userId.toString());
 
+        // Notify other clients that this user has left the room
+        socket.to(`room:${roomId}`).emit("room:userLeft", {
+          userId: socket.data.userId,
+          displayId: socket.data.displayId,
+        });
+
+        // Refresh room user list and watcher count for remaining clients
+        await broadcastRoomUsers(roomId);
+        await broadcastWatcherCount(roomId, io);
+
         socket.leave(`room:${roomId}`);
 
         socket.data.isBackground = false;
