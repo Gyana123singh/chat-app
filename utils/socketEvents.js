@@ -927,6 +927,7 @@ module.exports = (io) => {
     // ===============================
     socket.on("room:description:update", async (data, arg2) => {
       try {
+        const userId = socket.data.userId;
         let roomId, description;
 
         if (typeof data === "object" && data !== null && !Array.isArray(data)) {
@@ -937,8 +938,8 @@ module.exports = (io) => {
           description = arg2;
         }
 
-        if (!roomId || typeof description !== "string") {
-          return socket.emit("error", { message: "Invalid data" });
+        if (!roomId || typeof description !== "string" || !userId) {
+          return socket.emit("error", { message: "Invalid data or not authenticated" });
         }
 
         const allowed = await isHostOrAdmin(roomId, userId);
