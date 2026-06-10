@@ -3271,99 +3271,117 @@ module.exports = (io) => {
     ========================= */
     socket.on("disconnect", async () => {
       const { roomId, userId, user } = socket.data;
-      if (socket.data.hasLeftRoom) return;
-      if (roomId && userId) {
-        const roomSeats = seats.get(roomId) || [];
-        seats.set(
-          roomId,
-          roomSeats.filter((id) => id !== userId),
-        );
-      }
 
-      const room = await Room.findOne({ roomId });
+      // 1. Room-level cleanups (only run if the user did not explicitly leave room via room:leave)
+      if (!socket.data.hasLeftRoom) {
+        socket.data.hasLeftRoom = true;
 
-      if (room) {
-        room.currentUsers = Math.max(0, room.currentUsers - 1);
-
-        room.lastActivityAt = new Date();
-
-        // HOST DISCONNECTED
-        if (room.host && room.host.toString() === userId.toString()) {
-          room.hostOnline = false;
-          room.hostLeftAt = new Date();
-
-          // ✅ HELP ROOM EXCEPTION: Never mark as host_left or inactive
-          if (!room.isHelpRoom) {
-            room.status = "host_left";
-            room.isActive = false;
-          }
-
-          io.to(`room:${roomId}`).emit("room:hostLeft", {
+        if (roomId && userId) {
+          const roomSeats = seats.get(roomId) || [];
+          seats.set(
             roomId,
-          });
+            roomSeats.filter((id) => id !== userId),
+          );
         }
 
-        room.participants = room.participants.filter(
-          (p) => p.user.toString() !== userId.toString(),
-        );
-        await VideoRoom.updateOne(
-          { roomId },
-          {
-            $pull: {
-              participants: {
-                userId,
+        const room = await Room.findOne({ roomId });
+
+        if (room) {
+          room.currentUsers = Math.max(0, room.currentUsers - 1);
+          room.lastActivityAt = new Date();
+
+          // HOST DISCONNECTED
+          if (room.host && room.host.toString() === userId.toString()) {
+            room.hostOnline = false;
+            room.hostLeftAt = new Date();
+
+            // ✅ HELP ROOM EXCEPTION: Never mark as host_left or inactive
+            if (!room.isHelpRoom) {
+              room.status = "host_left";
+              room.isActive = false;
+            }
+
+            io.to(`room:${roomId}`).emit("room:hostLeft", {
+              roomId,
+            });
+          }
+
+          room.participants = room.participants.filter(
+            (p) => p.user.toString() !== userId.toString(),
+          );
+          await VideoRoom.updateOne(
+            { roomId },
+            {
+              $pull: {
+                participants: {
+                  userId,
+                },
               },
             },
-          },
-        );
-        // EMPTY ROOM
-        if (room.currentUsers <= 0) {
-          // Keep help rooms or admin-created rooms persistent
-          if (room.isHelpRoom || room.createdByAdmin) {
-            // Keep help room active but clear participants list
-            room.status = "active";
-            room.isActive = true;
-            room.participants = [];
-            await room.save();
+          );
 
-            await VideoRoom.updateOne(
-              { roomId },
-              { $set: { participants: [], "video.isPlaying": false } }
-            );
+          // EMPTY ROOM
+          if (room.currentUsers <= 0) {
+            // Keep help rooms or admin-created rooms persistent
+            if (room.isHelpRoom || room.createdByAdmin) {
+              // Keep help room active but clear participants list
+              room.status = "active";
+              room.isActive = true;
+              room.participants = [];
+              await room.save();
 
-            seats.delete(roomId);
-            roomUsers.delete(roomId);
-            typingUsers.delete(roomId);
+              await VideoRoom.updateOne(
+                { roomId },
+                { $set: { participants: [], "video.isPlaying": false } }
+              );
 
-            console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
+              seats.delete(roomId);
+              roomUsers.delete(roomId);
+              typingUsers.delete(roomId);
+
+              console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
+            } else {
+              room.status = "ended";
+
+              await room.save();
+
+              await Room.deleteOne({ roomId });
+
+              await VideoRoom.deleteOne({ roomId });
+
+              await MusicState.deleteOne({ roomId });
+
+              roomManager.stopMusic(roomId);
+              seats.delete(roomId);
+
+              roomUsers.delete(roomId);
+
+              roomMessages.delete(roomId);
+
+              typingUsers.delete(roomId);
+
+              console.log("🗑 Auto cleaned room on disconnect:", roomId);
+            }
           } else {
-            room.status = "ended";
-
             await room.save();
-
-            await Room.deleteOne({ roomId });
-
-            await VideoRoom.deleteOne({ roomId });
-
-            await MusicState.deleteOne({ roomId });
-
-            roomManager.stopMusic(roomId);
-            seats.delete(roomId);
-
-            roomUsers.delete(roomId);
-
-            roomMessages.delete(roomId);
-
-            typingUsers.delete(roomId);
-
-            console.log("🗑 Auto cleaned room:", roomId);
-
-            return;
           }
         }
 
-        await room.save();
+        if (roomId) {
+          // ✅ Update DB count
+          await Room.updateOne({ roomId }, { $inc: { currentUsers: -1 } });
+
+          socket.to(`room:${roomId}`).emit("room:userLeft", {
+            userId: socket.data.userId,
+            displayId: socket.data.displayId,
+          });
+
+          // ✅ Broadcast updated Watcher Count after someone leaves
+          await broadcastWatcherCount(roomId, io);
+        }
       }
+
+      // 2. Connection-level cleanups (MUST ALWAYS RUN to prevent registry leaks)
       try {
         // 🔥🔥🔥 MOST IMPORTANT FIX
         if (socket.data.isBackground) {
@@ -3434,19 +3452,6 @@ module.exports = (io) => {
               reason: "dj_left",
             });
           }
-        }
-
-        if (roomId) {
-          // ✅ Update DB count
-          await Room.updateOne({ roomId }, { $inc: { currentUsers: -1 } });
-
-          socket.to(`room:${roomId}`).emit("room:userLeft", {
-            userId: socket.data.userId,
-            displayId: socket.data.displayId,
-          });
-
-          // ✅ Broadcast updated Watcher Count after someone leaves
-          await broadcastWatcherCount(roomId, io);
         }
 
         console.log("❌ Socket disconnected:", socket.id);
