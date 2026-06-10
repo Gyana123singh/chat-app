@@ -1139,16 +1139,6 @@ module.exports = (io) => {
 
         backgroundUsers.delete(userId.toString());
 
-        // Notify other clients that this user has left the room
-        socket.to(`room:${roomId}`).emit("room:userLeft", {
-          userId: socket.data.userId,
-          displayId: socket.data.displayId,
-        });
-
-        // Refresh room user list and watcher count for remaining clients
-        await broadcastRoomUsers(roomId);
-        await broadcastWatcherCount(roomId, io);
-
         socket.leave(`room:${roomId}`);
 
         socket.data.isBackground = false;
@@ -2035,31 +2025,10 @@ module.exports = (io) => {
     });
 
     /* =========================
-   VOICE & CALL WEBRTC SIGNALING
+   VOICE WEBRTC SIGNALING
 ========================= */
 
-    // call:offer (Frontend)
-    socket.on("call:offer", ({ to, offer }) => {
-      if (!to || !offer) return;
-
-      const targetSocketIds = getUserSocketIds(to);
-      if (!targetSocketIds.length) {
-        console.warn("call:offer target offline:", to);
-        return socket.emit("call:error", { message: "Target offline" });
-      }
-
-      targetSocketIds.forEach((ts) => {
-        const payload = {
-          from: socket.data.userId,
-          fromUserId: socket.data.userId,
-          offer,
-        };
-        io.to(ts).emit("call:offer", payload);
-        io.to(ts).emit("voice:offer", payload);
-      });
-    });
-
-    // voice:offer (Legacy / mobile fallback)
+    // OFFER
     socket.on("voice:offer", ({ targetUserId, offer }) => {
       if (!targetUserId || !offer) return;
 
@@ -2070,38 +2039,14 @@ module.exports = (io) => {
       }
 
       targetSocketIds.forEach((ts) => {
-        const payload = {
-          from: socket.data.userId,
+        io.to(ts).emit("voice:offer", {
           fromUserId: socket.data.userId,
           offer,
-        };
-        io.to(ts).emit("call:offer", payload);
-        io.to(ts).emit("voice:offer", payload);
+        });
       });
     });
 
-    // call:answer (Frontend)
-    socket.on("call:answer", ({ to, answer }) => {
-      if (!to || !answer) return;
-
-      const targetSocketIds = getUserSocketIds(to);
-      if (!targetSocketIds.length) {
-        console.warn("call:answer target offline:", to);
-        return socket.emit("call:error", { message: "Target offline" });
-      }
-
-      targetSocketIds.forEach((ts) => {
-        const payload = {
-          from: socket.data.userId,
-          fromUserId: socket.data.userId,
-          answer,
-        };
-        io.to(ts).emit("call:answer", payload);
-        io.to(ts).emit("voice:answer", payload);
-      });
-    });
-
-    // voice:answer (Legacy / mobile fallback)
+    // ANSWER
     socket.on("voice:answer", ({ targetUserId, answer }) => {
       if (!targetUserId || !answer) return;
 
@@ -2112,37 +2057,14 @@ module.exports = (io) => {
       }
 
       targetSocketIds.forEach((ts) => {
-        const payload = {
-          from: socket.data.userId,
+        io.to(ts).emit("voice:answer", {
           fromUserId: socket.data.userId,
           answer,
-        };
-        io.to(ts).emit("call:answer", payload);
-        io.to(ts).emit("voice:answer", payload);
+        });
       });
     });
 
-    // call:ice (Frontend)
-    socket.on("call:ice", ({ to, candidate }) => {
-      if (!to || !candidate) return;
-
-      const targetSocketIds = getUserSocketIds(to);
-      if (!targetSocketIds.length) {
-        return;
-      }
-
-      targetSocketIds.forEach((ts) => {
-        const payload = {
-          from: socket.data.userId,
-          fromUserId: socket.data.userId,
-          candidate,
-        };
-        io.to(ts).emit("call:ice", payload);
-        io.to(ts).emit("voice:ice", payload);
-      });
-    });
-
-    // voice:ice (Legacy / mobile fallback)
+    // ICE
     socket.on("voice:ice", ({ targetUserId, candidate }) => {
       if (!targetUserId || !candidate) return;
 
@@ -2153,13 +2075,10 @@ module.exports = (io) => {
       }
 
       targetSocketIds.forEach((ts) => {
-        const payload = {
-          from: socket.data.userId,
+        io.to(ts).emit("voice:ice", {
           fromUserId: socket.data.userId,
           candidate,
-        };
-        io.to(ts).emit("call:ice", payload);
-        io.to(ts).emit("voice:ice", payload);
+        });
       });
     });
 
@@ -3271,117 +3190,99 @@ module.exports = (io) => {
     ========================= */
     socket.on("disconnect", async () => {
       const { roomId, userId, user } = socket.data;
-
-      // 1. Room-level cleanups (only run if the user did not explicitly leave room via room:leave)
-      if (!socket.data.hasLeftRoom) {
-        socket.data.hasLeftRoom = true;
-
-        if (roomId && userId) {
-          const roomSeats = seats.get(roomId) || [];
-          seats.set(
-            roomId,
-            roomSeats.filter((id) => id !== userId),
-          );
-        }
-
-        const room = await Room.findOne({ roomId });
-
-        if (room) {
-          room.currentUsers = Math.max(0, room.currentUsers - 1);
-          room.lastActivityAt = new Date();
-
-          // HOST DISCONNECTED
-          if (room.host && room.host.toString() === userId.toString()) {
-            room.hostOnline = false;
-            room.hostLeftAt = new Date();
-
-            // ✅ HELP ROOM EXCEPTION: Never mark as host_left or inactive
-            if (!room.isHelpRoom) {
-              room.status = "host_left";
-              room.isActive = false;
-            }
-
-            io.to(`room:${roomId}`).emit("room:hostLeft", {
-              roomId,
-            });
-          }
-
-          room.participants = room.participants.filter(
-            (p) => p.user.toString() !== userId.toString(),
-          );
-          await VideoRoom.updateOne(
-            { roomId },
-            {
-              $pull: {
-                participants: {
-                  userId,
-                },
-              },
-            },
-          );
-
-          // EMPTY ROOM
-          if (room.currentUsers <= 0) {
-            // Keep help rooms or admin-created rooms persistent
-            if (room.isHelpRoom || room.createdByAdmin) {
-              // Keep help room active but clear participants list
-              room.status = "active";
-              room.isActive = true;
-              room.participants = [];
-              await room.save();
-
-              await VideoRoom.updateOne(
-                { roomId },
-                { $set: { participants: [], "video.isPlaying": false } }
-              );
-
-              seats.delete(roomId);
-              roomUsers.delete(roomId);
-              typingUsers.delete(roomId);
-
-              console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
-            } else {
-              room.status = "ended";
-
-              await room.save();
-
-              await Room.deleteOne({ roomId });
-
-              await VideoRoom.deleteOne({ roomId });
-
-              await MusicState.deleteOne({ roomId });
-
-              roomManager.stopMusic(roomId);
-              seats.delete(roomId);
-
-              roomUsers.delete(roomId);
-
-              roomMessages.delete(roomId);
-
-              typingUsers.delete(roomId);
-
-              console.log("🗑 Auto cleaned room on disconnect:", roomId);
-            }
-          } else {
-            await room.save();
-          }
-        }
-
-        if (roomId) {
-          // ✅ Update DB count
-          await Room.updateOne({ roomId }, { $inc: { currentUsers: -1 } });
-
-          socket.to(`room:${roomId}`).emit("room:userLeft", {
-            userId: socket.data.userId,
-            displayId: socket.data.displayId,
-          });
-
-          // ✅ Broadcast updated Watcher Count after someone leaves
-          await broadcastWatcherCount(roomId, io);
-        }
+      if (socket.data.hasLeftRoom) return;
+      if (roomId && userId) {
+        const roomSeats = seats.get(roomId) || [];
+        seats.set(
+          roomId,
+          roomSeats.filter((id) => id !== userId),
+        );
       }
 
-      // 2. Connection-level cleanups (MUST ALWAYS RUN to prevent registry leaks)
+      const room = await Room.findOne({ roomId });
+
+      if (room) {
+        room.currentUsers = Math.max(0, room.currentUsers - 1);
+
+        room.lastActivityAt = new Date();
+
+        // HOST DISCONNECTED
+        if (room.host && room.host.toString() === userId.toString()) {
+          room.hostOnline = false;
+          room.hostLeftAt = new Date();
+
+          // ✅ HELP ROOM EXCEPTION: Never mark as host_left or inactive
+          if (!room.isHelpRoom) {
+            room.status = "host_left";
+            room.isActive = false;
+          }
+
+          io.to(`room:${roomId}`).emit("room:hostLeft", {
+            roomId,
+          });
+        }
+
+        room.participants = room.participants.filter(
+          (p) => p.user.toString() !== userId.toString(),
+        );
+        await VideoRoom.updateOne(
+          { roomId },
+          {
+            $pull: {
+              participants: {
+                userId,
+              },
+            },
+          },
+        );
+        // EMPTY ROOM
+        if (room.currentUsers <= 0) {
+          // Keep help rooms or admin-created rooms persistent
+          if (room.isHelpRoom || room.createdByAdmin) {
+            // Keep help room active but clear participants list
+            room.status = "active";
+            room.isActive = true;
+            room.participants = [];
+            await room.save();
+
+            await VideoRoom.updateOne(
+              { roomId },
+              { $set: { participants: [], "video.isPlaying": false } }
+            );
+
+            seats.delete(roomId);
+            roomUsers.delete(roomId);
+            typingUsers.delete(roomId);
+
+            console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
+          } else {
+            room.status = "ended";
+
+            await room.save();
+
+            await Room.deleteOne({ roomId });
+
+            await VideoRoom.deleteOne({ roomId });
+
+            await MusicState.deleteOne({ roomId });
+
+            roomManager.stopMusic(roomId);
+            seats.delete(roomId);
+
+            roomUsers.delete(roomId);
+
+            roomMessages.delete(roomId);
+
+            typingUsers.delete(roomId);
+
+            console.log("🗑 Auto cleaned room:", roomId);
+
+            return;
+          }
+        }
+
+        await room.save();
+      }
       try {
         // 🔥🔥🔥 MOST IMPORTANT FIX
         if (socket.data.isBackground) {
@@ -3452,6 +3353,19 @@ module.exports = (io) => {
               reason: "dj_left",
             });
           }
+        }
+
+        if (roomId) {
+          // ✅ Update DB count
+          await Room.updateOne({ roomId }, { $inc: { currentUsers: -1 } });
+
+          socket.to(`room:${roomId}`).emit("room:userLeft", {
+            userId: socket.data.userId,
+            displayId: socket.data.displayId,
+          });
+
+          // ✅ Broadcast updated Watcher Count after someone leaves
+          await broadcastWatcherCount(roomId, io);
         }
 
         console.log("❌ Socket disconnected:", socket.id);
