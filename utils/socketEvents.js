@@ -2025,10 +2025,31 @@ module.exports = (io) => {
     });
 
     /* =========================
-   VOICE WEBRTC SIGNALING
+   VOICE & CALL WEBRTC SIGNALING
 ========================= */
 
-    // OFFER
+    // call:offer (Frontend)
+    socket.on("call:offer", ({ to, offer }) => {
+      if (!to || !offer) return;
+
+      const targetSocketIds = getUserSocketIds(to);
+      if (!targetSocketIds.length) {
+        console.warn("call:offer target offline:", to);
+        return socket.emit("call:error", { message: "Target offline" });
+      }
+
+      targetSocketIds.forEach((ts) => {
+        const payload = {
+          from: socket.data.userId,
+          fromUserId: socket.data.userId,
+          offer,
+        };
+        io.to(ts).emit("call:offer", payload);
+        io.to(ts).emit("voice:offer", payload);
+      });
+    });
+
+    // voice:offer (Legacy / mobile fallback)
     socket.on("voice:offer", ({ targetUserId, offer }) => {
       if (!targetUserId || !offer) return;
 
@@ -2039,14 +2060,38 @@ module.exports = (io) => {
       }
 
       targetSocketIds.forEach((ts) => {
-        io.to(ts).emit("voice:offer", {
+        const payload = {
+          from: socket.data.userId,
           fromUserId: socket.data.userId,
           offer,
-        });
+        };
+        io.to(ts).emit("call:offer", payload);
+        io.to(ts).emit("voice:offer", payload);
       });
     });
 
-    // ANSWER
+    // call:answer (Frontend)
+    socket.on("call:answer", ({ to, answer }) => {
+      if (!to || !answer) return;
+
+      const targetSocketIds = getUserSocketIds(to);
+      if (!targetSocketIds.length) {
+        console.warn("call:answer target offline:", to);
+        return socket.emit("call:error", { message: "Target offline" });
+      }
+
+      targetSocketIds.forEach((ts) => {
+        const payload = {
+          from: socket.data.userId,
+          fromUserId: socket.data.userId,
+          answer,
+        };
+        io.to(ts).emit("call:answer", payload);
+        io.to(ts).emit("voice:answer", payload);
+      });
+    });
+
+    // voice:answer (Legacy / mobile fallback)
     socket.on("voice:answer", ({ targetUserId, answer }) => {
       if (!targetUserId || !answer) return;
 
@@ -2057,14 +2102,37 @@ module.exports = (io) => {
       }
 
       targetSocketIds.forEach((ts) => {
-        io.to(ts).emit("voice:answer", {
+        const payload = {
+          from: socket.data.userId,
           fromUserId: socket.data.userId,
           answer,
-        });
+        };
+        io.to(ts).emit("call:answer", payload);
+        io.to(ts).emit("voice:answer", payload);
       });
     });
 
-    // ICE
+    // call:ice (Frontend)
+    socket.on("call:ice", ({ to, candidate }) => {
+      if (!to || !candidate) return;
+
+      const targetSocketIds = getUserSocketIds(to);
+      if (!targetSocketIds.length) {
+        return;
+      }
+
+      targetSocketIds.forEach((ts) => {
+        const payload = {
+          from: socket.data.userId,
+          fromUserId: socket.data.userId,
+          candidate,
+        };
+        io.to(ts).emit("call:ice", payload);
+        io.to(ts).emit("voice:ice", payload);
+      });
+    });
+
+    // voice:ice (Legacy / mobile fallback)
     socket.on("voice:ice", ({ targetUserId, candidate }) => {
       if (!targetUserId || !candidate) return;
 
@@ -2075,10 +2143,13 @@ module.exports = (io) => {
       }
 
       targetSocketIds.forEach((ts) => {
-        io.to(ts).emit("voice:ice", {
+        const payload = {
+          from: socket.data.userId,
           fromUserId: socket.data.userId,
           candidate,
-        });
+        };
+        io.to(ts).emit("call:ice", payload);
+        io.to(ts).emit("voice:ice", payload);
       });
     });
 
@@ -3153,7 +3224,7 @@ module.exports = (io) => {
         io.emit("room:listUpdate");
       } catch (err) {
         console.error("❌ setHelpRoom error:", err);
-        
+
       }
     });
 
