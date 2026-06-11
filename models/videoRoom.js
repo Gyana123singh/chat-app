@@ -24,10 +24,14 @@ const videoRoomSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
+      // 🆕 Tracks which video from the videos[] playlist is currently active
+      currentVideoId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null,
+      },
       startedAt: { type: Date, default: null },
       pausedAt: { type: Date, default: null },
       lastSyncTime: { type: Date, default: Date.now },
-
     },
 
     // 🆕 VIDEO LIST (THIS IS IMPORTANT)

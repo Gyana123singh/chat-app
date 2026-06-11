@@ -7,6 +7,7 @@ module.exports = (io) => {
 
   const upload = createVideoUpload();
 
+  // ─── EXISTING ROUTES (unchanged) ──────────────────────────────────────────
   router.post(
     "/upload/:roomId",
     upload.single("video"),
@@ -19,7 +20,6 @@ module.exports = (io) => {
     videoController.playVideo(req, res, io);
   });
 
-  
   router.post("/pause/:roomId", (req, res) => {
     videoController.pauseVideo(req, res, io);
   });
@@ -34,6 +34,37 @@ module.exports = (io) => {
 
   router.get("/list/:roomId", (req, res) => {
     videoController.getVideoList(req, res);
+  });
+
+  // ─── NEW PLAYLIST CONTROL ROUTES ─────────────────────────────────────────
+  // POST /api/video/select/:roomId   { userId, videoId }
+  router.post("/select/:roomId", (req, res) => {
+    videoController.selectVideo(req, res, io);
+  });
+
+  // POST /api/video/next/:roomId     { userId }
+  router.post("/next/:roomId", (req, res) => {
+    videoController.nextVideo(req, res, io);
+  });
+
+  // POST /api/video/previous/:roomId { userId }
+  router.post("/previous/:roomId", (req, res) => {
+    videoController.previousVideo(req, res, io);
+  });
+
+  // POST /api/video/seek/:roomId     { userId, time }
+  router.post("/seek/:roomId", (req, res) => {
+    videoController.seekVideo(req, res, io);
+  });
+
+  // POST /api/video/forward/:roomId  { userId }
+  router.post("/forward/:roomId", (req, res) => {
+    videoController.forwardVideo(req, res, io);
+  });
+
+  // POST /api/video/rewind/:roomId   { userId }
+  router.post("/rewind/:roomId", (req, res) => {
+    videoController.rewindVideo(req, res, io);
   });
 
   return router;

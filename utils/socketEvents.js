@@ -26,6 +26,7 @@ const pkTimers = new Map();
 const backgroundUsers = new Map(); // userId -> true
 const roomCleanupTimeouts = new Map(); // roomId -> Timeout
 const hostLeftTimeouts = new Map();     // roomId -> Timeout
+const videoRoomCleanupTimeouts = new Map(); // roomId -> Timeout for VideoRoom cleanup
 const seats = new Map(); // ✅ roomId -> [userIds]
 const userSockets = new Map();
 
@@ -475,6 +476,12 @@ module.exports = (io) => {
           roomCleanupTimeouts.delete(roomId);
           console.log(`✨ Room cleanup cancelled for room ${roomId}`);
         }
+        // Cancel any pending VideoRoom cleanup
+        if (videoRoomCleanupTimeouts.has(roomId)) {
+          clearTimeout(videoRoomCleanupTimeouts.get(roomId));
+          videoRoomCleanupTimeouts.delete(roomId);
+          console.log(`✨ VideoRoom cleanup cancelled for room ${roomId}`);
+        }
         if (roomDoc.host && roomDoc.host.toString() === userId.toString()) {
           roomDoc.hostOnline = true;
           if (hostLeftTimeouts.has(roomId)) {
@@ -647,6 +654,12 @@ module.exports = (io) => {
           clearTimeout(roomCleanupTimeouts.get(roomId));
           roomCleanupTimeouts.delete(roomId);
           console.log(`✨ Room cleanup cancelled for room ${roomId}`);
+        }
+        // Cancel any pending VideoRoom grace-period cleanup
+        if (videoRoomCleanupTimeouts.has(roomId)) {
+          clearTimeout(videoRoomCleanupTimeouts.get(roomId));
+          videoRoomCleanupTimeouts.delete(roomId);
+          console.log(`✨ VideoRoom cleanup cancelled for room ${roomId}`);
         }
         if (roomDoc.host && roomDoc.host.toString() === userId.toString()) {
           roomDoc.hostOnline = true;
@@ -1165,7 +1178,21 @@ module.exports = (io) => {
 
             await Room.deleteOne({ roomId });
 
-            await VideoRoom.deleteOne({ roomId });
+            // Graceful cleanup: schedule VideoRoom deletion after 90s if still empty
+            if (!videoRoomCleanupTimeouts.has(roomId)) {
+              const vrTimeout = setTimeout(async () => {
+                try {
+                  const vr = await VideoRoom.findOne({ roomId });
+                  if (vr) {
+                    await VideoRoom.deleteOne({ roomId });
+                    console.log(`🗑 VideoRoom deleted after grace period: ${roomId}`);
+                  }
+                } catch (e) {
+                  console.error('❌ VideoRoom cleanup error:', e);
+                }
+              }, 90000); // 90 seconds
+              videoRoomCleanupTimeouts.set(roomId, vrTimeout);
+            }
 
             await MusicState.deleteOne({ roomId });
 
