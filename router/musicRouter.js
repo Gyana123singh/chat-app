@@ -55,6 +55,18 @@ module.exports = (io) => {
 
   router.post("/stop/:roomId", musicController.stopMusic);
 
+  router.post("/select/:roomId/:musicId", musicController.selectTrack);
+
+  router.post("/next/:roomId", musicController.nextTrack);
+
+  router.post("/previous/:roomId", musicController.previousTrack);
+
+  router.post("/seek/:roomId", musicController.seekMusic);
+
+  router.post("/forward/:roomId", musicController.forwardMusic);
+
+  router.post("/rewind/:roomId", musicController.rewindMusic);
+
   router.get("/state/:roomId", musicController.getMusicState);
 
   return router;

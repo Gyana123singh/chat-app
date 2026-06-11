@@ -41,7 +41,15 @@ const Room = require("./models/room");
 const VideoRoom = require("./models/videoRoom");
 
 const app = express();
-connectMongose();
+connectMongose().then(async () => {
+  try {
+    const { migrateMusicData, restoreAllMusicStates } = require("./controllers/musicController");
+    await migrateMusicData();
+    await restoreAllMusicStates();
+  } catch (err) {
+    console.error("❌ Failed to run startup migrations/restores:", err);
+  }
+});
 // Run every 5 minutes
 setInterval(
   () => {

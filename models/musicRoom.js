@@ -36,6 +36,16 @@ const roomMusicSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+
+    uploaderUsername: {
+      type: String,
+      default: "User",
+    },
+
+    duration: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true },
 );

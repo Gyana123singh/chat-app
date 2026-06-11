@@ -22,6 +22,23 @@ const musicStateSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+
+    currentTrackId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MusicRoom",
+      default: null,
+    },
+
+    trackOwnerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    duration: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

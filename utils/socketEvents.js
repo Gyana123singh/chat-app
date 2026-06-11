@@ -24,6 +24,8 @@ async function getRoomSafe(roomId) {
 // pkId -> timeoutId
 const pkTimers = new Map();
 const backgroundUsers = new Map(); // userId -> true
+const roomCleanupTimeouts = new Map(); // roomId -> Timeout
+const hostLeftTimeouts = new Map();     // roomId -> Timeout
 const seats = new Map(); // ✅ roomId -> [userIds]
 const userSockets = new Map();
 
@@ -467,6 +469,25 @@ module.exports = (io) => {
           return socket.emit("room:error", { message: "Room not found" });
         }
 
+        // Cancel any pending room cleanup or host-left grace period
+        if (roomCleanupTimeouts.has(roomId)) {
+          clearTimeout(roomCleanupTimeouts.get(roomId));
+          roomCleanupTimeouts.delete(roomId);
+          console.log(`✨ Room cleanup cancelled for room ${roomId}`);
+        }
+        if (roomDoc.host && roomDoc.host.toString() === userId.toString()) {
+          roomDoc.hostOnline = true;
+          if (hostLeftTimeouts.has(roomId)) {
+            clearTimeout(hostLeftTimeouts.get(roomId));
+            hostLeftTimeouts.delete(roomId);
+            console.log(`✨ Host rejoined. Cancelled hostLeft grace period for room ${roomId}`);
+          }
+          if (roomDoc.status === "host_left") {
+            roomDoc.status = "active";
+            roomDoc.isActive = true;
+          }
+        }
+
         // ❌ BLOCKED USER CHECK
         if (roomDoc.blockedUsers && roomDoc.blockedUsers.some(id => id.toString() === userId.toString())) {
           return socket.emit("room:error", { message: "You are blocked from this room" });
@@ -619,6 +640,25 @@ module.exports = (io) => {
           return socket.emit("room:error", {
             message: "Room not found",
           });
+        }
+
+        // Cancel any pending room cleanup or host-left grace period
+        if (roomCleanupTimeouts.has(roomId)) {
+          clearTimeout(roomCleanupTimeouts.get(roomId));
+          roomCleanupTimeouts.delete(roomId);
+          console.log(`✨ Room cleanup cancelled for room ${roomId}`);
+        }
+        if (roomDoc.host && roomDoc.host.toString() === userId.toString()) {
+          roomDoc.hostOnline = true;
+          if (hostLeftTimeouts.has(roomId)) {
+            clearTimeout(hostLeftTimeouts.get(roomId));
+            hostLeftTimeouts.delete(roomId);
+            console.log(`✨ Host rejoined. Cancelled hostLeft grace period for room ${roomId}`);
+          }
+          if (roomDoc.status === "host_left") {
+            roomDoc.status = "active";
+            roomDoc.isActive = true;
+          }
         }
 
         // ❌ BLOCKED USER
@@ -2013,32 +2053,24 @@ module.exports = (io) => {
     });
 
     /* =========================
-       EMOJI
+    VOICE WEBRTC SIGNALING
     ========================= */
-    socket.on("send_emoji", ({ roomId, userId, emoji }) => {
-      if (!roomId || !userId || !emoji) return;
 
-      io.to(`room:${roomId}`).emit("receive_emoji", {
-        userId,
-        emoji,
-        timestamp: Date.now(),
+    // call:offer / voice:offer
+    socket.on("call:offer", ({ to, offer }) => {
+      if (!to || !offer) return;
+      const targetSocketIds = getUserSocketIds(to);
+      targetSocketIds.forEach((ts) => {
+        io.to(ts).emit("call:offer", {
+          from: socket.data.userId,
+          offer,
+        });
       });
     });
 
-    /* =========================
-   VOICE WEBRTC SIGNALING
-========================= */
-
-    // OFFER
     socket.on("voice:offer", ({ targetUserId, offer }) => {
       if (!targetUserId || !offer) return;
-
       const targetSocketIds = getUserSocketIds(targetUserId);
-      if (!targetSocketIds.length) {
-        console.warn("voice:offer target offline:", targetUserId);
-        return socket.emit("voice:error", { message: "Target offline" });
-      }
-
       targetSocketIds.forEach((ts) => {
         io.to(ts).emit("voice:offer", {
           fromUserId: socket.data.userId,
@@ -2047,16 +2079,21 @@ module.exports = (io) => {
       });
     });
 
-    // ANSWER
+    // call:answer / voice:answer
+    socket.on("call:answer", ({ to, answer }) => {
+      if (!to || !answer) return;
+      const targetSocketIds = getUserSocketIds(to);
+      targetSocketIds.forEach((ts) => {
+        io.to(ts).emit("call:answer", {
+          from: socket.data.userId,
+          answer,
+        });
+      });
+    });
+
     socket.on("voice:answer", ({ targetUserId, answer }) => {
       if (!targetUserId || !answer) return;
-
       const targetSocketIds = getUserSocketIds(targetUserId);
-      if (!targetSocketIds.length) {
-        console.warn("voice:answer target offline:", targetUserId);
-        return socket.emit("voice:error", { message: "Target offline" });
-      }
-
       targetSocketIds.forEach((ts) => {
         io.to(ts).emit("voice:answer", {
           fromUserId: socket.data.userId,
@@ -2065,16 +2102,21 @@ module.exports = (io) => {
       });
     });
 
-    // ICE
+    // call:ice / voice:ice
+    socket.on("call:ice", ({ to, candidate }) => {
+      if (!to || !candidate) return;
+      const targetSocketIds = getUserSocketIds(to);
+      targetSocketIds.forEach((ts) => {
+        io.to(ts).emit("call:ice", {
+          from: socket.data.userId,
+          candidate,
+        });
+      });
+    });
+
     socket.on("voice:ice", ({ targetUserId, candidate }) => {
       if (!targetUserId || !candidate) return;
-
       const targetSocketIds = getUserSocketIds(targetUserId);
-      if (!targetSocketIds.length) {
-        // don't spam logs for frequent ICE candidates
-        return;
-      }
-
       targetSocketIds.forEach((ts) => {
         io.to(ts).emit("voice:ice", {
           fromUserId: socket.data.userId,
@@ -3190,188 +3232,193 @@ module.exports = (io) => {
        DISCONNECT
     ========================= */
     socket.on("disconnect", async () => {
-      const { roomId, userId, user } = socket.data;
+      const { roomId, userId } = socket.data;
       if (socket.data.hasLeftRoom) return;
-      if (roomId && userId) {
+
+      console.log(`❌ Socket disconnected: ${socket.id} (user: ${userId}, room: ${roomId})`);
+
+      if (userId) {
+        removeUserSocket(userId, socket.id);
+      }
+
+      const remainingSockets = userId ? getUserSocketIds(userId) : [];
+
+      // If the user has no remaining active socket connections, clean up their room presence
+      if (userId && roomId && remainingSockets.length === 0) {
+        // Remove from seats map
         const roomSeats = seats.get(roomId) || [];
         seats.set(
           roomId,
-          roomSeats.filter((id) => id !== userId),
+          roomSeats.filter((id) => id.toString() !== userId.toString()),
         );
-      }
 
-      const room = await Room.findOne({ roomId });
-
-      if (room) {
-        room.currentUsers = Math.max(0, room.currentUsers - 1);
-
-        room.lastActivityAt = new Date();
-
-        // HOST DISCONNECTED
-        if (room.host && room.host.toString() === userId.toString()) {
-          room.hostOnline = false;
-          room.hostLeftAt = new Date();
-
-          // ✅ HELP ROOM EXCEPTION: Never mark as host_left or inactive
-          if (!room.isHelpRoom) {
-            room.status = "host_left";
-            room.isActive = false;
-          }
-
-          io.to(`room:${roomId}`).emit("room:hostLeft", {
-            roomId,
-          });
+        // Remove from typing and room users sets
+        if (typingUsers.has(roomId)) {
+          typingUsers.get(roomId).delete(userId.toString());
+        }
+        if (roomUsers.has(roomId)) {
+          roomUsers.get(roomId).delete(userId.toString());
         }
 
-        room.participants = room.participants.filter(
-          (p) => p.user.toString() !== userId.toString(),
-        );
-        await VideoRoom.updateOne(
-          { roomId },
-          {
-            $pull: {
-              participants: {
-                userId,
-              },
+        // Clean up user specific in-memory states
+        onlineUsers.delete(userId);
+        micStates.delete(userId);
+        deafenStates.delete(userId.toString());
+
+        if (roomStayTimers.has(userId)) {
+          clearInterval(roomStayTimers.get(userId));
+          roomStayTimers.delete(userId);
+        }
+        if (micExpTimers.has(userId)) {
+          clearInterval(micExpTimers.get(userId));
+          micExpTimers.delete(userId);
+        }
+
+        // Clean up database room presence
+        const room = await Room.findOne({ roomId });
+        if (room) {
+          // Safe decrement
+          room.currentUsers = Math.max(0, room.currentUsers - 1);
+          room.lastActivityAt = new Date();
+
+          // Remove from participants
+          room.participants = room.participants.filter(
+            (p) => p.user.toString() !== userId.toString(),
+          );
+
+          // Remove from VideoRoom participants
+          await VideoRoom.updateOne(
+            { roomId },
+            { $pull: { participants: { userId } } }
+          );
+
+          // Grace-Period Host Disconnection
+          if (room.host && room.host.toString() === userId.toString()) {
+            room.hostOnline = false;
+            room.hostLeftAt = new Date();
+            await room.save();
+
+            if (!room.isHelpRoom) {
+              if (hostLeftTimeouts.has(roomId)) {
+                clearTimeout(hostLeftTimeouts.get(roomId));
+              }
+              const timeout = setTimeout(async () => {
+                hostLeftTimeouts.delete(roomId);
+                try {
+                  const activeRoom = await Room.findOne({ roomId });
+                  if (!activeRoom) return;
+
+                  if (activeRoom.hostOnline) {
+                    console.log(`ℹ️ Host left timeout aborted for room ${roomId}. Host is online.`);
+                    return;
+                  }
+
+                  activeRoom.status = "host_left";
+                  activeRoom.isActive = false;
+                  await activeRoom.save();
+
+                  io.to(`room:${roomId}`).emit("room:hostLeft", { roomId });
+                  console.log(`🚪 Host grace period expired. Room ${roomId} marked as host_left.`);
+                } catch (err) {
+                  console.error("❌ Error during host left grace period:", err);
+                }
+              }, 90000); // 90 seconds grace period
+              hostLeftTimeouts.set(roomId, timeout);
+            }
+          }
+
+          // Grace-Period Room Cleanup
+          if (room.currentUsers <= 0) {
+            if (room.isHelpRoom || room.createdByAdmin) {
+              room.status = "active";
+              room.isActive = true;
+              room.participants = [];
+              await room.save();
+
+              await VideoRoom.updateOne(
+                { roomId },
+                { $set: { participants: [], "video.isPlaying": false } }
+              );
+
+              seats.delete(roomId);
+              roomUsers.delete(roomId);
+              typingUsers.delete(roomId);
+              console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
+            } else {
+              // Schedule room deletion
+              if (roomCleanupTimeouts.has(roomId)) {
+                clearTimeout(roomCleanupTimeouts.get(roomId));
+              }
+              const timeout = setTimeout(async () => {
+                roomCleanupTimeouts.delete(roomId);
+                try {
+                  const activeRoom = await Room.findOne({ roomId });
+                  if (!activeRoom) return;
+
+                  const roomName = `room:${roomId}`;
+                  const sockets = await io.in(roomName).fetchSockets();
+                  if (sockets.length > 0 || activeRoom.currentUsers > 0) {
+                    console.log(`ℹ️ Cleanup aborted for room ${roomId}. Active sockets/users found.`);
+                    return;
+                  }
+
+                  activeRoom.status = "ended";
+                  await activeRoom.save();
+                  await Room.deleteOne({ roomId });
+                  await VideoRoom.deleteOne({ roomId });
+                  await MusicState.deleteOne({ roomId });
+                  roomManager.stopMusic(roomId);
+                  seats.delete(roomId);
+                  roomUsers.delete(roomId);
+                  roomMessages.delete(roomId);
+                  typingUsers.delete(roomId);
+                  console.log(`🗑 Empty room ${roomId} deleted after grace period.`);
+                } catch (err) {
+                  console.error("❌ Error during delayed room cleanup:", err);
+                }
+              }, 90000); // 90 seconds grace period
+              roomCleanupTimeouts.set(roomId, timeout);
+            }
+          }
+
+          await room.save();
+        }
+
+        // DJ Left stops music
+        const musicState = roomManager.getState(roomId);
+        if (
+          roomId &&
+          musicState.playedBy &&
+          musicState.playedBy.toString() === userId.toString()
+        ) {
+          console.log("🎵 DJ left room, stopping music permanently");
+          roomManager.stopMusic(roomId);
+          await MusicState.findOneAndUpdate(
+            { roomId },
+            {
+              musicFile: null,
+              musicUrl: null,
+              isPlaying: false,
+              pausedAt: 0,
+              startedAt: null,
+              localFilePath: null,
+              playedBy: null,
             },
-          },
-        );
-        // EMPTY ROOM
-        if (room.currentUsers <= 0) {
-          // Keep help rooms or admin-created rooms persistent
-          if (room.isHelpRoom || room.createdByAdmin) {
-            // Keep help room active but clear participants list
-            room.status = "active";
-            room.isActive = true;
-            room.participants = [];
-            await room.save();
+          );
 
-            await VideoRoom.updateOne(
-              { roomId },
-              { $set: { participants: [], "video.isPlaying": false } }
-            );
-
-            seats.delete(roomId);
-            roomUsers.delete(roomId);
-            typingUsers.delete(roomId);
-
-            console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
-          } else {
-            room.status = "ended";
-
-            await room.save();
-
-            await Room.deleteOne({ roomId });
-
-            await VideoRoom.deleteOne({ roomId });
-
-            await MusicState.deleteOne({ roomId });
-
-            roomManager.stopMusic(roomId);
-            seats.delete(roomId);
-
-            roomUsers.delete(roomId);
-
-            roomMessages.delete(roomId);
-
-            typingUsers.delete(roomId);
-
-            console.log("🗑 Auto cleaned room:", roomId);
-
-            return;
-          }
-        }
-
-        await room.save();
-      }
-      try {
-        // 🔥🔥🔥 MOST IMPORTANT FIX
-        if (socket.data.isBackground) {
-          console.log("🟡 Background user disconnect ignored:", userId);
-          return;
-        }
-
-        if (userId) {
-          // ✅ Remove this socket from user's socket set
-          removeUserSocket(userId, socket.id);
-          const remaining = getUserSocketIds(userId);
-          if (remaining.length === 0) {
-            onlineUsers.delete(userId);
-            micStates.delete(userId);
-            deafenStates.delete(userId.toString());
-          } else {
-            // keep onlineUsers mapped to one active socket
-            onlineUsers.set(userId, remaining[0]);
-          }
-
-          // ===============================
-          // 🔥 CLEAR LEVEL TIMERS (SAFE)
-          // ===============================
-          if (roomStayTimers.has(userId)) {
-            clearInterval(roomStayTimers.get(userId));
-            roomStayTimers.delete(userId);
-          }
-
-          if (micExpTimers.has(userId)) {
-            clearInterval(micExpTimers.get(userId));
-            micExpTimers.delete(userId);
-          }
-
-          if (roomId && typingUsers.has(roomId)) {
-            typingUsers.get(roomId).delete(userId);
-          }
-
-          if (roomId && roomUsers.has(roomId)) {
-            roomUsers.get(roomId).delete(userId);
-          }
-
-          const musicState = roomManager.getState(roomId);
-
-          // 🔥 STOP MUSIC IF DJ LEFT
-          if (
-            roomId &&
-            musicState.playedBy &&
-            musicState.playedBy.toString() === userId.toString()
-          ) {
-            console.log("🎵 DJ left room, stopping music permanently");
-
-            roomManager.stopMusic(roomId);
-
-            await MusicState.findOneAndUpdate(
-              { roomId },
-              {
-                musicFile: null,
-                musicUrl: null,
-                isPlaying: false,
-                pausedAt: 0,
-                startedAt: null,
-                localFilePath: null,
-                playedBy: null,
-              },
-            );
-
-            io.to(`room:${roomId}`).emit("music:stopped", {
-              reason: "dj_left",
-            });
-          }
-        }
-
-        if (roomId) {
-          // ✅ Update DB count
-          await Room.updateOne({ roomId }, { $inc: { currentUsers: -1 } });
-
-          socket.to(`room:${roomId}`).emit("room:userLeft", {
-            userId: socket.data.userId,
-            displayId: socket.data.displayId,
+          io.to(`room:${roomId}`).emit("music:stopped", {
+            reason: "dj_left",
           });
-
-          // ✅ Broadcast updated Watcher Count after someone leaves
-          await broadcastWatcherCount(roomId, io);
         }
+      }
 
-        console.log("❌ Socket disconnected:", socket.id);
-      } catch (err) {
-        console.error("❌ Disconnect cleanup error:", err);
+      // Notify other room participants
+      if (roomId && remainingSockets.length === 0) {
+        socket.to(`room:${roomId}`).emit("room:userLeft", {
+          userId,
+          displayId: socket.data.displayId,
+        });
+        await broadcastWatcherCount(roomId, io);
       }
     });
   });

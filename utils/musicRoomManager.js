@@ -7,11 +7,14 @@ class RoomManager {
   initRoom(roomId) {
     if (!this.roomMusicStates.has(roomId)) {
       this.roomMusicStates.set(roomId, {
+        currentTrackId: null,
         musicFile: null,
         isPlaying: false,
         startedAt: null,
         pausedAt: 0,
         playedBy: null,
+        trackOwnerId: null,
+        duration: 0,
       });
     }
   }
@@ -19,22 +22,28 @@ class RoomManager {
   getState(roomId) {
     return (
       this.roomMusicStates.get(roomId) || {
+        currentTrackId: null,
         musicFile: null,
         isPlaying: false,
         startedAt: null,
         pausedAt: 0,
         playedBy: null,
+        trackOwnerId: null,
+        duration: 0,
       }
     );
   }
 
-  playMusic(roomId, musicFile, playedByUserId) {
+  playMusic(roomId, musicFile, playedByUserId, trackOwnerId = null, currentTrackId = null, duration = 0) {
     const state = {
+      currentTrackId: currentTrackId ? currentTrackId.toString() : null,
       musicFile,
       isPlaying: true,
       startedAt: Date.now(),
       pausedAt: 0,
       playedBy: playedByUserId.toString(),
+      trackOwnerId: trackOwnerId ? trackOwnerId.toString() : null,
+      duration: Number(duration) || 0,
     };
 
     this.roomMusicStates.set(roomId, state);
@@ -44,7 +53,7 @@ class RoomManager {
   pauseMusic(roomId, position) {
     const state = this.getState(roomId);
     state.isPlaying = false;
-    state.pausedAt = position;
+    state.pausedAt = Math.max(0, Number(position) || 0);
     this.roomMusicStates.set(roomId, state);
     return state;
   }
@@ -60,11 +69,14 @@ class RoomManager {
 
   stopMusic(roomId) {
     this.roomMusicStates.set(roomId, {
+      currentTrackId: null,
       musicFile: null,
       isPlaying: false,
       startedAt: null,
       pausedAt: 0,
       playedBy: null,
+      trackOwnerId: null,
+      duration: 0,
     });
   }
 
@@ -73,7 +85,24 @@ class RoomManager {
 
     if (!state.isPlaying) return state.pausedAt;
 
-    return Math.floor((Date.now() - state.startedAt) / 1000); // ✅ seconds
+    const elapsed = Math.floor((Date.now() - state.startedAt) / 1000); // seconds
+    if (state.duration > 0 && elapsed > state.duration) {
+      return state.duration;
+    }
+    return Math.max(0, elapsed);
+  }
+
+  seekTo(roomId, position) {
+    const state = this.getState(roomId);
+    const clamped = Math.max(0, Math.min(Number(position) || 0, state.duration || Infinity));
+    if (state.isPlaying) {
+      state.startedAt = Date.now() - clamped * 1000;
+      state.pausedAt = 0;
+    } else {
+      state.pausedAt = clamped;
+    }
+    this.roomMusicStates.set(roomId, state);
+    return state;
   }
 }
 
