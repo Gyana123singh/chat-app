@@ -10,25 +10,19 @@ async function restoreMusicState(roomId) {
 
   if (db.isPlaying && db.startedAt) {
     roomManager.roomMusicStates.set(roomId, {
-      currentTrackId: db.currentTrackId ? db.currentTrackId.toString() : null,
       musicFile: db.musicFile,
       isPlaying: true,
       startedAt: new Date(db.startedAt).getTime(), // ✅ FIX
       pausedAt: 0,
       playedBy: db.playedBy?.toString() || null,
-      trackOwnerId: db.trackOwnerId ? db.trackOwnerId.toString() : null,
-      duration: db.duration || 0,
     });
   } else {
     roomManager.roomMusicStates.set(roomId, {
-      currentTrackId: db.currentTrackId ? db.currentTrackId.toString() : null,
       musicFile: db.musicFile,
       isPlaying: false,
       startedAt: null,
       pausedAt: db.pausedAt || 0,
       playedBy: db.playedBy?.toString() || null,
-      trackOwnerId: db.trackOwnerId ? db.trackOwnerId.toString() : null,
-      duration: db.duration || 0,
     });
   }
 }

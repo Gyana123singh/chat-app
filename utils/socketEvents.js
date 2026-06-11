@@ -818,29 +818,13 @@ module.exports = (io) => {
         // ===============================
         const currentMusicState = roomManager.getState(roomId);
         const dbState = await MusicState.findOne({ roomId });
-        const RoomMusic = require("../models/musicRoom");
-        const playlist = await RoomMusic.find({ roomId }).sort({ createdAt: 1 });
 
         socket.emit("room:musicState", {
-          roomId,
-          currentTrackId: dbState?.currentTrackId ? dbState.currentTrackId.toString() : null,
-          currentPosition: roomManager.getCurrentPosition(roomId),
+          musicFile: currentMusicState.musicFile,
           isPlaying: currentMusicState.isPlaying,
           startedAt: currentMusicState.startedAt,
-          pausedAt: currentMusicState.pausedAt || 0,
-          trackOwnerId: dbState?.trackOwnerId ? dbState.trackOwnerId.toString() : null,
-          playlist: playlist.map((m) => ({
-            id: m._id.toString(),
-            uploaderId: m.uploadedBy.toString(),
-            uploaderUsername: m.uploaderUsername || "User",
-            originalName: m.originalName,
-            musicUrl: m.musicUrl,
-            cloudinaryPublicId: m.cloudinaryPublicId,
-            duration: m.duration || 0,
-            uploadedAt: m.createdAt,
-          })),
           playedBy: currentMusicState.playedBy,
-          musicFile: currentMusicState.musicFile,
+          currentPosition: roomManager.getCurrentPosition(roomId),
           musicUrl: dbState?.musicUrl || null,
         });
 
