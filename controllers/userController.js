@@ -74,6 +74,9 @@ exports.updateProfile = async (req, res) => {
     const userId = req.user.id;
     console.log("📦 BODY:", req.body);
 
+    // Support both root-level and nested req.body.profile structures
+    const profileData = req.body.profile || {};
+
     const {
       username,
       country,
@@ -87,6 +90,15 @@ exports.updateProfile = async (req, res) => {
       dob,
     } = req.body;
 
+    const finalUsername = username || profileData.username;
+    const finalCountry = country || profileData.country;
+    const finalCountryCode = countryCode || profileData.countryCode;
+    const finalTheme = theme || profileData.theme;
+    const finalGender = gender || profileData.gender;
+    const finalAvatar = avatar || profileData.avatar;
+    const inputBirthday = birthday || birthDate || birthdate || dob || 
+                          profileData.birthday || profileData.birthDate || profileData.birthdate || profileData.dob;
+
     const updateData = {};
 
     // ✅ ENUM VALIDATION
@@ -94,26 +106,26 @@ exports.updateProfile = async (req, res) => {
     const validCodes = ["+91", "+92", "+880"];
 
     // ✅ BASIC FIELDS
-    if (username) updateData.username = username;
+    if (finalUsername) updateData.username = finalUsername;
 
-    if (country) {
-      if (!validCountries.includes(country)) {
+    if (finalCountry) {
+      if (!validCountries.includes(finalCountry)) {
         return res.status(400).json({
           success: false,
           message: "Invalid country",
         });
       }
-      updateData.country = country;
+      updateData.country = finalCountry;
     }
 
-    if (countryCode) {
-      if (!validCodes.includes(countryCode)) {
+    if (finalCountryCode) {
+      if (!validCodes.includes(finalCountryCode)) {
         return res.status(400).json({
           success: false,
           message: "Invalid country code",
         });
       }
-      updateData.countryCode = countryCode;
+      updateData.countryCode = finalCountryCode;
     }
 
     // ✅ Ensure profile exists
@@ -123,11 +135,11 @@ exports.updateProfile = async (req, res) => {
     );
 
     // ✅ PROFILE FIELDS
-    if (theme) updateData["profile.theme"] = theme;
+    if (finalTheme) updateData["profile.theme"] = finalTheme;
 
     // ✅ gender (normalized to "Male", "Female", "Other")
-    if (gender) {
-      const normalizedGender = gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase();
+    if (finalGender) {
+      const normalizedGender = finalGender.charAt(0).toUpperCase() + finalGender.slice(1).toLowerCase();
       const validGenders = ["Male", "Female", "Other"];
       if (validGenders.includes(normalizedGender)) {
         updateData.gender = normalizedGender;
@@ -136,43 +148,80 @@ exports.updateProfile = async (req, res) => {
       }
     }
 
-    // ✅ birthday & age calculation
-    const inputBirthday = birthday || birthDate || birthdate || dob;
+    // ✅ birthday & age calculation with robust parsing to prevent CastError/NaN
     if (inputBirthday) {
-      updateData.birthday = inputBirthday;
-      updateData.birthDate = inputBirthday;
-      updateData.birthdate = inputBirthday;
-      updateData.dob = inputBirthday;
       try {
-        const birthDateObj = new Date(inputBirthday);
-        const today = new Date();
-        let calculatedAge = today.getFullYear() - birthDateObj.getFullYear();
-        const m = today.getMonth() - birthDateObj.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDateObj.getDate())) {
-          calculatedAge--;
+        let birthDateObj = new Date(inputBirthday);
+
+        // Handle common formats like DD/MM/YYYY or DD-MM-YYYY if standard parsing fails
+        if (isNaN(birthDateObj.getTime()) && typeof inputBirthday === "string") {
+          const parts = inputBirthday.trim().split(/[-/]/);
+          if (parts.length === 3) {
+            if (parts[2].length === 4) { // DD/MM/YYYY
+              const day = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const year = parseInt(parts[2], 10);
+              birthDateObj = new Date(year, month, day);
+            } else if (parts[0].length === 4) { // YYYY/MM/DD
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
+              birthDateObj = new Date(year, month, day);
+            }
+          }
         }
-        updateData.age = calculatedAge;
+
+        if (!isNaN(birthDateObj.getTime())) {
+          const formattedDate = birthDateObj.toISOString().split("T")[0];
+          updateData.birthday = formattedDate;
+          updateData.birthDate = formattedDate;
+          updateData.birthdate = formattedDate;
+          updateData.dob = formattedDate;
+
+          const today = new Date();
+          let calculatedAge = today.getFullYear() - birthDateObj.getFullYear();
+          const m = today.getMonth() - birthDateObj.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < birthDateObj.getDate())) {
+            calculatedAge--;
+          }
+          // Only update age if it is a valid positive number
+          if (!isNaN(calculatedAge) && calculatedAge >= 0) {
+            updateData.age = calculatedAge;
+          }
+        } else {
+          // If the date is completely invalid, store the raw input string for these fields
+          // but DO NOT set updateData.age to NaN (so it doesn't cause CastError in MongoDB)
+          console.warn("⚠️ Invalid birthday string format received, saving as raw string:", inputBirthday);
+          updateData.birthday = inputBirthday;
+          updateData.birthDate = inputBirthday;
+          updateData.birthdate = inputBirthday;
+          updateData.dob = inputBirthday;
+        }
       } catch (e) {
         console.error("Age calculation error:", e);
       }
     }
 
     // ✅ Avatar upload (safe)
-    if (avatar && avatar.startsWith("data:image")) {
-      try {
-        const uploadResult = await cloudinary.uploader.upload(avatar, {
-          folder: "users/avatar",
-          transformation: [{ width: 300, height: 300, crop: "fill" }],
-        });
+    if (finalAvatar) {
+      if (finalAvatar.startsWith("data:image")) {
+        try {
+          const uploadResult = await cloudinary.uploader.upload(finalAvatar, {
+            folder: "users/avatar",
+            transformation: [{ width: 300, height: 300, crop: "fill" }],
+          });
 
-        updateData["profile.avatar"] = uploadResult.secure_url;
-        updateData["profile.avatarSource"] = "custom";
-      } catch (err) {
-        console.error("❌ Cloudinary Error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Image upload failed",
-        });
+          updateData["profile.avatar"] = uploadResult.secure_url;
+          updateData["profile.avatarSource"] = "custom";
+        } catch (err) {
+          console.error("❌ Cloudinary Error:", err);
+          return res.status(500).json({
+            success: false,
+            message: "Image upload failed",
+          });
+        }
+      } else if (finalAvatar.startsWith("http")) {
+        updateData["profile.avatar"] = finalAvatar;
       }
     }
 
