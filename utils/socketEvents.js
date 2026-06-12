@@ -1270,7 +1270,16 @@ module.exports = (io) => {
 
         backgroundUsers.delete(userId.toString());
 
-        socket.leave(`room:${roomId}`);
+        const roomName = `room:${roomId}`;
+        socket.leave(roomName);
+
+        // Notify other room participants that the user left
+        io.to(roomName).emit("room:userLeft", {
+          userId,
+          displayId: socket.data.displayId,
+        });
+        await broadcastRoomUsers(roomId);
+        await broadcastWatcherCount(roomId, io);
 
         socket.data.isBackground = false;
 
@@ -3498,10 +3507,12 @@ module.exports = (io) => {
 
       // Notify other room participants
       if (roomId && remainingSockets.length === 0) {
-        socket.to(`room:${roomId}`).emit("room:userLeft", {
+        const roomName = `room:${roomId}`;
+        io.to(roomName).emit("room:userLeft", {
           userId,
           displayId: socket.data.displayId,
         });
+        await broadcastRoomUsers(roomId);
         await broadcastWatcherCount(roomId, io);
       }
     });
