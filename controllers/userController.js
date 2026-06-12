@@ -126,16 +126,7 @@ exports.updateProfile = async (req, res) => {
 
     // ✅ PROFILE FIELDS
     if (bio) updateData["profile.bio"] = bio;
-
-    // ✅ language must be one of the valid enum values
-    if (language) {
-      const validLanguages = ["English", "Hindi", "Tamil", "Telugu", "Urdu"];
-      if (validLanguages.includes(language)) {
-        updateData["profile.language"] = language;
-      }
-      // silently ignore invalid language — don't block the whole update
-    }
-
+    if (language) updateData["profile.language"] = language;
     if (theme) updateData["profile.theme"] = theme;
 
     // ✅ interests must be array
@@ -199,12 +190,10 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    console.log("✅ Final updateData being saved:", JSON.stringify(updateData, null, 2));
-
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updateData },
-      { new: true },
+      { new: true, runValidators: true },
     );
 
     res.status(200).json({
