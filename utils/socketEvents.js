@@ -147,153 +147,195 @@ function startPKTimer(pk, io) {
 // 🎁 DISTRIBUTE PK REWARDS (PK ONLY)
 // ===============================
 async function distributePKRewards(pk, io) {
-  if (!pk || pk.rewardsDistributed) return;
+  try {
+    if (!pk || pk.rewardsDistributed) return;
 
-  const WIN_REWARD = 100;
-  const LOSE_REWARD = 20;
-  const DRAW_REWARD = 50;
+    const WIN_REWARD = 100;
+    const LOSE_REWARD = 20;
+    const DRAW_REWARD = 50;
 
-  if (pk.winner) {
-    const winnerId = pk.winner.toString();
-    const loserId =
-      pk.leftUser.userId.toString() === winnerId
-        ? pk.rightUser.userId.toString()
-        : pk.leftUser.userId.toString();
+    const leftUserId = pk.leftUser?.userId?.toString();
+    const rightUserId = pk.rightUser?.userId?.toString();
 
-    await levelController.addRoomExp(winnerId, WIN_REWARD, io);
-    await levelController.addRoomExp(loserId, LOSE_REWARD, io);
-  } else {
-    // Draw
-    await levelController.addRoomExp(
-      pk.leftUser.userId.toString(),
-      DRAW_REWARD,
-      io,
-    );
-    await levelController.addRoomExp(
-      pk.rightUser.userId.toString(),
-      DRAW_REWARD,
-      io,
-    );
+    if (!leftUserId || !rightUserId) {
+      console.warn("⚠️ Cannot distribute rewards, user ID missing in PK battle:", pk._id);
+      return;
+    }
+
+    if (pk.winner) {
+      const winnerId = pk.winner.toString();
+      const loserId = leftUserId === winnerId ? rightUserId : leftUserId;
+
+      await levelController.addRoomExp(winnerId, WIN_REWARD, io);
+      await levelController.addRoomExp(loserId, LOSE_REWARD, io);
+    } else {
+      // Draw
+      await levelController.addRoomExp(leftUserId, DRAW_REWARD, io);
+      await levelController.addRoomExp(rightUserId, DRAW_REWARD, io);
+    }
+
+    pk.rewardsDistributed = true;
+    await pk.save();
+  } catch (err) {
+    console.error("❌ Error in distributePKRewards:", err);
   }
-
-  pk.rewardsDistributed = true;
-  await pk.save();
 }
 
 // ===============================
 // 🏁 END PK (WINNER + CLEANUP)
 // ===============================
 async function endPKInternal(pkId, io) {
-  const pk = await PKBattle.findById(pkId);
-  if (!pk || pk.status !== "running") return;
+  try {
+    const pk = await PKBattle.findById(pkId);
+    if (!pk || pk.status !== "running") return;
 
-  // End PK
-  pk.status = "ended";
-  pk.endedAt = new Date();
+    console.log(`🥊 Ending PK Battle: ${pkId}`);
 
-  // Winner calculation
-  if (pk.leftUser.score > pk.rightUser.score) {
-    pk.winner = pk.leftUser.userId;
-  } else if (pk.rightUser.score > pk.leftUser.score) {
-    pk.winner = pk.rightUser.userId;
-  } else {
-    pk.winner = null; // draw
-  }
-  if (pk.mvpSupporter) {
-    await levelController.addRoomExp(pk.mvpSupporter.toString(), 50, io);
+    // End PK
+    pk.status = "ended";
+    pk.endedAt = new Date();
 
-    io.to(pk.mvpSupporter.toString()).emit("pk:mvp", {
-      message: "🏆 You are the MVP Supporter! +50 EXP",
-    });
-  }
-
-  const supporterMap = new Map();
-
-  pk.contributions.forEach((c) => {
-    const key = c.fromUser.toString();
-    supporterMap.set(key, (supporterMap.get(key) || 0) + c.value);
-  });
-
-  const sorted = Array.from(supporterMap.entries())
-    .map(([userId, total]) => ({ userId, total }))
-    .sort((a, b) => b.total - a.total);
-
-  pk.topSupporters = sorted.slice(0, 10); // top 10
-  pk.mvpSupporter = sorted.length > 0 ? sorted[0].userId : null;
-
-  await pk.save();
-  // ===============================
-  // 📊 Update User PK Stats (W/L/D)
-  // ===============================
-  const leftId = pk.leftUser.userId.toString();
-  const rightId = pk.rightUser.userId.toString();
-
-  const leftUser = await User.findById(leftId);
-  const rightUser = await User.findById(rightId);
-
-  if (leftUser && rightUser) {
-    if (pk.winner) {
-      if (pk.winner.toString() === leftId) {
-        leftUser.pkStats.wins += 1;
-        rightUser.pkStats.losses += 1;
-      } else {
-        rightUser.pkStats.wins += 1;
-        leftUser.pkStats.losses += 1;
-      }
+    // Winner calculation
+    if (pk.leftUser.score > pk.rightUser.score) {
+      pk.winner = pk.leftUser.userId;
+    } else if (pk.rightUser.score > pk.leftUser.score) {
+      pk.winner = pk.rightUser.userId;
     } else {
-      // Draw
-      leftUser.pkStats.draws += 1;
-      rightUser.pkStats.draws += 1;
+      pk.winner = null; // draw
     }
 
-    await leftUser.save();
-    await rightUser.save();
-  }
-
-  // ===============================
-  // 🏆 Reward MVP Supporter
-  // ===============================
-  if (pk.mvpSupporter) {
-    try {
-      await levelController.addRoomExp(pk.mvpSupporter.toString(), 50, io);
-
-      // Notify MVP user
-      io.to(pk.mvpSupporter.toString()).emit("pk:mvp", {
-        message: "🏆 You are the MVP Supporter! +50 EXP",
+    const supporterMap = new Map();
+    if (Array.isArray(pk.contributions)) {
+      pk.contributions.forEach((c) => {
+        if (c.fromUser) {
+          const key = c.fromUser.toString();
+          supporterMap.set(key, (supporterMap.get(key) || 0) + c.value);
+        }
       });
-    } catch (e) {
-      console.error("❌ MVP reward error:", e.message);
     }
+
+    const sorted = Array.from(supporterMap.entries())
+      .map(([userId, total]) => ({ userId, total }))
+      .sort((a, b) => b.total - a.total);
+
+    pk.topSupporters = sorted.slice(0, 10); // top 10
+    pk.mvpSupporter = sorted.length > 0 ? sorted[0].userId : null;
+
+    await pk.save();
+
+    // ===============================
+    // 📊 Update User PK Stats (W/L/D)
+    // ===============================
+    const leftId = pk.leftUser?.userId?.toString();
+    const rightId = pk.rightUser?.userId?.toString();
+
+    let leftUser = null;
+    let rightUser = null;
+
+    if (leftId && rightId) {
+      leftUser = await User.findById(leftId);
+      rightUser = await User.findById(rightId);
+
+      if (leftUser && rightUser) {
+        if (!leftUser.pkStats) {
+          leftUser.pkStats = { wins: 0, losses: 0, draws: 0, totalSupportSent: 0, totalSupportReceived: 0 };
+        }
+        if (!rightUser.pkStats) {
+          rightUser.pkStats = { wins: 0, losses: 0, draws: 0, totalSupportSent: 0, totalSupportReceived: 0 };
+        }
+
+        if (pk.winner) {
+          if (pk.winner.toString() === leftId) {
+            leftUser.pkStats.wins += 1;
+            rightUser.pkStats.losses += 1;
+          } else {
+            rightUser.pkStats.wins += 1;
+            leftUser.pkStats.losses += 1;
+          }
+        } else {
+          // Draw
+          leftUser.pkStats.draws += 1;
+          rightUser.pkStats.draws += 1;
+        }
+
+        await leftUser.save();
+        await rightUser.save();
+      }
+    }
+
+    // ===============================
+    // 🏆 Reward MVP Supporter
+    // ===============================
+    if (pk.mvpSupporter) {
+      try {
+        await levelController.addRoomExp(pk.mvpSupporter.toString(), 50, io);
+
+        // Notify MVP user
+        io.to(pk.mvpSupporter.toString()).emit("pk:mvp", {
+          message: "🏆 You are the MVP Supporter! +50 EXP",
+        });
+      } catch (e) {
+        console.error("❌ MVP reward error:", e.message);
+      }
+    }
+
+    // 🎁 Distribute rewards (PK ONLY)
+    await distributePKRewards(pk, io);
+
+    // 🧹 Clear room.activePK
+    const room = await Room.findOne({ roomId: pk.roomId });
+    if (room) {
+      room.activePK = null;
+      await room.save();
+    }
+
+    // ⏱️ Clear timer
+    const timer = pkTimers.get(pkId.toString());
+    if (timer) {
+      clearTimeout(timer);
+      pkTimers.delete(pkId.toString());
+    }
+
+    // 📢 Notify clients
+    io.to(`room:${pk.roomId}`).emit("pk:ended", {
+      pkId: pk._id,
+      leftScore: pk.leftUser?.score || 0,
+      rightScore: pk.rightUser?.score || 0,
+      winner: pk.winner,
+      winnerDisplayId: pk.winner
+        ? (pk.winner.toString() === leftId ? leftUser?.displayId : rightUser?.displayId)
+        : null,
+    });
+  } catch (err) {
+    console.error("❌ Error ending PK battle:", err);
   }
-
-  // 🎁 Distribute rewards (PK ONLY)
-  await distributePKRewards(pk, io);
-
-  // 🧹 Clear room.activePK
-  const room = await Room.findOne({ roomId: pk.roomId });
-  if (room) {
-    room.activePK = null;
-    await room.save();
-  }
-
-  // ⏱️ Clear timer
-  const timer = pkTimers.get(pkId.toString());
-  if (timer) {
-    clearTimeout(timer);
-    pkTimers.delete(pkId.toString());
-  }
-
-  // 📢 Notify clients
-  io.to(`room:${pk.roomId}`).emit("pk:ended", {
-    pkId: pk._id,
-    leftScore: pk.leftUser.score,
-    rightScore: pk.rightUser.score,
-    winner: pk.winner,
-    winnerDisplayId: pk.winner
-      ? (pk.winner.toString() === leftId ? leftUser?.displayId : rightUser?.displayId)
-      : null,
-  });
 }
+
+// ===============================
+// 🥊 CHECK AND END PK ON USER LEAVE
+// ===============================
+async function checkAndEndPKOnUserLeave(roomId, userId, io) {
+  try {
+    if (!roomId || !userId) return;
+    const room = await Room.findOne({ roomId });
+    if (!room || !room.activePK) return;
+
+    const pk = await PKBattle.findById(room.activePK);
+    if (!pk || pk.status !== "running") return;
+
+    const leftUserId = pk.leftUser?.userId?.toString();
+    const rightUserId = pk.rightUser?.userId?.toString();
+    const leavingUserId = userId.toString();
+
+    if (leavingUserId === leftUserId || leavingUserId === rightUserId) {
+      console.log(`🥊 PK participant ${leavingUserId} left room/seat. Ending PK battle ${pk._id}.`);
+      await endPKInternal(pk._id, io);
+    }
+  } catch (err) {
+    console.error("❌ Error in checkAndEndPKOnUserLeave:", err);
+  }
+}
+
 
 module.exports = (io) => {
   const onlineUsers = new Map();
@@ -1077,6 +1119,9 @@ module.exports = (io) => {
 
         if (!userId || !roomId) return;
 
+        // ✅ Check and end PK if user was in PK
+        await checkAndEndPKOnUserLeave(roomId, userId, io);
+
         // ✅ PREVENT DOUBLE CLEANUP
         if (socket.data.hasLeftRoom) return;
 
@@ -1175,6 +1220,11 @@ module.exports = (io) => {
             room.status = "ended";
 
             await room.save();
+
+            // ✅ End active PK if any
+            if (room.activePK) {
+              await endPKInternal(room.activePK, io);
+            }
 
             await Room.deleteOne({ roomId });
 
@@ -1688,6 +1738,9 @@ module.exports = (io) => {
       if (!userId || !roomId) return;
 
       console.log("🪑 Leaving seat:", userId);
+
+      // ✅ Check and end PK if user was in PK
+      await checkAndEndPKOnUserLeave(roomId, userId, io);
 
       // ✅ FORCE REMOVE FROM SEATS (STRING SAFE)
       let roomSeats = seats.get(roomId) || [];
@@ -3280,6 +3333,10 @@ module.exports = (io) => {
 
       console.log(`❌ Socket disconnected: ${socket.id} (user: ${userId}, room: ${roomId})`);
 
+      if (userId && roomId) {
+        await checkAndEndPKOnUserLeave(roomId, userId, io);
+      }
+
       if (userId) {
         removeUserSocket(userId, socket.id);
       }
@@ -3407,6 +3464,11 @@ module.exports = (io) => {
 
                   activeRoom.status = "ended";
                   await activeRoom.save();
+
+                  if (activeRoom.activePK) {
+                    await endPKInternal(activeRoom.activePK, io);
+                  }
+
                   await Room.deleteOne({ roomId });
                   await VideoRoom.deleteOne({ roomId });
                   await MusicState.deleteOne({ roomId });
@@ -3474,3 +3536,4 @@ module.exports = (io) => {
   };
 };
 module.exports.startPKTimer = startPKTimer;
+module.exports.endPKInternal = endPKInternal;

@@ -232,7 +232,14 @@ setInterval(
       });
 
       for (const room of zombieRooms) {
-        console.log("🧹 Cleaning zombie room:", room.roomId);
+        // ✅ End active PK if running
+        if (room.activePK) {
+          const PKBattle = require("./models/pkBattle");
+          await PKBattle.findByIdAndUpdate(room.activePK, {
+            status: "ended",
+            endedAt: new Date(),
+          });
+        }
 
         await Room.deleteOne({ roomId: room.roomId });
 

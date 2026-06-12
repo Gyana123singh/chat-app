@@ -717,6 +717,16 @@ exports.deleteRoom = async (req, res) => {
 
     // ✅ DELETE DB
     await VideoRoom.deleteOne({ roomId });
+
+    // ✅ End active PK battle if running
+    if (room.activePK) {
+      const PKBattle = require("../models/pkBattle");
+      await PKBattle.findByIdAndUpdate(room.activePK, {
+        status: "ended",
+        endedAt: new Date(),
+      });
+    }
+
     await Room.deleteOne({ roomId });
 
     // 🔥 SYNC SOCKET USERS

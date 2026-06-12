@@ -1,6 +1,6 @@
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room");
-const { startPKTimer } = require("../utils/socketEvents");
+const { startPKTimer, endPKInternal } = require("../utils/socketEvents");
 
 // =========================
 // START PK
@@ -115,10 +115,10 @@ exports.endPK = async (req, res) => {
 
     const io = req.app.get("io");
 
-    // Ask socket layer to end PK properly
-    io.to(`room:${pk.roomId}`).emit("pk:forceEnd", { pkId });
+    // Call endPKInternal directly to update database and notify clients properly
+    await endPKInternal(pkId, io);
 
-    return res.json({ success: true, message: "PK end requested" });
+    return res.json({ success: true, message: "PK ended successfully" });
   } catch (err) {
     console.error("End PK error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
