@@ -73,14 +73,10 @@ exports.updateProfile = async (req, res) => {
 
     const {
       username,
-      phone,
       country,
       countryCode,
       avatar,
-      bio,
-      language,
       theme,
-      interests,
       gender,
       birthday,
       birthDate,
@@ -96,7 +92,6 @@ exports.updateProfile = async (req, res) => {
 
     // ✅ BASIC FIELDS
     if (username) updateData.username = username;
-    if (phone) updateData.phone = phone;
 
     if (country) {
       if (!validCountries.includes(country)) {
@@ -125,14 +120,7 @@ exports.updateProfile = async (req, res) => {
     );
 
     // ✅ PROFILE FIELDS
-    if (bio) updateData["profile.bio"] = bio;
-    if (language) updateData["profile.language"] = language;
     if (theme) updateData["profile.theme"] = theme;
-
-    // ✅ interests must be array
-    if (Array.isArray(interests)) {
-      updateData["profile.interests"] = interests;
-    }
 
     // ✅ gender (normalized to "Male", "Female", "Other")
     if (gender) {
