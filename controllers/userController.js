@@ -9,7 +9,7 @@ exports.getUserById = async (req, res) => {
     const userId = req.user.id;
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday age"
+      "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday birthDate birthdate dob age"
     );
 
     if (!user) {
@@ -35,6 +35,9 @@ exports.getUserById = async (req, res) => {
         phone: user.phone,
         gender: user.gender || "Other",
         birthday: user.birthday || null,
+        birthDate: user.birthDate || user.birthday || null,
+        birthdate: user.birthdate || user.birthday || null,
+        dob: user.dob || user.birthday || null,
         age: user.age || 18,
 
         coins: user.stats?.coins,
@@ -137,6 +140,9 @@ exports.updateProfile = async (req, res) => {
     const inputBirthday = birthday || birthDate || birthdate || dob;
     if (inputBirthday) {
       updateData.birthday = inputBirthday;
+      updateData.birthDate = inputBirthday;
+      updateData.birthdate = inputBirthday;
+      updateData.dob = inputBirthday;
       try {
         const birthDateObj = new Date(inputBirthday);
         const today = new Date();

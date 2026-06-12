@@ -213,6 +213,21 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    birthDate: {
+      type: String,
+      default: null,
+    },
+
+    birthdate: {
+      type: String,
+      default: null,
+    },
+
+    dob: {
+      type: String,
+      default: null,
+    },
+
     totalSpent: {
       type: Number,
       default: 0,
