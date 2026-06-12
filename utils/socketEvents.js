@@ -730,12 +730,11 @@ module.exports = (io) => {
           });
         }
 
-        // ❌ HOST LEFT
-        if (roomDoc.status === "host_left") {
-          return socket.emit("room:expired", {
-            message: "Host left the room",
-          });
-        }
+        // ❌ HOST LEFT (room still usable — users can still join)
+        // We no longer block entry when host_left. Room stays active.
+        // if (roomDoc.status === "host_left") {
+        //   return socket.emit("room:expired", { message: "Host left the room" });
+        // }
 
         // ===============================
         // 📝 SEND DESCRIPTION (FIXED)
@@ -1177,19 +1176,25 @@ module.exports = (io) => {
         // =========================
         if (room.host && room.host.toString() === userId.toString()) {
           room.hostOnline = false;
-
           room.hostLeftAt = new Date();
 
           if (!room.isHelpRoom) {
-            room.status = "host_left";
-            room.isActive = false;
+            // ✅ Only mark room as host_left if NO other users remain
+            if (room.currentUsers <= 0) {
+              room.status = "host_left";
+              room.isActive = false;
+            }
+            // else: room stays active — other users are still inside
           }
 
+          // 📢 Inform room that host left (NOT a kick — just a notification)
           io.to(`room:${roomId}`).emit("room:hostLeft", {
             roomId,
+            hostLeft: true,
+            usersRemaining: room.currentUsers,
           });
 
-          console.log("🚨 Host left:", roomId);
+          console.log(`🚨 Host left room ${roomId}. Remaining users: ${room.currentUsers}`);
         }
 
         // =========================
@@ -3398,6 +3403,13 @@ module.exports = (io) => {
             room.hostLeftAt = new Date();
             await room.save();
 
+            // 📢 Inform room that host disconnected (NOT a kick)
+            io.to(`room:${roomId}`).emit("room:hostLeft", {
+              roomId,
+              hostLeft: true,
+              usersRemaining: room.currentUsers,
+            });
+
             if (!room.isHelpRoom) {
               if (hostLeftTimeouts.has(roomId)) {
                 clearTimeout(hostLeftTimeouts.get(roomId));
@@ -3413,12 +3425,18 @@ module.exports = (io) => {
                     return;
                   }
 
+                  // ✅ Only close room if NO users remain after 90s
+                  const roomSocketList = await io.in(`room:${roomId}`).fetchSockets();
+                  if (roomSocketList.length > 0 || activeRoom.currentUsers > 0) {
+                    console.log(`ℹ️ Host grace period: room ${roomId} still has users. Keeping active.`);
+                    return;
+                  }
+
                   activeRoom.status = "host_left";
                   activeRoom.isActive = false;
                   await activeRoom.save();
 
-                  io.to(`room:${roomId}`).emit("room:hostLeft", { roomId });
-                  console.log(`🚪 Host grace period expired. Room ${roomId} marked as host_left.`);
+                  console.log(`🚪 Host grace period expired. Room ${roomId} empty, marked as host_left.`);
                 } catch (err) {
                   console.error("❌ Error during host left grace period:", err);
                 }
