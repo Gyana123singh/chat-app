@@ -190,10 +190,12 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
+    console.log("✅ updateData going to DB:", JSON.stringify(updateData, null, 2));
+
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updateData },
-      { new: true, runValidators: true },
+      { new: true },
     );
 
     res.status(200).json({
