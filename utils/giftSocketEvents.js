@@ -353,7 +353,9 @@ module.exports = (socket, io) => {
   socket.on("store:gift:buy", async (payload, callback) => {
     try {
       const userId = socket.data.userId;
-      const { giftId, duration = 1 } = payload;
+      const username = socket.data.username;
+      const avatar = socket.data.avatar;
+      const { giftId, duration = 1, roomId = null } = payload;
 
       if (!userId || !giftId) {
         return socket.emit("store:gift:error", { message: "Missing fields" });
@@ -506,6 +508,69 @@ module.exports = (socket, io) => {
       }
 
       /* ===============================
+       🔥 ROOM BROADCASTS (if in a room)
+      =============================== */
+
+      if (roomId) {
+        // 🖼️ Notify room about buyer's new FRAME
+        if (gift.effectType === "FRAME") {
+          io.to(`room:${roomId}`).emit("user:frame:update", {
+            userId,
+            frame: {
+              icon: gift.icon,
+              expiresAt,
+            },
+          });
+        }
+
+        // 🎨 Notify room about THEME change
+        if (gift.effectType === "THEME") {
+          io.to(`room:${roomId}`).emit("room:theme:update", {
+            theme: gift.name.toLowerCase(),
+            triggeredBy: userId,
+          });
+        }
+
+        // 🎬 Broadcast gift animation to room
+        const roomEffectPayload = {
+          type: "SELF_GIFT",
+          fromUserId: userId,
+          fromUsername: username || "User",
+          fromAvatar: avatar || null,
+          toUserId: userId,
+          giftId: gift._id,
+          name: gift.name,
+          icon: gift.icon,
+          animationUrl: gift.animationUrl || gift.icon,
+          rarity: gift.rarity,
+          duration: finalDuration,
+        };
+
+        io.to(`room:${roomId}`).emit("room:effect", roomEffectPayload);
+
+        // 🔔 Gift notification for room chat
+        io.to(`room:${roomId}`).emit("gift:notification", {
+          fromUserId: userId,
+          fromUsername: username || "User",
+          fromAvatar: avatar || null,
+          recipients: [{
+            userId,
+            username: username || "User",
+            avatar: avatar || null,
+          }],
+          gift: {
+            _id: gift._id,
+            name: gift.name,
+            icon: gift.icon,
+            animationUrl: gift.animationUrl || gift.icon,
+            price: gift.price,
+          },
+          quantity: 1,
+          text: `${username || "User"} bought ${gift.name} for themselves`,
+        });
+      }
+
+      /* ===============================
            Save Transaction
         =============================== */
 
@@ -524,7 +589,6 @@ module.exports = (socket, io) => {
         status: "completed",
         completedAt: new Date(),
       });
-
 
       const boughtPayload = {
         giftId: gift._id,
