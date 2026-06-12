@@ -208,6 +208,11 @@ const userSchema = new mongoose.Schema(
       default: 18,
     },
 
+    birthday: {
+      type: String,
+      default: null,
+    },
+
     totalSpent: {
       type: Number,
       default: 0,

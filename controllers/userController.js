@@ -9,7 +9,7 @@ exports.getUserById = async (req, res) => {
     const userId = req.user.id;
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats isVerified displayId"
+      "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday age"
     );
 
     if (!user) {
@@ -33,6 +33,9 @@ exports.getUserById = async (req, res) => {
         country: user.country,
         countryCode: user.countryCode,
         phone: user.phone,
+        gender: user.gender || "Other",
+        birthday: user.birthday || null,
+        age: user.age || 18,
 
         coins: user.stats?.coins,
         followers: user.stats?.followers,
@@ -79,6 +82,10 @@ exports.updateProfile = async (req, res) => {
       theme,
       interests,
       gender,
+      birthday,
+      birthDate,
+      birthdate,
+      dob,
     } = req.body;
 
     const updateData = {};
@@ -127,8 +134,34 @@ exports.updateProfile = async (req, res) => {
       updateData["profile.interests"] = interests;
     }
 
-    // ✅ gender
-    if (gender) updateData.gender = gender;
+    // ✅ gender (normalized to "Male", "Female", "Other")
+    if (gender) {
+      const normalizedGender = gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase();
+      const validGenders = ["Male", "Female", "Other"];
+      if (validGenders.includes(normalizedGender)) {
+        updateData.gender = normalizedGender;
+      } else {
+        updateData.gender = "Other";
+      }
+    }
+
+    // ✅ birthday & age calculation
+    const inputBirthday = birthday || birthDate || birthdate || dob;
+    if (inputBirthday) {
+      updateData.birthday = inputBirthday;
+      try {
+        const birthDateObj = new Date(inputBirthday);
+        const today = new Date();
+        let calculatedAge = today.getFullYear() - birthDateObj.getFullYear();
+        const m = today.getMonth() - birthDateObj.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDateObj.getDate())) {
+          calculatedAge--;
+        }
+        updateData.age = calculatedAge;
+      } catch (e) {
+        console.error("Age calculation error:", e);
+      }
+    }
 
     // ✅ Avatar upload (safe)
     if (avatar && avatar.startsWith("data:image")) {
