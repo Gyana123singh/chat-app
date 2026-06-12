@@ -1233,20 +1233,12 @@ module.exports = (io) => {
 
             await Room.deleteOne({ roomId });
 
-            // Graceful cleanup: schedule VideoRoom deletion after 90s if still empty
-            if (!videoRoomCleanupTimeouts.has(roomId)) {
-              const vrTimeout = setTimeout(async () => {
-                try {
-                  const vr = await VideoRoom.findOne({ roomId });
-                  if (vr) {
-                    await VideoRoom.deleteOne({ roomId });
-                    console.log(`🗑 VideoRoom deleted after grace period: ${roomId}`);
-                  }
-                } catch (e) {
-                  console.error('❌ VideoRoom cleanup error:', e);
-                }
-              }, 90000); // 90 seconds
-              videoRoomCleanupTimeouts.set(roomId, vrTimeout);
+            // ✅ Delete VideoRoom immediately
+            try {
+              await VideoRoom.deleteOne({ roomId });
+              console.log(`🗑 VideoRoom deleted immediately: ${roomId}`);
+            } catch (e) {
+              console.error('❌ VideoRoom cleanup error:', e);
             }
 
             await MusicState.deleteOne({ roomId });
@@ -3411,37 +3403,16 @@ module.exports = (io) => {
             });
 
             if (!room.isHelpRoom) {
-              if (hostLeftTimeouts.has(roomId)) {
-                clearTimeout(hostLeftTimeouts.get(roomId));
+              // ✅ Immediately check if room is empty — if so, mark host_left
+              const roomSocketList = await io.in(`room:${roomId}`).fetchSockets();
+              if (roomSocketList.length === 0 && room.currentUsers <= 0) {
+                room.status = "host_left";
+                room.isActive = false;
+                await room.save();
+                console.log(`🚨 Host disconnected. Room ${roomId} empty, marked as host_left.`);
+              } else {
+                console.log(`ℹ️ Host disconnected but room ${roomId} still has users. Keeping active.`);
               }
-              const timeout = setTimeout(async () => {
-                hostLeftTimeouts.delete(roomId);
-                try {
-                  const activeRoom = await Room.findOne({ roomId });
-                  if (!activeRoom) return;
-
-                  if (activeRoom.hostOnline) {
-                    console.log(`ℹ️ Host left timeout aborted for room ${roomId}. Host is online.`);
-                    return;
-                  }
-
-                  // ✅ Only close room if NO users remain after 90s
-                  const roomSocketList = await io.in(`room:${roomId}`).fetchSockets();
-                  if (roomSocketList.length > 0 || activeRoom.currentUsers > 0) {
-                    console.log(`ℹ️ Host grace period: room ${roomId} still has users. Keeping active.`);
-                    return;
-                  }
-
-                  activeRoom.status = "host_left";
-                  activeRoom.isActive = false;
-                  await activeRoom.save();
-
-                  console.log(`🚪 Host grace period expired. Room ${roomId} empty, marked as host_left.`);
-                } catch (err) {
-                  console.error("❌ Error during host left grace period:", err);
-                }
-              }, 90000); // 90 seconds grace period
-              hostLeftTimeouts.set(roomId, timeout);
             }
           }
 
@@ -3463,44 +3434,34 @@ module.exports = (io) => {
               typingUsers.delete(roomId);
               console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
             } else {
-              // Schedule room deletion
-              if (roomCleanupTimeouts.has(roomId)) {
-                clearTimeout(roomCleanupTimeouts.get(roomId));
-              }
-              const timeout = setTimeout(async () => {
-                roomCleanupTimeouts.delete(roomId);
-                try {
-                  const activeRoom = await Room.findOne({ roomId });
-                  if (!activeRoom) return;
-
+              // ✅ Immediately delete empty room on disconnect
+              try {
+                const activeRoom = await Room.findOne({ roomId });
+                if (activeRoom) {
                   const roomName = `room:${roomId}`;
                   const sockets = await io.in(roomName).fetchSockets();
-                  if (sockets.length > 0 || activeRoom.currentUsers > 0) {
-                    console.log(`ℹ️ Cleanup aborted for room ${roomId}. Active sockets/users found.`);
-                    return;
+                  if (sockets.length === 0 && activeRoom.currentUsers <= 0) {
+                    activeRoom.status = "ended";
+                    await activeRoom.save();
+
+                    if (activeRoom.activePK) {
+                      await endPKInternal(activeRoom.activePK, io);
+                    }
+
+                    await Room.deleteOne({ roomId });
+                    await VideoRoom.deleteOne({ roomId });
+                    await MusicState.deleteOne({ roomId });
+                    roomManager.stopMusic(roomId);
+                    seats.delete(roomId);
+                    roomUsers.delete(roomId);
+                    roomMessages.delete(roomId);
+                    typingUsers.delete(roomId);
+                    console.log(`🗑 Empty room ${roomId} deleted immediately on disconnect.`);
                   }
-
-                  activeRoom.status = "ended";
-                  await activeRoom.save();
-
-                  if (activeRoom.activePK) {
-                    await endPKInternal(activeRoom.activePK, io);
-                  }
-
-                  await Room.deleteOne({ roomId });
-                  await VideoRoom.deleteOne({ roomId });
-                  await MusicState.deleteOne({ roomId });
-                  roomManager.stopMusic(roomId);
-                  seats.delete(roomId);
-                  roomUsers.delete(roomId);
-                  roomMessages.delete(roomId);
-                  typingUsers.delete(roomId);
-                  console.log(`🗑 Empty room ${roomId} deleted after grace period.`);
-                } catch (err) {
-                  console.error("❌ Error during delayed room cleanup:", err);
                 }
-              }, 90000); // 90 seconds grace period
-              roomCleanupTimeouts.set(roomId, timeout);
+              } catch (err) {
+                console.error("❌ Error during room cleanup on disconnect:", err);
+              }
             }
           }
 
