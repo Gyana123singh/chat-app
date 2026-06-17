@@ -507,7 +507,7 @@ module.exports = (io) => {
         // ===============================
         // ✅ FETCH & CHECK ROOM
         // ===============================
-        const roomDoc = await Room.findOne({ roomId });
+        const roomDoc = await Room.findOne({ roomId }).select("+password");
         if (!roomDoc) {
           return socket.emit("room:error", { message: "Room not found" });
         }
@@ -683,7 +683,7 @@ module.exports = (io) => {
         // ===============================
         // ✅ FETCH ROOM ONCE (IMPORTANT FIX)
         // ===============================
-        const roomDoc = await Room.findOne({ roomId });
+        const roomDoc = await Room.findOne({ roomId }).select("+password");
         // ❌ ROOM NOT FOUND
         if (!roomDoc) {
           return socket.emit("room:error", {

@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require("uuid");
 const VideoRoom = require("../models/videoRoom");
 const mongoose = require("mongoose");
 
-const findRoomByIdOrUuid = async (roomId, populateField = "") => {
+const findRoomByIdOrUuid = async (roomId, populateField = "", selectFields = "") => {
   const query = {
     $or: [
       { roomId },
@@ -13,6 +13,9 @@ const findRoomByIdOrUuid = async (roomId, populateField = "") => {
     ],
   };
   let q = Room.findOne(query);
+  if (selectFields) {
+    q = q.select(selectFields);
+  }
   if (populateField) {
     q = q.populate(populateField, "username avatar");
   }
@@ -761,7 +764,7 @@ exports.joinRoom = async (req, res) => {
       });
     }
 
-    const room = await findRoomByIdOrUuid(roomId);
+    const room = await findRoomByIdOrUuid(roomId, "", "+password");
 
     if (!room) {
       return res.status(404).json({
