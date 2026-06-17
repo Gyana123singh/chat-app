@@ -610,6 +610,14 @@ module.exports = (io) => {
           seatCount: roomDoc?.seatCount || 10,
         });
 
+        /* ===== LOCKED SEATS & STATE ===== */
+        socket.emit("room:seats:lockedAll", {
+          lockedSeats: roomDoc?.lockedSeats || [],
+        });
+        socket.emit("room:lockedState", {
+          isLocked: roomDoc?.isLocked || false,
+        });
+
         /* ===== DESCRIPTION ===== */
         socket.emit("room:description", {
           roomId,
@@ -860,6 +868,13 @@ module.exports = (io) => {
         socket.emit("room:seatCount", {
           roomId,
           seatCount: roomDoc?.seatCount || 10,
+        });
+        //room:lockedSeats & state
+        socket.emit("room:seats:lockedAll", {
+          lockedSeats: roomDoc?.lockedSeats || [],
+        });
+        socket.emit("room:lockedState", {
+          isLocked: roomDoc?.isLocked || false,
         });
         // ===============================
         // 💬 MESSAGES
