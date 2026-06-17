@@ -346,13 +346,20 @@ exports.searchUsers = async (req, res) => {
       });
     }
 
-    const users = await User.find({
+    const isNumeric = /^\d+$/.test(query);
+    const searchQuery = {
       $or: [
         { username: { $regex: query, $options: "i" } },
         { email: { $regex: query, $options: "i" } },
       ],
-    })
-      .select("username profile.avatar stats")
+    };
+
+    if (isNumeric) {
+      searchQuery.$or.push({ displayId: Number(query) });
+    }
+
+    const users = await User.find(searchQuery)
+      .select("username profile.avatar stats displayId")
       .limit(20);
 
     res.status(200).json({

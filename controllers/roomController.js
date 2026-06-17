@@ -60,8 +60,14 @@ exports.createRoom = async (req, res) => {
       });
     }
 
-    // ✅ GENERATE ROOM ID
-    const roomId = uuidv4();
+    // ✅ GENERATE ROOM ID (8-digit unique number)
+    let roomId;
+    let unique = false;
+    while (!unique) {
+      roomId = String(Math.floor(10000000 + Math.random() * 90000000));
+      const existing = await Room.findOne({ roomId });
+      if (!existing) unique = true;
+    }
 
     // 🔥 FORCE MODE (NO PAYLOAD USED AT ALL)
     const safeMode = "Chat";
@@ -597,6 +603,7 @@ exports.getAllRooms = async (req, res) => {
 
     if (search) {
       query.$or = [
+        { roomId: search },
         { title: { $regex: search, $options: "i" } },
         { description: { $regex: search, $options: "i" } },
       ];
