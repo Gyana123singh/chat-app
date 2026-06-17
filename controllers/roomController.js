@@ -368,8 +368,8 @@ exports.recordVideoSession = async (req, res) => {
         100,
         Math.round(
           (safeFPS / 30) * 40 +
-            (safeLatency <= 100 ? 30 : 20) +
-            (safeDropped === 0 ? 30 : 10),
+          (safeLatency <= 100 ? 30 : 20) +
+          (safeDropped === 0 ? 30 : 10),
         ),
       ),
     );
@@ -432,7 +432,7 @@ exports.getVideoQualityMetrics = async (req, res) => {
       Math.round(
         (videoRoom.participants.reduce((sum, p) => sum + (p.videoFPS || 0), 0) /
           participantCount) *
-          10,
+        10,
       ) / 10;
 
     const avgLatency = Math.round(
@@ -445,12 +445,12 @@ exports.getVideoQualityMetrics = async (req, res) => {
     const sessionDuration = Math.max(
       1,
       (videoRoom.video.lastSyncTime?.getTime() || Date.now()) -
-        videoRoom.createdAt.getTime(),
+      videoRoom.createdAt.getTime(),
     );
     const bandwidthPerSecond =
       Math.round(
         ((videoRoom.stats.totalBandwidthUsed || 0) / (sessionDuration / 1000)) *
-          100,
+        100,
       ) / 100;
 
     // ✅ FIX #6: CLAMP QUALITY SCORE TO 0-100
@@ -460,8 +460,8 @@ exports.getVideoQualityMetrics = async (req, res) => {
         100,
         Math.round(
           (avgFPS / 30) * 40 +
-            (avgLatency <= 100 ? 30 : 20) +
-            (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
+          (avgLatency <= 100 ? 30 : 20) +
+          (videoRoom.stats.droppedFrames === 0 ? 30 : 10),
         ),
       ),
     );
@@ -506,10 +506,10 @@ exports.getVideoQualityMetrics = async (req, res) => {
         // 🖥️ Host Info
         host: videoRoom.hostId
           ? {
-              id: videoRoom.hostId._id,
-              username: videoRoom.hostId.username || "Unknown",
-              avatar: videoRoom.hostId.profile?.avatar || null,
-            }
+            id: videoRoom.hostId._id,
+            username: videoRoom.hostId.username || "Unknown",
+            avatar: videoRoom.hostId.profile?.avatar || null,
+          }
           : null,
       },
     });
