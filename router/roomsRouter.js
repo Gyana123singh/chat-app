@@ -16,7 +16,7 @@ router.put("/:roomId/unlock", authMiddleware, roomController.unlockRoom);
 router.delete("/:roomId", authMiddleware, roomController.deleteRoom);
 router.post("/:roomId/join", authMiddleware, roomController.joinRoom);
 router.post("/:roomId/leave", authMiddleware, roomController.leaveRoom);
-router.get("get-popular-rooms", roomController.getPopularRooms);
+router.get("/get-popular-rooms", roomController.getPopularRooms);
 
 // 🎬 VIDEO ENDPOINTS (NEW)
 router.get(
