@@ -1019,6 +1019,13 @@ exports.setPassword = async (req, res) => {
       });
     }
 
+    if (String(password).length !== 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be exactly 6 characters",
+      });
+    }
+
     const room = await findRoomByIdOrUuid(roomId);
 
     if (!room) {
