@@ -3445,12 +3445,14 @@ module.exports = (io) => {
 
       // If the user has no remaining active socket connections, clean up their room presence
       if (userId && roomId && remainingSockets.length === 0) {
-        // Remove from seats map
+        // Remove from seats map (preserve positions; set vacated slot to null)
         const roomSeats = seats.get(roomId) || [];
-        seats.set(
-          roomId,
-          roomSeats.filter((id) => id.toString() !== userId.toString()),
-        );
+        const normalizedSeats = roomSeats.map((id) => (id ? id.toString() : null));
+        const removeIdx = normalizedSeats.indexOf(userId.toString());
+        if (removeIdx >= 0) {
+          normalizedSeats[removeIdx] = null;
+        }
+        seats.set(roomId, normalizedSeats);
 
         // Remove from typing and room users sets
         if (typingUsers.has(roomId)) {
