@@ -611,12 +611,12 @@ module.exports = (io) => {
         });
 
         /* ===== LOCKED SEATS & STATE ===== */
-        socket.emit("room:seats:lockedAll", {
-          lockedSeats: roomDoc?.lockedSeats || [],
-        });
-        socket.emit("room:lockedState", {
-          isLocked: roomDoc?.isLocked || false,
-        });
+        // socket.emit("room:seats:lockedAll", {
+        //   lockedSeats: roomDoc?.lockedSeats || [],
+        // });
+        // socket.emit("room:lockedState", {
+        //   isLocked: roomDoc?.isLocked || false,
+        // });
 
         /* ===== DESCRIPTION ===== */
         socket.emit("room:description", {
@@ -870,12 +870,12 @@ module.exports = (io) => {
           seatCount: roomDoc?.seatCount || 10,
         });
         //room:lockedSeats & state
-        socket.emit("room:seats:lockedAll", {
-          lockedSeats: roomDoc?.lockedSeats || [],
-        });
-        socket.emit("room:lockedState", {
-          isLocked: roomDoc?.isLocked || false,
-        });
+        // socket.emit("room:seats:lockedAll", {
+        //   lockedSeats: roomDoc?.lockedSeats || [],
+        // });
+        // socket.emit("room:lockedState", {
+        //   isLocked: roomDoc?.isLocked || false,
+        // });
         // ===============================
         // 💬 MESSAGES
         // ===============================
