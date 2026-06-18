@@ -2722,7 +2722,7 @@ module.exports = (io) => {
       }
     });
 
-    // LOCK SEAT (HOST ONLY)
+    // LOCK SEAT (HOST ONLY) - Modified to lock all seats
     socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
@@ -2731,19 +2731,26 @@ module.exports = (io) => {
       if (!allowed) return socket.emit("error:permission", { message: "Only host can lock seats" });
 
       const room = await getRoomSafe(roomId);
-      if (!room || seatNumber < 1 || seatNumber > room.seatCount) {
-        return socket.emit("error", { message: "Invalid seat number" });
+      if (!room) {
+        return socket.emit("error", { message: "Room not found" });
       }
+
+      // Generate all seat numbers to lock all seats
+      const allSeats = Array.from({ length: room.seatCount || 10 }, (_, i) => i + 1);
 
       await Room.updateOne(
         { roomId },
-        { $addToSet: { lockedSeats: seatNumber } },
+        { $set: { lockedSeats: allSeats } },
       );
 
-      io.to(`room:${roomId}`).emit("room:seat:locked", { seatNumber });
+      // Emit both legacy and new events to ensure compatibility
+      if (seatNumber) {
+        io.to(`room:${roomId}`).emit("room:seat:locked", { seatNumber });
+      }
+      io.to(`room:${roomId}`).emit("room:seats:lockedAll", { lockedSeats: allSeats });
     });
 
-    // UNLOCK SEAT (HOST ONLY)
+    // UNLOCK SEAT (HOST ONLY) - Modified to unlock all seats
     socket.on("room:seat:unlock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
@@ -2752,16 +2759,20 @@ module.exports = (io) => {
       if (!allowed) return socket.emit("error:permission", { message: "Only host can unlock seats" });
 
       const room = await getRoomSafe(roomId);
-      if (!room || seatNumber < 1 || seatNumber > room.seatCount) {
-        return socket.emit("error", { message: "Invalid seat number" });
+      if (!room) {
+        return socket.emit("error", { message: "Room not found" });
       }
 
       await Room.updateOne(
         { roomId },
-        { $pull: { lockedSeats: seatNumber } },
+        { $set: { lockedSeats: [] } },
       );
 
-      io.to(`room:${roomId}`).emit("room:seat:unlocked", { seatNumber });
+      // Emit both legacy and new events to ensure compatibility
+      if (seatNumber) {
+        io.to(`room:${roomId}`).emit("room:seat:unlocked", { seatNumber });
+      }
+      io.to(`room:${roomId}`).emit("room:seats:lockedAll", { lockedSeats: [] });
     });
 
     // MIC OFF (Force mute one user - HOST/ADMIN ONLY)
