@@ -111,9 +111,8 @@ async function broadcastWatcherCount(roomId, io) {
   if (!roomId) return;
   const roomName = `room:${roomId}`;
   const sockets = await io.in(roomName).fetchSockets();
-  const seatSnapshot = new Set(
-    (seats.get(roomId) || []).map((id) => id.toString()),
-  );
+  const rawSeats = seats.get(roomId) || [];
+  const seatSnapshot = new Set(rawSeats.map((id) => (id ? id.toString() : null)).filter(Boolean));
 
   const watcherCount = sockets.filter(s => {
     const userIdStr = s.data.userId?.toString();
@@ -360,8 +359,9 @@ module.exports = (io) => {
         .lean();
 
       const userMap = new Map(users.map((u) => [u._id.toString(), u]));
-      const roomSeatsList = (seats.get(roomId) || []).map((id) => id.toString());
-      const seatSnapshot = new Set(roomSeatsList);
+      const rawSeats = seats.get(roomId) || [];
+      const roomSeatsList = rawSeats.map((id) => (id ? id.toString() : null));
+      const seatSnapshot = new Set(roomSeatsList.filter(Boolean));
 
       const roomAvatarMap = new Map();
       if (roomDoc.roomProfiles) {
@@ -422,17 +422,21 @@ module.exports = (io) => {
   const kickNonHostAdminsFromSeats = async (roomId, room) => {
     try {
       let roomSeats = seats.get(roomId) || [];
-      roomSeats = roomSeats.map(id => id.toString());
+      const normalized = roomSeats.map((id) => (id ? id.toString() : null));
 
       const hostIdStr = room.host?.toString();
-      const adminIds = (room.admins || []).map(id => id.toString());
+      const adminIds = (room.admins || []).map((id) => id.toString());
 
       // Find standard users on seats
-      const usersToKick = roomSeats.filter(id => id !== hostIdStr && !adminIds.includes(id));
+      const usersToKick = normalized.filter((id) => id && id !== hostIdStr && !adminIds.includes(id));
       if (usersToKick.length === 0) return;
 
-      // Keep only host/admins on seats
-      const newRoomSeats = roomSeats.filter(id => id === hostIdStr || adminIds.includes(id));
+      // Build new seats array preserving positions (set non host/admins to null)
+      const newRoomSeats = normalized.map((id) => {
+        if (!id) return null;
+        if (id === hostIdStr || adminIds.includes(id)) return id;
+        return null;
+      });
       seats.set(roomId, newRoomSeats);
 
       const sockets = await io.in(`room:${roomId}`).fetchSockets();
@@ -441,20 +445,25 @@ module.exports = (io) => {
         if (socketUserId && usersToKick.includes(socketUserId)) {
           s.data.isWatcher = true;
           micStates.set(s.data.userId, { muted: true, speaking: false });
+
+          const seatIndex = normalized.indexOf(socketUserId);
           s.emit("room:seat:removed", {
             userId: s.data.userId,
             displayId: s.data.displayId || s.data.user?.displayId || null,
+            seatNumber: seatIndex >= 0 ? seatIndex + 1 : null,
           });
         }
       });
 
-      usersToKick.forEach(kickedUserId => {
-        const userSocket = sockets.find(s => s.data.userId?.toString() === kickedUserId);
+      usersToKick.forEach((kickedUserId) => {
+        const userSocket = sockets.find((s) => s.data.userId?.toString() === kickedUserId);
         const displayId = userSocket ? (userSocket.data.displayId || userSocket.data.user?.displayId || null) : null;
+        const seatIndex = normalized.indexOf(kickedUserId);
 
         io.to(`room:${roomId}`).emit("room:seat:removed", {
           userId: kickedUserId,
           displayId: displayId,
+          seatNumber: seatIndex >= 0 ? seatIndex + 1 : null,
         });
       });
 
@@ -1202,14 +1211,15 @@ module.exports = (io) => {
         if (!room) return;
 
         // =========================
-        // REMOVE FROM SEATS
+        // REMOVE FROM SEATS (preserve positions)
         // =========================
         const roomSeats = seats.get(roomId) || [];
-
-        seats.set(
-          roomId,
-          roomSeats.filter((id) => id.toString() !== userId.toString()),
-        );
+        const normalizedSeats = roomSeats.map((id) => (id ? id.toString() : null));
+        const leaveIndex = normalizedSeats.indexOf(userId.toString());
+        if (leaveIndex >= 0) {
+          normalizedSeats[leaveIndex] = null;
+        }
+        seats.set(roomId, normalizedSeats);
 
         // =========================
         // UPDATE ROOM USERS
@@ -1815,14 +1825,12 @@ module.exports = (io) => {
       // ✅ Check and end PK if user was in PK
       await checkAndEndPKOnUserLeave(roomId, userId, io);
 
-      // ✅ FORCE REMOVE FROM SEATS (STRING SAFE)
+      // ✅ FORCE REMOVE FROM SEATS (preserve positions)
       let roomSeats = seats.get(roomId) || [];
-
-      roomSeats = roomSeats
-        .map((id) => id.toString())
-        .filter((id) => id !== userId);
-
-      seats.set(roomId, roomSeats);
+      const normalized = roomSeats.map((id) => (id ? id.toString() : null));
+      const idx = normalized.indexOf(userId);
+      if (idx >= 0) normalized[idx] = null;
+      seats.set(roomId, normalized);
 
       // ✅ UPDATE USER STATE
       socket.data.isWatcher = true;
@@ -1835,6 +1843,7 @@ module.exports = (io) => {
       io.to(`room:${roomId}`).emit("room:seat:removed", {
         userId,
         displayId: socket.data.displayId || socket.data.user?.displayId || null,
+        seatNumber: idx >= 0 ? idx + 1 : null,
       });
 
       console.log("✅ Seat removed globally:", userId);
@@ -1862,60 +1871,74 @@ module.exports = (io) => {
         const isAdmin = Array.isArray(room.admins) && room.admins.some((id) => id && id.toString() === uid);
         const isHostOrAdminUser = isHost || isAdmin;
 
-        // ✅ GET CURRENT SEATS
-        let roomSeats = seats.get(roomId) || [];
-        roomSeats = roomSeats.map((id) => id.toString());
-
-        if (!isHostOrAdminUser) {
-          const lockedSeatsList = room.lockedSeats || [];
-
-          // Determine target seat number (1-based index)
-          let targetSeat = null;
-          if (seatNumber !== undefined && seatNumber !== null) {
-            targetSeat = Number(seatNumber);
-          } else if (seatIndex !== undefined && seatIndex !== null) {
-            targetSeat = Number(seatIndex) + 1;
+        // ✅ GET CURRENT SEATS (fixed positions array)
+        let roomSeats = seats.get(roomId);
+        const seatCount = room.seatCount || 10;
+        if (!Array.isArray(roomSeats) || roomSeats.length === 0) {
+          roomSeats = new Array(seatCount).fill(null);
+        } else if (roomSeats.length < seatCount) {
+          // expand to seatCount preserving existing values
+          const expanded = new Array(seatCount).fill(null);
+          for (let i = 0; i < roomSeats.length; i++) {
+            expanded[i] = roomSeats[i] ? roomSeats[i].toString() : null;
           }
+          roomSeats = expanded;
+        } else {
+          roomSeats = roomSeats.map((id) => (id ? id.toString() : null));
+        }
 
-          if (targetSeat !== null) {
-            if (lockedSeatsList.includes(targetSeat)) {
-              console.log(`❌ Blocked user ${userId} from locked seat ${targetSeat}`);
-              io.to(`room:${roomId}`).emit("room:seat:removed", {
-                userId,
-                displayId: socket.data.displayId || socket.data.user?.displayId || null,
-              });
-              await broadcastRoomUsers(roomId);
-              socket.emit("error", { message: "This seat is locked" });
-              socket.emit("error:permission", { message: "This seat is locked" });
-              socket.emit("room:error", { message: "This seat is locked" });
-              return;
-            }
-          } else {
-            // If no specific seat is requested, check if the sequential seat they would occupy is locked,
-            // or if all seats are locked.
-            const nextSeatNumber = roomSeats.length + 1;
-            if (lockedSeatsList.includes(nextSeatNumber) || lockedSeatsList.length >= (room.seatCount || 10)) {
-              console.log(`❌ Blocked user ${userId} from joining seats (all/next seat locked). Locked count: ${lockedSeatsList.length}`);
-              io.to(`room:${roomId}`).emit("room:seat:removed", {
-                userId,
-                displayId: socket.data.displayId || socket.data.user?.displayId || null,
-              });
-              await broadcastRoomUsers(roomId);
-              socket.emit("error", { message: "Seats are locked" });
-              socket.emit("error:permission", { message: "Seats are locked" });
-              socket.emit("room:error", { message: "Seats are locked" });
-              return;
-            }
+        const lockedSeatsList = room.lockedSeats || [];
+
+        // Determine target index (0-based)
+        let targetIndex = null;
+        if (seatNumber !== undefined && seatNumber !== null) {
+          targetIndex = Number(seatNumber) - 1;
+        } else if (seatIndex !== undefined && seatIndex !== null) {
+          targetIndex = Number(seatIndex);
+        } else {
+          // find first available seat
+          targetIndex = roomSeats.findIndex((id) => !id);
+        }
+
+        // If no free seat
+        if (targetIndex === -1 || targetIndex === null) {
+          socket.emit("error", { message: "No seats available" });
+          return;
+        }
+
+        // Permission/lock checks for non-host/admin users
+        if (!isHostOrAdminUser) {
+          if (lockedSeatsList.includes(targetIndex + 1) || (lockedSeatsList.length >= seatCount && targetIndex >= 0)) {
+            console.log(`❌ Blocked user ${userId} from locked seat ${targetIndex + 1}`);
+            io.to(`room:${roomId}`).emit("room:seat:removed", {
+              userId,
+              displayId: socket.data.displayId || socket.data.user?.displayId || null,
+              seatNumber: targetIndex + 1,
+            });
+            await broadcastRoomUsers(roomId);
+            socket.emit("error", { message: "This seat is locked" });
+            socket.emit("error:permission", { message: "This seat is locked" });
+            socket.emit("room:error", { message: "This seat is locked" });
+            return;
           }
         }
+
+        // If target occupied by someone else, deny
+        if (roomSeats[targetIndex] && roomSeats[targetIndex] !== userId) {
+          socket.emit("error", { message: "Seat already occupied" });
+          return;
+        }
+
+        // Remove user from any previous seat position
+        const previousIndex = roomSeats.indexOf(userId);
+        if (previousIndex >= 0) roomSeats[previousIndex] = null;
 
         // ✅ UPDATE USER STATE
         socket.data.isWatcher = false;
         micStates.set(userId, { muted: false, speaking: false });
 
-        if (!roomSeats.includes(userId)) {
-          roomSeats.push(userId);
-        }
+        // Place user at target index
+        roomSeats[targetIndex] = userId;
 
         seats.set(roomId, roomSeats);
 
@@ -1926,9 +1949,10 @@ module.exports = (io) => {
         io.to(`room:${roomId}`).emit("room:seat:taken", {
           userId,
           displayId: socket.data.displayId || socket.data.user?.displayId || null,
+          seatNumber: targetIndex + 1,
         });
 
-        console.log("✅ Seat taken synced:", userId);
+        console.log("✅ Seat taken synced:", userId, "seat:", targetIndex + 1);
       } catch (err) {
         console.error("❌ room:takeSeat error:", err);
       }
@@ -3008,11 +3032,10 @@ module.exports = (io) => {
         console.log("🪑 Force removing from seat:", targetUserId);
 
         let roomSeats = seats.get(roomId) || [];
-        roomSeats = roomSeats
-          .map((id) => id.toString())
-          .filter((id) => id !== targetUserId.toString());
-
-        seats.set(roomId, roomSeats);
+        const normalized = roomSeats.map((id) => (id ? id.toString() : null));
+        const idx = normalized.indexOf(targetUserId.toString());
+        if (idx >= 0) normalized[idx] = null;
+        seats.set(roomId, normalized);
         micStates.set(targetUserId.toString(), { muted: true, speaking: false });
 
         const targetSocketIds = getUserSocketIds(targetUserId);
@@ -3050,12 +3073,12 @@ module.exports = (io) => {
           $inc: { currentUsers: -1 }
         });
 
-        // ✅ REMOVE FROM SEATS
+        // ✅ REMOVE FROM SEATS (preserve positions)
         let roomSeats = seats.get(roomId) || [];
-        roomSeats = roomSeats
-          .map((id) => id.toString())
-          .filter((id) => id !== targetUserId.toString());
-        seats.set(roomId, roomSeats);
+        const normalized = roomSeats.map((id) => (id ? id.toString() : null));
+        const idx = normalized.indexOf(targetUserId.toString());
+        if (idx >= 0) normalized[idx] = null;
+        seats.set(roomId, normalized);
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
@@ -3101,12 +3124,12 @@ module.exports = (io) => {
         if (typingUsers.has(roomId)) typingUsers.get(roomId).delete(targetUserId.toString());
         backgroundUsers.delete(targetUserId.toString());
 
-        // ✅ REMOVE FROM SEATS
+        // ✅ REMOVE FROM SEATS (preserve positions)
         let roomSeats = seats.get(roomId) || [];
-        roomSeats = roomSeats
-          .map((id) => id.toString())
-          .filter((id) => id !== targetUserId.toString());
-        seats.set(roomId, roomSeats);
+        const normalized = roomSeats.map((id) => (id ? id.toString() : null));
+        const idx = normalized.indexOf(targetUserId.toString());
+        if (idx >= 0) normalized[idx] = null;
+        seats.set(roomId, normalized);
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
