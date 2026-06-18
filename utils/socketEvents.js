@@ -2833,9 +2833,8 @@ module.exports = (io) => {
         await room.save();
       }
 
-      // Kick non-host/admins from seats
-      await kickNonHostAdminsFromSeats(roomId, room);
-
+      // NOTE: Do NOT kick users from other seats when locking a single seat.
+      // Locking a specific seat should not affect occupants of other seats.
       io.to(`room:${roomId}`).emit("room:seat:locked", { seatNumber: numSeat });
       io.to(`room:${roomId}`).emit("room:seats:lockedAll", { lockedSeats: room.lockedSeats });
     });
