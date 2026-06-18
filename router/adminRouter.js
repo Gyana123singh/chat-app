@@ -19,6 +19,7 @@ const {
   updateHelpRoom,
   deleteHelpRoom,
 } = require("../controllers/adminContrroler");
+const upload = require("../middleware/multer.middleware");
 const { authMiddleware } = require("../middleware/auth");
 
 const adminCheck = (req, res, next) => {
@@ -54,8 +55,8 @@ router.get("/dashboard/stats", getDashboardStats);
 
 // Help Room management
 router.get("/help-room", authMiddleware, adminCheck, getHelpRooms);
-router.post("/help-room", authMiddleware, adminCheck, createHelpRoom);
-router.put("/help-room/:roomId", authMiddleware, adminCheck, updateHelpRoom);
+router.post("/help-room", authMiddleware, adminCheck, upload.single("avatar"), createHelpRoom);
+router.put("/help-room/:roomId", authMiddleware, adminCheck, upload.single("avatar"), updateHelpRoom);
 router.delete("/help-room/:roomId", authMiddleware, adminCheck, deleteHelpRoom);
 
 module.exports = router;

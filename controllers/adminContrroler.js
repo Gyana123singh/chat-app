@@ -680,10 +680,21 @@ exports.createHelpRoom = async (req, res) => {
       if (!existing) unique = true;
     }
 
-    // Parse helpEmails
+    // Parse helpEmails (support JSON string from multipart/form-data)
     let emails = [];
-    if (Array.isArray(helpEmails)) {
-      emails = helpEmails.slice(0, 3).map(e => String(e).trim());
+    try {
+      if (typeof helpEmails === "string") {
+        const parsed = JSON.parse(helpEmails);
+        if (Array.isArray(parsed)) emails = parsed.slice(0, 3).map(e => String(e).trim());
+        else if (parsed) emails = [String(parsed).trim()].slice(0,3);
+      } else if (Array.isArray(helpEmails)) {
+        emails = helpEmails.slice(0, 3).map(e => String(e).trim());
+      }
+    } catch (err) {
+      // fallback: treat as comma separated
+      if (typeof helpEmails === 'string') {
+        emails = helpEmails.split(',').map(e => String(e).trim()).filter(Boolean).slice(0,3);
+      }
     }
 
     const newRoom = await Room.create({
@@ -702,6 +713,19 @@ exports.createHelpRoom = async (req, res) => {
       status: "active",
       participants: []
     });
+
+    // handle uploaded avatar (optional)
+    if (req.file) {
+      try {
+        const fileUrl = req.file.path;
+        newRoom.coverImage = fileUrl;
+        // also set creatorAvatar for convenience
+        newRoom.creatorAvatar = fileUrl;
+        await newRoom.save();
+      } catch (err) {
+        console.warn("Failed to save uploaded avatar for help room:", err.message);
+      }
+    }
 
     // Create associated VideoRoom
     await VideoRoom.create({
@@ -753,10 +777,32 @@ exports.updateHelpRoom = async (req, res) => {
     if (isActive !== undefined) room.isActive = isActive;
 
     if (helpEmails !== undefined) {
-      if (Array.isArray(helpEmails)) {
-        room.helpEmails = helpEmails.slice(0, 3).map(e => String(e).trim());
-      } else {
-        room.helpEmails = [];
+      try {
+        if (typeof helpEmails === "string") {
+          const parsed = JSON.parse(helpEmails);
+          if (Array.isArray(parsed)) room.helpEmails = parsed.slice(0,3).map(e => String(e).trim());
+          else room.helpEmails = [String(parsed).trim()].slice(0,3);
+        } else if (Array.isArray(helpEmails)) {
+          room.helpEmails = helpEmails.slice(0, 3).map(e => String(e).trim());
+        } else {
+          room.helpEmails = [];
+        }
+      } catch (err) {
+        if (typeof helpEmails === 'string') {
+          room.helpEmails = helpEmails.split(',').map(e => String(e).trim()).filter(Boolean).slice(0,3);
+        }
+      }
+    }
+
+    // handle uploaded avatar (optional)
+    if (req.file) {
+      try {
+        const fileUrl = req.file.path;
+        room.coverImage = fileUrl;
+        // if creatorAvatar is empty, set it as well
+        if (!room.creatorAvatar) room.creatorAvatar = fileUrl;
+      } catch (err) {
+        console.warn("Failed to attach uploaded avatar to help room:", err.message);
       }
     }
 
