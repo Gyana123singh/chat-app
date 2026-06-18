@@ -416,6 +416,48 @@ module.exports = (io) => {
     }
   };
 
+  // KICK NON HOST/ADMINS FROM SEATS
+  const kickNonHostAdminsFromSeats = async (roomId, room) => {
+    try {
+      let roomSeats = seats.get(roomId) || [];
+      roomSeats = roomSeats.map(id => id.toString());
+
+      const hostIdStr = room.host?.toString();
+      const adminIds = (room.admins || []).map(id => id.toString());
+
+      // Find standard users on seats
+      const usersToKick = roomSeats.filter(id => id !== hostIdStr && !adminIds.includes(id));
+      if (usersToKick.length === 0) return;
+
+      // Keep only host/admins on seats
+      const newRoomSeats = roomSeats.filter(id => id === hostIdStr || adminIds.includes(id));
+      seats.set(roomId, newRoomSeats);
+
+      const sockets = await io.in(`room:${roomId}`).fetchSockets();
+      sockets.forEach((s) => {
+        const socketUserId = s.data.userId?.toString();
+        if (socketUserId && usersToKick.includes(socketUserId)) {
+          s.data.isWatcher = true;
+          micStates.set(s.data.userId, { muted: true, speaking: false });
+          s.emit("room:seat:removed", {
+            userId: s.data.userId,
+            displayId: s.data.displayId,
+          });
+        }
+      });
+
+      usersToKick.forEach(kickedUserId => {
+        io.to(`room:${roomId}`).emit("room:seat:removed", {
+          userId: kickedUserId,
+        });
+      });
+
+      await broadcastRoomUsers(roomId);
+    } catch (err) {
+      console.error("❌ kickNonHostAdminsFromSeats error:", err);
+    }
+  };
+
   // ===============================
   // WAFA LEVEL TIMERS (SAFE)
   // ===============================
@@ -2721,7 +2763,28 @@ module.exports = (io) => {
         socket.emit("room:members:response", { success: false, message: "Server error" });
       }
     });
+    // LOCK ALL SEATS (HOST ONLY)
+    socket.on("room:seats:lockAll", async ({ roomId }) => {
+      const userId = socket.data.userId;
+      if (!userId || !roomId) return;
 
+      const allowed = await isHost(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host can lock all seats" });
+
+      const room = await getRoomSafe(roomId);
+      if (!room) return socket.emit("error", { message: "Room not found" });
+
+      const allSeats = Array.from({ length: room.seatCount }, (_, i) => i + 1);
+      room.lockedSeats = allSeats;
+      await room.save();
+
+      // Kick non-host/admins from seats
+      await kickNonHostAdminsFromSeats(roomId, room);
+
+      io.to(`room:${roomId}`).emit("room:seats:lockedAll", {
+        lockedSeats: allSeats,
+      });
+    });
     // LOCK SEAT (HOST ONLY) - Modified to lock all seats
     socket.on("room:seat:lock", async ({ roomId, seatNumber }) => {
       const userId = socket.data.userId;
@@ -2742,6 +2805,9 @@ module.exports = (io) => {
         { roomId },
         { $set: { lockedSeats: allSeats } },
       );
+
+      // Kick non-host/admins from seats
+      await kickNonHostAdminsFromSeats(roomId, room);
 
       // Emit both legacy and new events to ensure compatibility
       if (seatNumber) {
@@ -2819,25 +2885,7 @@ module.exports = (io) => {
       io.to(`room:${roomId}`).emit("room:mic:mutedAll");
     });
 
-    // LOCK ALL SEATS (HOST ONLY)
-    socket.on("room:seats:lockAll", async ({ roomId }) => {
-      const userId = socket.data.userId;
-      if (!userId || !roomId) return;
 
-      const allowed = await isHost(roomId, userId);
-      if (!allowed) return socket.emit("error:permission", { message: "Only host can lock all seats" });
-
-      const room = await getRoomSafe(roomId);
-      if (!room) return socket.emit("error", { message: "Room not found" });
-
-      const allSeats = Array.from({ length: room.seatCount }, (_, i) => i + 1);
-      room.lockedSeats = allSeats;
-      await room.save();
-
-      io.to(`room:${roomId}`).emit("room:seats:lockedAll", {
-        lockedSeats: allSeats,
-      });
-    });
 
     // GIVE ADMIN (ONLY HOST CAN DO THIS)
     socket.on("room:giveAdmin", async (payload) => {
