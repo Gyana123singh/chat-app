@@ -22,7 +22,7 @@ const pkBattleSchema = new mongoose.Schema(
 
     mode: {
       type: String,
-      enum: ["votes", "coins", "earning"],
+      enum: ["votes", "coins", "earning","points"],
       default: "coins",
     },
     rewardsDistributed: { type: Boolean, default: false },
@@ -38,7 +38,7 @@ const pkBattleSchema = new mongoose.Schema(
     startedAt: Date,
     endedAt: Date,
 
-    
+
     // ADD inside pkBattleSchema
     contributions: [
       {

@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const PKBattle = require("../models/pkBattle");
 const Room = require("../models/room");
 const { startPKTimer, endPKInternal } = require("../utils/socketEvents");
@@ -35,9 +36,14 @@ exports.createPK = async (req, res) => {
     }
 
     // =========================
-    // ✅ Room check
+    // ✅ Room check (checks both roomId field and _id field)
     // =========================
-    const room = await Room.findOne({ roomId });
+    const room = await Room.findOne({
+      $or: [
+        { roomId },
+        ...(mongoose.Types.ObjectId.isValid(roomId) ? [{ _id: roomId }] : []),
+      ],
+    });
     if (!room) {
       return res.status(404).json({
         success: false,
