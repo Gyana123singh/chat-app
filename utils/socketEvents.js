@@ -441,14 +441,18 @@ module.exports = (io) => {
           micStates.set(s.data.userId, { muted: true, speaking: false });
           s.emit("room:seat:removed", {
             userId: s.data.userId,
-            displayId: s.data.displayId,
+            displayId: s.data.displayId || s.data.user?.displayId || null,
           });
         }
       });
 
       usersToKick.forEach(kickedUserId => {
+        const userSocket = sockets.find(s => s.data.userId?.toString() === kickedUserId);
+        const displayId = userSocket ? (userSocket.data.displayId || userSocket.data.user?.displayId || null) : null;
+
         io.to(`room:${roomId}`).emit("room:seat:removed", {
           userId: kickedUserId,
+          displayId: displayId,
         });
       });
 
@@ -529,6 +533,8 @@ module.exports = (io) => {
       const dbUser = await User.findById(userId)
         .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
         .lean();
+
+      socket.data.displayId = dbUser?.displayId || socket.data.displayId || null;
 
       socket.data.user = {
         id: userId,
@@ -712,6 +718,8 @@ module.exports = (io) => {
       const dbUser = await User.findById(safeUser.id)
         .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
         .lean();
+
+      socket.data.displayId = dbUser?.displayId || socket.data.displayId || null;
 
       socket.data.user = {
         id: safeUser.id,
@@ -1333,7 +1341,7 @@ module.exports = (io) => {
         // Notify other room participants that the user left
         io.to(roomName).emit("room:userLeft", {
           userId,
-          displayId: socket.data.displayId,
+          displayId: socket.data.displayId || socket.data.user?.displayId || null,
         });
         await broadcastRoomUsers(roomId);
         await broadcastWatcherCount(roomId, io);
@@ -1824,7 +1832,7 @@ module.exports = (io) => {
       // 🔥 EXTRA: FORCE REMOVE EVENT (UI SAFETY)
       io.to(`room:${roomId}`).emit("room:seat:removed", {
         userId,
-        displayId: socket.data.displayId,
+        displayId: socket.data.displayId || socket.data.user?.displayId || null,
       });
 
       console.log("✅ Seat removed globally:", userId);
@@ -1870,6 +1878,11 @@ module.exports = (io) => {
           if (targetSeat !== null) {
             if (lockedSeatsList.includes(targetSeat)) {
               console.log(`❌ Blocked user ${userId} from locked seat ${targetSeat}`);
+              io.to(`room:${roomId}`).emit("room:seat:removed", {
+                userId,
+                displayId: socket.data.displayId || socket.data.user?.displayId || null,
+              });
+              await broadcastRoomUsers(roomId);
               socket.emit("error", { message: "This seat is locked" });
               socket.emit("error:permission", { message: "This seat is locked" });
               socket.emit("room:error", { message: "This seat is locked" });
@@ -1881,6 +1894,11 @@ module.exports = (io) => {
             const nextSeatNumber = roomSeats.length + 1;
             if (lockedSeatsList.includes(nextSeatNumber) || lockedSeatsList.length >= (room.seatCount || 10)) {
               console.log(`❌ Blocked user ${userId} from joining seats (all/next seat locked). Locked count: ${lockedSeatsList.length}`);
+              io.to(`room:${roomId}`).emit("room:seat:removed", {
+                userId,
+                displayId: socket.data.displayId || socket.data.user?.displayId || null,
+              });
+              await broadcastRoomUsers(roomId);
               socket.emit("error", { message: "Seats are locked" });
               socket.emit("error:permission", { message: "Seats are locked" });
               socket.emit("room:error", { message: "Seats are locked" });
@@ -1905,7 +1923,7 @@ module.exports = (io) => {
         // ✅ OPTIONAL (UI trigger)
         io.to(`room:${roomId}`).emit("room:seat:taken", {
           userId,
-          displayId: socket.data.displayId,
+          displayId: socket.data.displayId || socket.data.user?.displayId || null,
         });
 
         console.log("✅ Seat taken synced:", userId);
@@ -3584,7 +3602,7 @@ module.exports = (io) => {
         const roomName = `room:${roomId}`;
         io.to(roomName).emit("room:userLeft", {
           userId,
-          displayId: socket.data.displayId,
+          displayId: socket.data.displayId || socket.data.user?.displayId || null,
         });
         await broadcastRoomUsers(roomId);
         await broadcastWatcherCount(roomId, io);
