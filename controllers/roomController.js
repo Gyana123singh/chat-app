@@ -565,6 +565,7 @@ exports.getMyRooms = async (req, res) => {
 exports.getRoomById = async (req, res) => {
   try {
     const { roomId } = req.params;
+    const userId = req.user?.id;
 
     const room = await findRoomByIdOrUuid(roomId, "participants.user");
 
@@ -575,9 +576,18 @@ exports.getRoomById = async (req, res) => {
       });
     }
 
+    let isSaved = false;
+    if (userId) {
+      const user = await User.findById(userId);
+      if (user && user.recentRooms) {
+        isSaved = user.recentRooms.some(id => id.toString() === room._id.toString());
+      }
+    }
+
     res.status(200).json({
       success: true,
       room,
+      isSaved,
     });
   } catch (error) {
     console.error("❌ getRoomById error:", error);
@@ -1118,6 +1128,93 @@ exports.unlockRoom = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to unlock room",
+      error: error.message,
+    });
+  }
+};
+
+exports.toggleRecentRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.user.id;
+
+    const room = await findRoomByIdOrUuid(roomId);
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (!user.recentRooms) {
+      user.recentRooms = [];
+    }
+
+    const index = user.recentRooms.findIndex(id => id.toString() === room._id.toString());
+    let isSaved = false;
+
+    if (index > -1) {
+      user.recentRooms.splice(index, 1);
+      isSaved = false;
+    } else {
+      user.recentRooms.unshift(room._id);
+      if (user.recentRooms.length > 50) {
+        user.recentRooms = user.recentRooms.slice(0, 50);
+      }
+      isSaved = true;
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: isSaved ? "Room saved to recent" : "Room removed from recent",
+      isSaved,
+    });
+  } catch (error) {
+    console.error("❌ toggleRecentRoom error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to toggle recent room status",
+      error: error.message,
+    });
+  }
+};
+
+exports.getRecentRooms = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId).populate({
+      path: "recentRooms",
+      model: "Room",
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const validRooms = (user.recentRooms || []).filter(room => room !== null && room !== undefined);
+
+    res.status(200).json({
+      success: true,
+      rooms: validRooms,
+    });
+  } catch (error) {
+    console.error("❌ getRecentRooms error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch recent rooms",
       error: error.message,
     });
   }

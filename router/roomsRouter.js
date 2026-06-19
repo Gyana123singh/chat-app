@@ -7,7 +7,9 @@ const { authMiddleware } = require("../middleware/auth");
 router.get("/in-room-status/:userId", authMiddleware, roomController.getUserInRoomStatus);
 router.get("/get-all-rooms", roomController.getAllRooms); //done get all rooms with pagination, search, filter
 router.get("/my-rooms", authMiddleware, roomController.getMyRooms);
+router.get("/recent/list", authMiddleware, roomController.getRecentRooms);
 router.get("/:roomId", authMiddleware, roomController.getRoomById); //done get data user by id
+router.post("/:roomId/recent", authMiddleware, roomController.toggleRecentRoom);
 router.post("/create", authMiddleware, roomController.createRoom); //done create room
 router.put("/:roomId", authMiddleware, roomController.updateRoom);
 router.put("/:roomId/password", authMiddleware, roomController.setPassword);

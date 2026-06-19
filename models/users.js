@@ -273,6 +273,15 @@ const userSchema = new mongoose.Schema(
         },
       ],
     },
+    recentRooms: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Room",
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );
