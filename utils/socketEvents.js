@@ -1930,8 +1930,7 @@ module.exports = (io) => {
         }
 
         // Remove user from any previous seat position
-        const previousIndex = roomSeats.indexOf(userId);
-        if (previousIndex >= 0) roomSeats[previousIndex] = null;
+        roomSeats = roomSeats.map((id) => (id && id.toString() === userId.toString() ? null : id));
 
         // ✅ UPDATE USER STATE
         socket.data.isWatcher = false;
@@ -1950,6 +1949,7 @@ module.exports = (io) => {
           userId,
           displayId: socket.data.displayId || socket.data.user?.displayId || null,
           seatNumber: targetIndex + 1,
+          seatIndex: targetIndex,
         });
 
         console.log("✅ Seat taken synced:", userId, "seat:", targetIndex + 1);
