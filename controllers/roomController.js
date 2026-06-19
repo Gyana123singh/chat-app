@@ -794,7 +794,7 @@ exports.joinRoom = async (req, res) => {
 
     // ✅ Password Lock Verification (Checked BEFORE alreadyJoined to prevent bypasses)
     if (room.isLocked && hostId !== userIdString && creatorId !== userIdString) {
-      const { password } = req.body;
+      const { password } = req.body || {};
       if (!password) {
         return res.status(403).json({
           success: false,
