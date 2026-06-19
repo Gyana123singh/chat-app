@@ -23,6 +23,28 @@ exports.getConversations = async (req, res) => {
       })
       .sort({ lastMessageTime: -1 });
 
+    const conversationIds = conversations.map((conv) => conv._id);
+    const unreadByConversationData = await Message.aggregate([
+      {
+        $match: {
+          recipient: new mongoose.Types.ObjectId(userId),
+          isRead: false,
+          conversationId: { $in: conversationIds },
+        },
+      },
+      {
+        $group: {
+          _id: "$conversationId",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const unreadByConversation = unreadByConversationData.reduce((acc, item) => {
+      acc[item._id.toString()] = item.count;
+      return acc;
+    }, {});
+
     const enhancedConversations = [];
     for (const conv of conversations) {
       const convObj = conv.toObject();
@@ -37,6 +59,7 @@ exports.getConversations = async (req, res) => {
           p.roomId = roomStatus ? roomStatus.roomId : null;
         }
       }
+      convObj.unreadCount = unreadByConversation[conv._id.toString()] || 0;
       enhancedConversations.push(convObj);
     }
 
