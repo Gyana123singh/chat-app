@@ -792,23 +792,7 @@ exports.joinRoom = async (req, res) => {
       joiningUserId: userIdString,
     });
 
-    // ✅ FIX: Check if already joined
-    const alreadyJoined = room.participants.some((p) => {
-      const participantUserId = p.user?.toString();
-      return participantUserId === userIdString;
-    });
-
-    if (alreadyJoined) {
-      console.log("✅ User already in room");
-      return res.status(200).json({
-        success: true,
-        message: "Already joined",
-        roomId: room.roomId,
-        participants: room.participants,
-      });
-    }
-
-    // ✅ Password Lock Verification
+    // ✅ Password Lock Verification (Checked BEFORE alreadyJoined to prevent bypasses)
     if (room.isLocked && hostId !== userIdString && creatorId !== userIdString) {
       const { password } = req.body;
       if (!password) {
@@ -825,6 +809,22 @@ exports.joinRoom = async (req, res) => {
           message: "Incorrect room password",
         });
       }
+    }
+
+    // ✅ Check if already joined
+    const alreadyJoined = room.participants.some((p) => {
+      const participantUserId = p.user?.toString();
+      return participantUserId === userIdString;
+    });
+
+    if (alreadyJoined) {
+      console.log("✅ User already in room");
+      return res.status(200).json({
+        success: true,
+        message: "Already joined",
+        roomId: room.roomId,
+        participants: room.participants,
+      });
     }
 
     // Check room capacity

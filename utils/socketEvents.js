@@ -836,22 +836,25 @@ module.exports = (io) => {
           roomUsers.set(roomId, new Set());
         }
         roomUsers.get(roomId).add(userId);
+        const hostId = roomDoc.host?.toString();
+        const creatorId = roomDoc.creator?.toString();
+        const userIdString = userId.toString();
+
+        // Verify password first if room is locked and user is not host/creator (prevent bypasses)
+        if (roomDoc.isLocked && hostId !== userIdString && creatorId !== userIdString) {
+          if (!password || password !== roomDoc.password) {
+            return socket.emit("room:error", {
+              message: "Incorrect or missing password for this room",
+              isLocked: true,
+            });
+          }
+        }
+
         const alreadyJoined = roomDoc.participants.some(
           (p) => p.user.toString() === userId.toString(),
         );
 
         if (!alreadyJoined) {
-          const hostId = roomDoc.host?.toString();
-          const creatorId = roomDoc.creator?.toString();
-          const userIdString = userId.toString();
-          if (roomDoc.isLocked && hostId !== userIdString && creatorId !== userIdString) {
-            if (!password || password !== roomDoc.password) {
-              return socket.emit("room:error", {
-                message: "Incorrect or missing password for this room",
-                isLocked: true,
-              });
-            }
-          }
 
           roomDoc.currentUsers += 1;
 
