@@ -50,14 +50,12 @@ exports.createRoom = async (req, res) => {
     const existingRoom = await Room.findOne({
       creator: userId,
       isActive: true,
-    }).populate("participants.user", "username avatar");
+    });
 
     if (existingRoom) {
-      return res.status(200).json({
-        success: true,
+      return res.status(400).json({
+        success: false,
         message: "You already have an active room",
-        existingRoom: true,
-        room: existingRoom,
         roomId: existingRoom.roomId,
       });
     }
