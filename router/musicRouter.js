@@ -49,6 +49,8 @@ module.exports = (io) => {
     musicController.deleteRoomMusicList,
   );
 
+  router.post("/clear/:roomId", musicController.clearQueue);
+
   router.post("/pause/:roomId", musicController.pauseMusic);
 
   router.post("/resume/:roomId", musicController.resumeMusic);

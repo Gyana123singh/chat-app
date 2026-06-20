@@ -802,6 +802,79 @@ exports.deleteRoomMusicList = async (req, res) => {
 };
 
 /* ============================
+   CLEAR QUEUE (HOST/ADMIN ONLY)
+ ============================ */
+exports.clearQueue = async (req, res) => {
+  const io = req.app.get("io");
+  try {
+    const { roomId } = req.params;
+    const userId = req.headers["userid"] || req.body.userId;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId required" });
+    }
+
+    // 1. Verify if user is Host or Admin (only they can clear the queue)
+    const room = await Room.findOne({ roomId }).select("host admins").lean();
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    const isHost = room.host && room.host.toString() === userId.toString();
+    const isAdmin = room.admins && room.admins.some(adminId => adminId.toString() === userId.toString());
+    if (!isHost && !isAdmin) {
+      return res.status(403).json({ error: "Only the Host or Admins can clear the queue." });
+    }
+
+    // 2. Fetch all music in room to delete from Cloudinary
+    const musicList = await RoomMusic.find({ roomId });
+
+    for (const music of musicList) {
+      if (music.cloudinaryPublicId) {
+        try {
+          await cloudinary.uploader.destroy(music.cloudinaryPublicId, {
+            resource_type: "video",
+          });
+        } catch (err) {
+          console.error("⚠️ Cloudinary delete failed during clearQueue:", err.message);
+        }
+      }
+    }
+
+    // 3. Delete all room music documents
+    await RoomMusic.deleteMany({ roomId });
+
+    // 4. Stop current playback and reset MusicState
+    roomManager.stopMusic(roomId);
+
+    await MusicState.findOneAndUpdate(
+      { roomId },
+      {
+        musicFile: null,
+        musicUrl: null,
+        isPlaying: false,
+        pausedAt: 0,
+        startedAt: null,
+        localFilePath: null,
+        playedBy: null,
+        currentTrackId: null,
+        trackOwnerId: null,
+        duration: 0,
+      },
+      { upsert: true }
+    );
+
+    // 5. Broadcast to room
+    await broadcastMusicState(roomId, io);
+
+    res.json({ success: true, message: "Queue cleared successfully" });
+  } catch (err) {
+    console.error("❌ clearQueue error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* ============================
    STARTUP MIGRATION & RESTORE
 ============================ */
 exports.migrateMusicData = async () => {
