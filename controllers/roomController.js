@@ -873,6 +873,7 @@ exports.joinRoom = async (req, res) => {
     // Update stats
     room.stats.totalJoins += 1;
     room.stats.activeUsers = room.participants.length;
+    room.currentUsers = room.participants.length;
 
     // Save room
     await room.save();
@@ -945,6 +946,7 @@ exports.leaveRoom = async (req, res) => {
       });
     }
 
+    room.currentUsers = room.participants.length;
     await room.save();
 
     return res.status(200).json({

@@ -549,6 +549,7 @@ module.exports = (io) => {
       socket.data.roomId = roomId;
       socket.data.userId = userId;
       socket.data.isWatcher = true;
+      socket.data.hasLeftRoom = false;
 
       // ⭐ FETCH FULL USER (for metadata/displayId)
       const dbUser = await User.findById(userId)
@@ -636,7 +637,6 @@ module.exports = (io) => {
             }
           }
 
-          roomDoc.currentUsers += 1;
           roomDoc.lastActivityAt = new Date();
           roomDoc.participants.push({
             user: userId,
@@ -644,12 +644,9 @@ module.exports = (io) => {
             avatar: socket.data.user.avatar,
             joinedAt: new Date(),
           });
-          await roomDoc.save();
-        } else {
-          // Even if already joined, update currentUsers count if they were not active? 
-          // (room:join logic incremented it, so we should too if we want parity)
-          // But usually room:watch is used when re-entering or as a passive mode.
         }
+        roomDoc.currentUsers = roomDoc.participants.length;
+        await roomDoc.save();
 
         // ✅ BROADCAST USERS (REFACTORED)
         const usersInRoom = await broadcastRoomUsers(roomId);
@@ -865,9 +862,6 @@ module.exports = (io) => {
         );
 
         if (!alreadyJoined) {
-
-          roomDoc.currentUsers += 1;
-
           roomDoc.lastActivityAt = new Date();
 
           roomDoc.participants.push({
@@ -882,9 +876,10 @@ module.exports = (io) => {
 
             joinedAt: new Date(),
           });
-
-          await roomDoc.save();
         }
+
+        roomDoc.currentUsers = roomDoc.participants.length;
+        await roomDoc.save();
 
         console.log(`📍 ${safeUser.username} joined ${roomName}`);
 
@@ -1240,21 +1235,18 @@ module.exports = (io) => {
         }
 
         // =========================
-        // UPDATE ROOM USERS
+        // REMOVE PARTICIPANT & UPDATE ROOM USERS
         // =========================
-        room.currentUsers = Math.max(0, room.currentUsers - 1);
+        room.participants = room.participants.filter(
+          (p) => p.user.toString() !== userId.toString(),
+        );
+        room.currentUsers = room.participants.length;
+
         if (roomUsers.has(roomId)) {
           roomUsers.get(roomId).delete(userId.toString());
         }
 
         room.lastActivityAt = new Date();
-
-        // =========================
-        // REMOVE PARTICIPANT
-        // =========================
-        room.participants = room.participants.filter(
-          (p) => p.user.toString() !== userId.toString(),
-        );
 
         await VideoRoom.updateOne(
           { roomId },
@@ -3093,11 +3085,16 @@ module.exports = (io) => {
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can kick out" });
 
-        await Room.updateOne({ roomId }, {
-          $push: { kickedUsers: { userId: targetUserId, kickedAt: new Date() } },
-          $pull: { participants: { user: new mongoose.Types.ObjectId(targetUserId) } },
-          $inc: { currentUsers: -1 }
-        });
+        const room = await Room.findOne({ roomId });
+        if (room) {
+          if (!room.kickedUsers) room.kickedUsers = [];
+          room.kickedUsers.push({ userId: targetUserId, kickedAt: new Date() });
+          room.participants = room.participants.filter(
+            (p) => p.user.toString() !== targetUserId.toString()
+          );
+          room.currentUsers = room.participants.length;
+          await room.save();
+        }
 
         // ✅ REMOVE FROM SEATS (preserve positions)
         let roomSeats = seats.get(roomId) || [];
@@ -3139,11 +3136,18 @@ module.exports = (io) => {
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can block user" });
 
-        await Room.updateOne({ roomId }, {
-          $addToSet: { blockedUsers: new mongoose.Types.ObjectId(targetUserId) },
-          $pull: { participants: { user: new mongoose.Types.ObjectId(targetUserId) } },
-          $inc: { currentUsers: -1 }
-        });
+        const room = await Room.findOne({ roomId });
+        if (room) {
+          if (!room.blockedUsers) room.blockedUsers = [];
+          if (!room.blockedUsers.some(id => id.toString() === targetUserId.toString())) {
+            room.blockedUsers.push(new mongoose.Types.ObjectId(targetUserId));
+          }
+          room.participants = room.participants.filter(
+            (p) => p.user.toString() !== targetUserId.toString()
+          );
+          room.currentUsers = room.participants.length;
+          await room.save();
+        }
 
         // ✅ CLEAN SERVER MEMORY
         if (roomUsers.has(roomId)) roomUsers.get(roomId).delete(targetUserId.toString());
@@ -3503,14 +3507,12 @@ module.exports = (io) => {
         // Clean up database room presence
         const room = await Room.findOne({ roomId });
         if (room) {
-          // Safe decrement
-          room.currentUsers = Math.max(0, room.currentUsers - 1);
-          room.lastActivityAt = new Date();
-
-          // Remove from participants
+          // Remove from participants & update room users
           room.participants = room.participants.filter(
             (p) => p.user.toString() !== userId.toString(),
           );
+          room.currentUsers = room.participants.length;
+          room.lastActivityAt = new Date();
 
           // Remove from VideoRoom participants
           await VideoRoom.updateOne(
