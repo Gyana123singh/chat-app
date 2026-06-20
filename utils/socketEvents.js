@@ -2264,7 +2264,6 @@ module.exports = (io) => {
 
     // call:offer / voice:offer
     socket.on("call:offer", ({ to, offer }) => {
-      if (socket.data.isWatcher) return;
       if (!to || !offer) return;
       const targetSocketIds = getUserSocketIds(to);
       targetSocketIds.forEach((ts) => {
@@ -2276,7 +2275,6 @@ module.exports = (io) => {
     });
 
     socket.on("voice:offer", ({ targetUserId, offer }) => {
-      if (socket.data.isWatcher) return;
       if (!targetUserId || !offer) return;
       const targetSocketIds = getUserSocketIds(targetUserId);
       targetSocketIds.forEach((ts) => {
