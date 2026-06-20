@@ -808,7 +808,7 @@ exports.clearQueue = async (req, res) => {
   const io = req.app.get("io");
   try {
     const { roomId } = req.params;
-    const userId = req.headers["userid"] || req.body.userId;
+    const userId = req.headers["userid"] || (req.body && req.body.userId);
 
     if (!userId) {
       return res.status(400).json({ error: "userId required" });
