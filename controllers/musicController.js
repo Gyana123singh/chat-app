@@ -4,6 +4,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const mongoose = require("mongoose");
 const RoomMusic = require("../models/musicRoom");
+const Room = require("../models/room");
 const convertToMp3 = require("../utils/convertAudio");
 const cloudinary = require("../config/cloudinary");
 const User = require("../models/users");
@@ -48,13 +49,32 @@ const broadcastMusicState = async (roomId, io) => {
 
 // Middleware/Helper to validate uploader ownership
 const validateOwnership = async (roomId, userId) => {
+  // 1. Check if user is Host or Admin of the room
+  try {
+    const room = await Room.findOne({ roomId }).select("host admins").lean();
+    if (room) {
+      const isHost = room.host && room.host.toString() === userId.toString();
+      const isAdmin = room.admins && room.admins.some(adminId => adminId.toString() === userId.toString());
+      if (isHost || isAdmin) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("❌ validateOwnership room check error:", err);
+  }
+
   const dbState = await MusicState.findOne({ roomId });
   if (!dbState || !dbState.currentTrackId) return true; // No active track, allowed
 
-  if (dbState.trackOwnerId && dbState.trackOwnerId.toString() !== userId.toString()) {
-    return false;
+  // 2. Check if user is the current DJ (playedBy) or track owner (trackOwnerId)
+  const isPlayedBy = dbState.playedBy && dbState.playedBy.toString() === userId.toString();
+  const isTrackOwner = dbState.trackOwnerId && dbState.trackOwnerId.toString() === userId.toString();
+
+  if (isPlayedBy || isTrackOwner) {
+    return true;
   }
-  return true;
+
+  return false;
 };
 
 /* ============================
