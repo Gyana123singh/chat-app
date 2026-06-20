@@ -36,6 +36,10 @@ module.exports = (io) => {
     videoController.getVideoList(req, res);
   });
 
+  router.post("/clear/:roomId", (req, res) => {
+    videoController.clearVideoQueue(req, res, io);
+  });
+
   // ─── NEW PLAYLIST CONTROL ROUTES ─────────────────────────────────────────
   // POST /api/video/select/:roomId   { userId, videoId }
   router.post("/select/:roomId", (req, res) => {

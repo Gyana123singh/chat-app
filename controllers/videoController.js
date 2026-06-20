@@ -1,4 +1,5 @@
 const VideoRoom = require("../models/videoRoom");
+const Room = require("../models/room");
 const fs = require("fs-extra");
 const path = require("path");
 
@@ -7,11 +8,22 @@ const path = require("path");
 // ─────────────────────────────────────────────
 
 /**
- * Returns true if userId matches the current video controllerId.
- * Kept for backward compatibility – used by pause/resume (legacy callers
- * that haven't sent a videoId yet still work).
+ * Returns true if userId is Host/Admin or matches the current video controllerId.
  */
-function canControlVideo(videoRoom, userId) {
+async function canControlVideo(roomId, videoRoom, userId) {
+  try {
+    const room = await Room.findOne({ roomId }).select("host admins").lean();
+    if (room) {
+      const isHost = room.host && room.host.toString() === userId.toString();
+      const isAdmin = room.admins && room.admins.some(adminId => adminId.toString() === userId.toString());
+      if (isHost || isAdmin) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("❌ canControlVideo room check error:", err);
+  }
+
   if (!videoRoom || !videoRoom.video) return false;
   return (
     videoRoom.video.controllerId?.toString() === userId?.toString()
@@ -158,10 +170,11 @@ exports.playVideo = async (req, res, io) => {
       controllerId = selectedVideo.uploadedBy;
       targetVideoId = selectedVideo._id;
 
-      // Authorization: only the uploader of THIS video may play it
-      if (selectedVideo.uploadedBy.toString() !== userId.toString()) {
+      // Authorization: only the uploader of THIS video or Host/Admins may play it
+      const hasControl = await canControlVideo(roomId, videoRoom, userId);
+      if (!hasControl && selectedVideo.uploadedBy.toString() !== userId.toString()) {
         return res.status(403).json({
-          message: "Only uploader of this video can control playback.",
+          message: "Only uploader of this video or Host/Admins can control playback.",
         });
       }
 
@@ -178,10 +191,11 @@ exports.playVideo = async (req, res, io) => {
       );
     } else {
       // ── Legacy / resume same video ────────────────────────────────
-      // Authorization: only existing controller may call play
-      if (!canControlVideo(videoRoom, userId)) {
+      // Authorization: only existing controller or Host/Admins may call play
+      const hasControl = await canControlVideo(roomId, videoRoom, userId);
+      if (!hasControl) {
         return res.status(403).json({
-          message: "Only uploader of this video can control playback.",
+          message: "Only uploader of this video or Host/Admins can control playback.",
         });
       }
 
@@ -272,9 +286,10 @@ exports.pauseVideo = async (req, res, io) => {
     const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
     if (!videoRoom) return res.json({ success: true });
@@ -315,9 +330,10 @@ exports.resumeVideo = async (req, res, io) => {
     const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
     if (!videoRoom) return res.json({ success: true });
@@ -356,9 +372,10 @@ exports.stopVideo = async (req, res, io) => {
     const { userId } = req.body;
 
     const videoRoom = await VideoRoom.findOne({ roomId });
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -411,10 +428,11 @@ exports.selectVideo = async (req, res, io) => {
       return res.status(404).json({ message: "Video not found in playlist." });
     }
 
-    // Only the uploader of the selected video can select it
-    if (selectedVideo.uploadedBy.toString() !== userId.toString()) {
+    // Only the uploader of the selected video or Host/Admins can select it
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl && selectedVideo.uploadedBy.toString() !== userId.toString()) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -454,9 +472,10 @@ exports.nextVideo = async (req, res, io) => {
     const videoRoom = await VideoRoom.findOne({ roomId });
     if (!videoRoom) return res.status(404).json({ error: "Room not found" });
 
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -519,9 +538,10 @@ exports.previousVideo = async (req, res, io) => {
     const videoRoom = await VideoRoom.findOne({ roomId });
     if (!videoRoom) return res.status(404).json({ error: "Room not found" });
 
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -584,9 +604,10 @@ exports.seekVideo = async (req, res, io) => {
     const videoRoom = await VideoRoom.findOne({ roomId });
     if (!videoRoom) return res.status(404).json({ error: "Room not found" });
 
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -627,9 +648,10 @@ exports.forwardVideo = async (req, res, io) => {
     const videoRoom = await VideoRoom.findOne({ roomId });
     if (!videoRoom) return res.status(404).json({ error: "Room not found" });
 
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -673,9 +695,10 @@ exports.rewindVideo = async (req, res, io) => {
     const videoRoom = await VideoRoom.findOne({ roomId });
     if (!videoRoom) return res.status(404).json({ error: "Room not found" });
 
-    if (!canControlVideo(videoRoom, userId)) {
+    const hasControl = await canControlVideo(roomId, videoRoom, userId);
+    if (!hasControl) {
       return res.status(403).json({
-        message: "Only uploader of this video can control playback.",
+        message: "Only uploader of this video or Host/Admins can control playback.",
       });
     }
 
@@ -700,6 +723,90 @@ exports.rewindVideo = async (req, res, io) => {
     res.json({ success: true });
   } catch (err) {
     console.error("❌ rewindVideo:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* ============================
+   CLEAR VIDEO QUEUE (HOST/ADMIN ONLY)
+ ============================ */
+exports.clearVideoQueue = async (req, res, io) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.headers["userid"] || (req.body && req.body.userId);
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId required" });
+    }
+
+    // 1. Verify if user is Host or Admin (only they can clear the queue)
+    const room = await Room.findOne({ roomId }).select("host admins").lean();
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    const isHost = room.host && room.host.toString() === userId.toString();
+    const isAdmin = room.admins && room.admins.some(adminId => adminId.toString() === userId.toString());
+    if (!isHost && !isAdmin) {
+      return res.status(403).json({ error: "Only the Host or Admins can clear the queue." });
+    }
+
+    // 2. Fetch the video room to delete files from disk
+    const videoRoom = await VideoRoom.findOne({ roomId });
+    if (videoRoom && videoRoom.videos && videoRoom.videos.length > 0) {
+      for (const video of videoRoom.videos) {
+        const filePath = path.resolve(process.cwd(), "uploads", "videos", roomId, video.fileName);
+        try {
+          await fs.remove(filePath);
+        } catch (err) {
+          console.error("⚠️ Failed to delete local video file during clearVideoQueue:", err.message);
+        }
+      }
+    }
+
+    // 3. Clear/Reset the VideoRoom document completely
+    await VideoRoom.updateOne(
+      { roomId },
+      {
+        $set: {
+          videos: [],
+          video: {
+            isPlaying: false,
+            isPaused: false,
+            isVisible: false,
+            currentTime: 0,
+            fileName: null,
+            fileSize: 0,
+            mimeType: null,
+            controllerId: null,
+            currentVideoId: null,
+            startedAt: null,
+            pausedAt: null,
+          }
+        }
+      }
+    );
+
+    // 4. Emit video:stopped / video:state update to the room
+    io.to(`room:${roomId}`).emit("video:stopped", { controllerId: null });
+    io.to(`room:${roomId}`).emit("video:state", {
+      videos: [],
+      video: {
+        isPlaying: false,
+        isPaused: false,
+        isVisible: false,
+        currentTime: 0,
+        fileName: null,
+        fileSize: 0,
+        mimeType: null,
+        controllerId: null,
+        currentVideoId: null,
+      }
+    });
+
+    res.json({ success: true, message: "Video queue cleared successfully" });
+  } catch (err) {
+    console.error("❌ clearVideoQueue error:", err);
     res.status(500).json({ error: err.message });
   }
 };
