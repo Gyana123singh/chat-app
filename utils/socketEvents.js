@@ -1937,12 +1937,16 @@ module.exports = (io) => {
           return;
         }
 
+        const wasAlreadyOnSeat = roomSeats.some((id) => id && id.toString() === userId.toString());
+
         // Remove user from any previous seat position
         roomSeats = roomSeats.map((id) => (id && id.toString() === userId.toString() ? null : id));
 
         // ✅ UPDATE USER STATE
         socket.data.isWatcher = false;
-        micStates.set(userId, { muted: false, speaking: false });
+        if (!wasAlreadyOnSeat) {
+          micStates.set(userId, { muted: false, speaking: false });
+        }
 
         // Place user at target index
         roomSeats[targetIndex] = userId;
