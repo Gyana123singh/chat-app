@@ -1366,6 +1366,15 @@ module.exports = (io) => {
         backgroundUsers.delete(userId.toString());
 
         const roomName = `room:${roomId}`;
+        const userSocketIds = getUserSocketIds(userId);
+        if (userSocketIds.length) {
+          for (const ts of userSocketIds) {
+            const s = io.sockets.sockets.get(ts);
+            if (s) {
+              await s.leave(roomName);
+            }
+          }
+        }
         await socket.leave(roomName);
 
         // Notify other room participants that the user left
