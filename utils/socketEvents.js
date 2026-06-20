@@ -1951,6 +1951,8 @@ module.exports = (io) => {
         io.to(`room:${roomId}`).emit("room:seat:taken", {
           userId,
           displayId: socket.data.displayId || socket.data.user?.displayId || null,
+          username: socket.data.username || socket.data.user?.username || "A user",
+          avatar: socket.data.avatar || socket.data.user?.avatar || null,
           seatNumber: targetIndex + 1,
           seatIndex: targetIndex,
         });
