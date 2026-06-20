@@ -107,7 +107,7 @@ async function isHost(roomId, userId) {
 }
 
 // ✅ NEW: Broadcast Watcher Count Helper
-async function broadcastWatcherCount(roomId, io) {
+async function broadcastWatcherCount(roomId, io, excludeUserId = null) {
   if (!roomId) return;
   const roomName = `room:${roomId}`;
   const sockets = await io.in(roomName).fetchSockets();
@@ -116,6 +116,7 @@ async function broadcastWatcherCount(roomId, io) {
 
   const watcherCount = sockets.filter(s => {
     const userIdStr = s.data.userId?.toString();
+    if (excludeUserId && userIdStr === excludeUserId.toString()) return false;
     return userIdStr && !seatSnapshot.has(userIdStr);
   }).length;
 
@@ -345,14 +346,23 @@ module.exports = (io) => {
   const roomUsers = new Map(); // roomId -> Set of userIds in room
 
   // ✅ HELPER: Broadcast Room Users (Full State)
-  const broadcastRoomUsers = async (roomId) => {
+  const broadcastRoomUsers = async (roomId, excludeUserIds = []) => {
     try {
       const roomName = `room:${roomId}`;
       const roomDoc = await Room.findOne({ roomId }).lean();
       if (!roomDoc) return [];
 
       const sockets = await io.in(roomName).fetchSockets();
-      const userIds = sockets.map((s) => s.data.userId?.toString()).filter(Boolean);
+
+      const excludeSet = new Set(
+        (Array.isArray(excludeUserIds) ? excludeUserIds : [excludeUserIds])
+          .filter(Boolean)
+          .map((id) => id.toString())
+      );
+
+      const userIds = sockets
+        .map((s) => s.data.userId?.toString())
+        .filter((id) => id && !excludeSet.has(id));
 
       const users = await User.find({ _id: { $in: userIds } })
         .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
@@ -376,7 +386,7 @@ module.exports = (io) => {
       const usersInRoom = sockets
         .map((s) => {
           const userIdStr = s.data.userId?.toString();
-          if (!userIdStr) return null;
+          if (!userIdStr || excludeSet.has(userIdStr)) return null;
 
           const dbUser = userMap.get(userIdStr);
 
@@ -1303,7 +1313,7 @@ module.exports = (io) => {
             roomUsers.delete(roomId);
             typingUsers.delete(roomId);
 
-            socket.leave(`room:${roomId}`);
+            await socket.leave(`room:${roomId}`);
             console.log("ℹ️ Help/Admin Room kept active on leave:", roomId);
             return;
           } else {
@@ -1340,7 +1350,7 @@ module.exports = (io) => {
 
             io.to(`room:${roomId}`).emit("room:deleted");
 
-            socket.leave(`room:${roomId}`);
+            await socket.leave(`room:${roomId}`);
 
             console.log("🗑 Room deleted:", roomId);
 
@@ -1356,15 +1366,15 @@ module.exports = (io) => {
         backgroundUsers.delete(userId.toString());
 
         const roomName = `room:${roomId}`;
-        socket.leave(roomName);
+        await socket.leave(roomName);
 
         // Notify other room participants that the user left
         io.to(roomName).emit("room:userLeft", {
           userId,
           displayId: socket.data.displayId || socket.data.user?.displayId || null,
         });
-        await broadcastRoomUsers(roomId);
-        await broadcastWatcherCount(roomId, io);
+        await broadcastRoomUsers(roomId, userId);
+        await broadcastWatcherCount(roomId, io, userId);
 
         socket.data.isBackground = false;
 
@@ -1937,16 +1947,12 @@ module.exports = (io) => {
           return;
         }
 
-        const wasAlreadyOnSeat = roomSeats.some((id) => id && id.toString() === userId.toString());
-
         // Remove user from any previous seat position
         roomSeats = roomSeats.map((id) => (id && id.toString() === userId.toString() ? null : id));
 
         // ✅ UPDATE USER STATE
         socket.data.isWatcher = false;
-        if (!wasAlreadyOnSeat) {
-          micStates.set(userId, { muted: false, speaking: false });
-        }
+        micStates.set(userId, { muted: false, speaking: false });
 
         // Place user at target index
         roomSeats[targetIndex] = userId;
@@ -3093,19 +3099,19 @@ module.exports = (io) => {
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
-          targetSocketIds.forEach((ts) => {
+          for (const ts of targetSocketIds) {
             io.to(ts).emit("room:kicked", { roomId, message: "You have been kicked from the room" });
             const targetSocket = io.sockets.sockets.get(ts);
             if (targetSocket) {
               targetSocket.data.hasLeftRoom = true;
-              targetSocket.leave(`room:${roomId}`);
+              await targetSocket.leave(`room:${roomId}`);
               targetSocket.data.roomId = null;
             }
-          });
+          }
         }
 
         // Broadcast updated users list
-        await broadcastRoomUsers(roomId);
+        await broadcastRoomUsers(roomId, targetUserId);
 
         console.log(`👢 User ${targetUserId} kicked from ${roomId}`);
       } catch (err) {
@@ -3144,19 +3150,19 @@ module.exports = (io) => {
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
-          targetSocketIds.forEach((ts) => {
+          for (const ts of targetSocketIds) {
             io.to(ts).emit("room:blocked", { roomId, message: "You have been blocked from this room" });
             const targetSocket = io.sockets.sockets.get(ts);
             if (targetSocket) {
               targetSocket.data.hasLeftRoom = true;
-              targetSocket.leave(`room:${roomId}`);
+              await targetSocket.leave(`room:${roomId}`);
               targetSocket.data.roomId = null;
             }
-          });
+          }
         }
 
         // Broadcast updated users list
-        await broadcastRoomUsers(roomId);
+        await broadcastRoomUsers(roomId, targetUserId);
 
         console.log(`🚫 User ${targetUserId} blocked from ${roomId}`);
       } catch (err) {
@@ -3455,8 +3461,14 @@ module.exports = (io) => {
 
       const remainingSockets = userId ? getUserSocketIds(userId) : [];
 
-      // If the user has no remaining active socket connections, clean up their room presence
-      if (userId && roomId && remainingSockets.length === 0) {
+      // Find remaining sockets for this user *in this specific room* (excluding current socket)
+      const roomSockets = roomId ? await io.in(`room:${roomId}`).fetchSockets() : [];
+      const remainingSocketsInRoom = roomSockets.filter(
+        (s) => s.id !== socket.id && s.data.userId?.toString() === userId?.toString()
+      );
+
+      // If the user has no remaining active socket connections in this room, clean up their room presence
+      if (userId && roomId && remainingSocketsInRoom.length === 0) {
         // Remove from seats map (preserve positions; set vacated slot to null)
         const roomSeats = seats.get(roomId) || [];
         const normalizedSeats = roomSeats.map((id) => (id ? id.toString() : null));
@@ -3477,20 +3489,6 @@ module.exports = (io) => {
         }
         if (roomUsers.has(roomId)) {
           roomUsers.get(roomId).delete(userId.toString());
-        }
-
-        // Clean up user specific in-memory states
-        onlineUsers.delete(userId);
-        micStates.delete(userId);
-        deafenStates.delete(userId.toString());
-
-        if (roomStayTimers.has(userId)) {
-          clearInterval(roomStayTimers.get(userId));
-          roomStayTimers.delete(userId);
-        }
-        if (micExpTimers.has(userId)) {
-          clearInterval(micExpTimers.get(userId));
-          micExpTimers.delete(userId);
         }
 
         // Clean up database room presence
@@ -3527,7 +3525,8 @@ module.exports = (io) => {
             if (!room.isHelpRoom) {
               // ✅ Immediately check if room is empty — if so, mark host_left
               const roomSocketList = await io.in(`room:${roomId}`).fetchSockets();
-              if (roomSocketList.length === 0 && room.currentUsers <= 0) {
+              const remainingRoomSockets = roomSocketList.filter(s => s.id !== socket.id);
+              if (remainingRoomSockets.length === 0 && room.currentUsers <= 0) {
                 room.status = "host_left";
                 room.isActive = false;
                 await room.save();
@@ -3562,7 +3561,8 @@ module.exports = (io) => {
                 if (activeRoom) {
                   const roomName = `room:${roomId}`;
                   const sockets = await io.in(roomName).fetchSockets();
-                  if (sockets.length === 0 && activeRoom.currentUsers <= 0) {
+                  const remainingRoomSocketsCount = sockets.filter(s => s.id !== socket.id).length;
+                  if (remainingRoomSocketsCount === 0 && activeRoom.currentUsers <= 0) {
                     activeRoom.status = "ended";
                     await activeRoom.save();
 
@@ -3616,17 +3616,32 @@ module.exports = (io) => {
             reason: "dj_left",
           });
         }
-      }
 
-      // Notify other room participants
-      if (roomId && remainingSockets.length === 0) {
+        // Notify other room participants
         const roomName = `room:${roomId}`;
         io.to(roomName).emit("room:userLeft", {
           userId,
           displayId: socket.data.displayId || socket.data.user?.displayId || null,
         });
-        await broadcastRoomUsers(roomId);
-        await broadcastWatcherCount(roomId, io);
+        await broadcastRoomUsers(roomId, userId);
+        await broadcastWatcherCount(roomId, io, userId);
+      }
+
+      // If the user has no remaining active socket connections globally, clean up global states
+      if (userId && remainingSockets.length === 0) {
+        // Clean up user specific in-memory states
+        onlineUsers.delete(userId);
+        micStates.delete(userId);
+        deafenStates.delete(userId.toString());
+
+        if (roomStayTimers.has(userId)) {
+          clearInterval(roomStayTimers.get(userId));
+          roomStayTimers.delete(userId);
+        }
+        if (micExpTimers.has(userId)) {
+          clearInterval(micExpTimers.get(userId));
+          micExpTimers.delete(userId);
+        }
       }
     });
   });
