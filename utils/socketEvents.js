@@ -1221,8 +1221,13 @@ module.exports = (io) => {
         const leaveIndex = normalizedSeats.indexOf(userId.toString());
         if (leaveIndex >= 0) {
           normalizedSeats[leaveIndex] = null;
+          seats.set(roomId, normalizedSeats);
+          io.to(`room:${roomId}`).emit("room:seat:removed", {
+            userId,
+            displayId: socket.data.displayId || socket.data.user?.displayId || null,
+            seatNumber: leaveIndex + 1,
+          });
         }
-        seats.set(roomId, normalizedSeats);
 
         // =========================
         // UPDATE ROOM USERS
@@ -3454,8 +3459,13 @@ module.exports = (io) => {
         const removeIdx = normalizedSeats.indexOf(userId.toString());
         if (removeIdx >= 0) {
           normalizedSeats[removeIdx] = null;
+          seats.set(roomId, normalizedSeats);
+          io.to(`room:${roomId}`).emit("room:seat:removed", {
+            userId,
+            displayId: socket.data.displayId || socket.data.user?.displayId || null,
+            seatNumber: removeIdx + 1,
+          });
         }
-        seats.set(roomId, normalizedSeats);
 
         // Remove from typing and room users sets
         if (typingUsers.has(roomId)) {
