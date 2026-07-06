@@ -241,6 +241,20 @@ exports.updateProfile = async (req, res) => {
       { new: true },
     );
 
+    // Sync room creatorAvatar if user updated their profile avatar
+    if (updateData["profile.avatar"]) {
+      try {
+        const Room = require("../models/room");
+        await Room.updateMany(
+          { host: userId, status: "active" },
+          { $set: { creatorAvatar: updateData["profile.avatar"] } }
+        );
+        console.log(`✅ Synchronized room creatorAvatar for user ${userId} to ${updateData["profile.avatar"]}`);
+      } catch (err) {
+        console.error("❌ Failed to synchronize room creatorAvatar:", err);
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: "Profile updated successfully",

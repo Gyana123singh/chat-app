@@ -632,6 +632,8 @@ module.exports = (io) => {
           (p) => p.user.toString() === userId.toString(),
         );
 
+        const freshAvatar = dbUser?.profile?.avatar || socket.data.avatar || socket.data.user?.avatar;
+
         if (!alreadyJoined) {
           const hostId = roomDoc.host?.toString();
           const creatorId = roomDoc.creator?.toString();
@@ -649,9 +651,17 @@ module.exports = (io) => {
           roomDoc.participants.push({
             user: userId,
             role: roomDoc.host.toString() === userId.toString() ? "host" : "listener",
-            avatar: socket.data.user.avatar,
+            avatar: freshAvatar,
             joinedAt: new Date(),
           });
+        } else {
+          // Sync existing participant's avatar with their fresh profile avatar
+          const pIdx = roomDoc.participants.findIndex(
+            (p) => p.user.toString() === userId.toString(),
+          );
+          if (pIdx !== -1) {
+            roomDoc.participants[pIdx].avatar = freshAvatar;
+          }
         }
         roomDoc.currentUsers = roomDoc.participants.length;
         await roomDoc.save();
@@ -882,6 +892,8 @@ module.exports = (io) => {
           (p) => p.user.toString() === userId.toString(),
         );
 
+        const freshAvatar = dbUser?.profile?.avatar || dbUser?.avatar || socket.data.avatar || safeUser.avatar;
+
         if (!alreadyJoined) {
           roomDoc.lastActivityAt = new Date();
 
@@ -893,10 +905,18 @@ module.exports = (io) => {
                 ? "host"
                 : "listener",
 
-            avatar: dbUser?.profile?.avatar || safeUser.avatar,
+            avatar: freshAvatar,
 
             joinedAt: new Date(),
           });
+        } else {
+          // Sync existing participant's avatar with their fresh profile avatar
+          const pIdx = roomDoc.participants.findIndex(
+            (p) => p.user.toString() === userId.toString(),
+          );
+          if (pIdx !== -1) {
+            roomDoc.participants[pIdx].avatar = freshAvatar;
+          }
         }
 
         roomDoc.currentUsers = roomDoc.participants.length;
