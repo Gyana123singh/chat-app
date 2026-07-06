@@ -1759,37 +1759,23 @@ module.exports = (io) => {
         // Update the room's profile picture field
         room.creatorAvatar = avatar;
 
-        // ✅ FIX: ensure array exists
-        if (!room.roomProfiles) {
-          room.roomProfiles = [];
-        }
-
-        const userIdStr = userId.toString();
-
-        // ✅ Find existing profile
-        const existing = room.roomProfiles.find(
-          (p) => p.userId.toString() === userIdStr,
-        );
-
-        if (existing) {
-          existing.avatar = avatar;
-        } else {
-          room.roomProfiles.push({
-            userId: userId,
-            avatar,
-          });
+        // Proactively remove the host's entry from roomProfiles to clean up any legacy incorrect mappings
+        if (room.roomProfiles) {
+          room.roomProfiles = room.roomProfiles.filter(
+            (p) => p.userId.toString() !== userId.toString()
+          );
         }
 
         await room.save();
 
         // ✅ Broadcast update
         io.to(`room:${roomId}`).emit("room:avatar:updated", {
-          userId: userIdStr,
+          userId: userId.toString(),
           displayId: socket.data.displayId,
           avatar,
         });
 
-        console.log("✅ Room avatar updated:", { roomId, userIdStr, avatar });
+        console.log("✅ Room avatar updated:", { roomId, userId: userId.toString(), avatar });
       } catch (err) {
         console.error("❌ room:avatar:update error:", err.message);
       }
