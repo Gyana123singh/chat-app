@@ -1723,9 +1723,17 @@ module.exports = (io) => {
 
     socket.on("pk:vote", async ({ roomId, pkId, toUserId }) => {
       try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId || !pkId || !toUserId) return;
+
         const pk = await PKBattle.findById(pkId);
         if (!pk || pk.status !== "running") return;
-        if (pk.mode !== "votes") return;
+        if (pk.mode !== "votes" && pk.mode !== "points") return;
+
+        // Check if user already voted in this PK match
+        if (pk.voters && pk.voters.some(id => id.toString() === userId.toString())) {
+          return socket.emit("pk:error", { message: "You have already voted in this PK battle" });
+        }
 
         if (pk.leftUser.userId.toString() === toUserId.toString()) {
           pk.leftUser.score += 1;
@@ -1735,12 +1743,17 @@ module.exports = (io) => {
           return;
         }
 
+        // Add to voters list
+        if (!pk.voters) pk.voters = [];
+        pk.voters.push(userId);
+
         await pk.save();
 
         io.to(`room:${roomId}`).emit("pk:update", {
           pkId: pk._id,
           leftScore: pk.leftUser.score,
           rightScore: pk.rightUser.score,
+          voters: pk.voters, // Broadcast updated voters list
         });
       } catch (e) {
         console.error("❌ pk:vote error:", e.message);

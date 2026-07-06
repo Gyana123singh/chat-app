@@ -25,6 +25,11 @@ const pkBattleSchema = new mongoose.Schema(
       enum: ["votes", "coins", "earning","points"],
       default: "coins",
     },
+    voters: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: "User",
+      default: [],
+    },
     rewardsDistributed: { type: Boolean, default: false },
 
     duration: { type: Number, required: true }, // seconds
