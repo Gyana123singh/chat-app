@@ -1756,6 +1756,9 @@ module.exports = (io) => {
           });
         }
 
+        // Update the room's profile picture field
+        room.creatorAvatar = avatar;
+
         // ✅ FIX: ensure array exists
         if (!room.roomProfiles) {
           room.roomProfiles = [];
