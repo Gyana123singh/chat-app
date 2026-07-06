@@ -2411,6 +2411,10 @@ module.exports = (io) => {
 
         const inviter = await User.findById(inviterId);
 
+        const Conversation = require("../models/conversation");
+        const PrivateMessage = require("../models/privateMessage");
+        const Notification = require("../models/notification");
+
         const invite = await RoomInvite.create({
           roomId,
           roomTitle: room.title || "Live Room",
@@ -2424,8 +2428,11 @@ module.exports = (io) => {
         });
 
         // SEND TO USERS
-        invitedUsers.forEach((userId) => {
-          io.to(userId.toString()).emit("room:invite:received", {
+        for (const targetUserId of invitedUsers) {
+          const targetStr = targetUserId.toString();
+          
+          // 1. Emit socket invite event
+          io.to(targetStr).emit("room:invite:received", {
             inviteId: invite._id,
             roomId,
             roomTitle: invite.roomTitle,
@@ -2433,7 +2440,75 @@ module.exports = (io) => {
             hostName: invite.hostName,
             hostAvatar: invite.hostAvatar,
           });
-        });
+
+          // 2. Prevent messaging self
+          if (targetStr === inviterId.toString()) continue;
+
+          try {
+            // Get or create conversation between inviter and targetUser
+            const sorted = [inviterId.toString(), targetStr].sort();
+            const hash = sorted.join("_");
+
+            let conversation = await Conversation.findOne({
+              participantsHash: hash,
+              isActive: true,
+            });
+
+            if (!conversation) {
+              conversation = await Conversation.create({
+                participants: sorted,
+                participantsHash: hash,
+              });
+            }
+
+            // Create special invitation private message
+            const inviteText = `I invited you to join my audio room! [ROOM_INVITATION:${roomId}:${room.title || "Live Room"}:${room.backgroundImage || ""}]`;
+            
+            const message = await PrivateMessage.create({
+              conversationId: conversation._id,
+              sender: inviterId,
+              recipient: targetUserId,
+              text: inviteText,
+              attachment: null,
+            });
+
+            // Update conversation details
+            conversation.lastMessage = message._id;
+            conversation.lastMessageTime = new Date();
+            await conversation.save();
+
+            // Populate sender & recipient for private chat receiver
+            await message.populate([
+              { path: "sender", select: "username profile.avatar" },
+              { path: "recipient", select: "username profile.avatar" },
+            ]);
+
+            // Broadcast new message to private conversation room so it shows up in real-time
+            io.to(`private:${conversation._id}`).emit(
+              "private:message:receive",
+              message,
+            );
+
+            // Create notification for mobile / notification list
+            const notif = await Notification.create({
+              user: targetUserId,
+              type: "message",
+              title: "New Room Invitation",
+              body: `${inviter.username} invited you to join their audio room!`,
+              data: {
+                conversationId: conversation._id,
+                senderId: inviterId,
+              },
+            });
+
+            io.to(`notify:${targetStr}`).emit(
+              "notification:new",
+              notif,
+            );
+          } catch (chatErr) {
+            console.error("⚠️ Failed to send room invitation via 1v1 private chat:", chatErr);
+          }
+        }
 
         socket.emit("room:invite:success", {
           success: true,
