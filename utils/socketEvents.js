@@ -705,6 +705,11 @@ module.exports = (io) => {
             socket.emit("pk:started", pk);
           }
         }
+
+        // ✅ Emit latest room details to ensure syncing
+        socket.emit("room:updated", {
+          room: roomDoc,
+        });
       } catch (err) {
         console.error("❌ room:watch error:", err);
       }
@@ -1036,6 +1041,11 @@ module.exports = (io) => {
         } catch (error) {
           console.error("❌ Entrance error:", error.message);
         }
+
+        // ✅ Emit latest room details to ensure syncing
+        socket.emit("room:updated", {
+          room: roomDoc,
+        });
 
         // ===============================
         // ⏱ EXP TIMER
@@ -1761,8 +1771,12 @@ module.exports = (io) => {
 
         // Proactively remove the host's entry from roomProfiles to clean up any legacy incorrect mappings
         if (room.roomProfiles) {
+          try {
+            room.roomProfiles.pull({ userId: userId });
+          } catch (_) {}
+
           room.roomProfiles = room.roomProfiles.filter(
-            (p) => p.userId.toString() !== userId.toString()
+            (p) => p && p.userId && p.userId.toString() !== userId.toString()
           );
           room.markModified("roomProfiles");
         }
@@ -1774,6 +1788,11 @@ module.exports = (io) => {
           userId: userId.toString(),
           displayId: socket.data.displayId,
           avatar,
+        });
+
+        // ✅ Broadcast room update to sync room metadata live
+        io.to(`room:${roomId}`).emit("room:updated", {
+          room: room,
         });
 
         console.log("✅ Room avatar updated:", { roomId, userId: userId.toString(), avatar });
