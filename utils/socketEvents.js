@@ -1795,6 +1795,9 @@ module.exports = (io) => {
           room: room,
         });
 
+        // ✅ Broadcast updated users list to refresh avatars in real-time
+        await broadcastRoomUsers(roomId);
+
         console.log("✅ Room avatar updated:", { roomId, userId: userId.toString(), avatar });
       } catch (err) {
         console.error("❌ room:avatar:update error:", err.message);
