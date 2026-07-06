@@ -1313,69 +1313,28 @@ module.exports = (io) => {
         }
 
         // =========================
-        // EMPTY ROOM
+        // EMPTY ROOM (KEPT ACTIVE PER USER REQUEST)
         // =========================
         if (room.currentUsers <= 0) {
-          // Keep help rooms or admin-created rooms persistent
-          if (room.isHelpRoom || room.createdByAdmin) {
-            // Keep help room active but clear participants list
-            room.status = "active";
-            room.isActive = true;
-            room.participants = [];
-            await room.save();
+          // Keep room active but clear participants list
+          room.status = "active";
+          room.isActive = true;
+          room.participants = [];
+          room.currentUsers = 0;
+          await room.save();
 
-            await VideoRoom.updateOne(
-              { roomId },
-              { $set: { participants: [], "video.isPlaying": false } }
-            );
+          await VideoRoom.updateOne(
+            { roomId },
+            { $set: { participants: [], "video.isPlaying": false } }
+          );
 
-            seats.delete(roomId);
-            roomUsers.delete(roomId);
-            typingUsers.delete(roomId);
+          seats.delete(roomId);
+          roomUsers.delete(roomId);
+          typingUsers.delete(roomId);
 
-            await socket.leave(`room:${roomId}`);
-            console.log("ℹ️ Help/Admin Room kept active on leave:", roomId);
-            return;
-          } else {
-            room.status = "ended";
-
-            await room.save();
-
-            // ✅ End active PK if any
-            if (room.activePK) {
-              await endPKInternal(room.activePK, io);
-            }
-
-            await Room.deleteOne({ roomId });
-
-            // ✅ Delete VideoRoom immediately
-            try {
-              await VideoRoom.deleteOne({ roomId });
-              console.log(`🗑 VideoRoom deleted immediately: ${roomId}`);
-            } catch (e) {
-              console.error('❌ VideoRoom cleanup error:', e);
-            }
-
-            await MusicState.deleteOne({ roomId });
-
-            roomManager.stopMusic(roomId);
-
-            const rIdStr = roomId.toString();
-            seats.delete(roomId); // seats Map seems to use roomId as-is in some places, but let's be safe
-            roomUsers.delete(roomId);
-            roomMessages.delete(rIdStr);
-            typingUsers.delete(roomId);
-
-            backgroundUsers.delete(userId.toString());
-
-            io.to(`room:${roomId}`).emit("room:deleted");
-
-            await socket.leave(`room:${roomId}`);
-
-            console.log("🗑 Room deleted:", roomId);
-
-            return;
-          }
+          await socket.leave(`room:${roomId}`);
+          console.log("ℹ️ Room kept active on leave:", roomId);
+          return;
         }
 
         // =========================
@@ -3566,68 +3525,32 @@ module.exports = (io) => {
             });
 
             if (!room.isHelpRoom) {
-              // ✅ Immediately check if room is empty — if so, mark host_left
-              const roomSocketList = await io.in(`room:${roomId}`).fetchSockets();
-              const remainingRoomSockets = roomSocketList.filter(s => s.id !== socket.id);
-              if (remainingRoomSockets.length === 0 && room.currentUsers <= 0) {
-                room.status = "host_left";
-                room.isActive = false;
-                await room.save();
-                console.log(`🚨 Host disconnected. Room ${roomId} empty, marked as host_left.`);
-              } else {
-                console.log(`ℹ️ Host disconnected but room ${roomId} still has users. Keeping active.`);
-              }
+              // Keep room active on host disconnect
+              room.status = "active";
+              room.isActive = true;
+              await room.save();
+              console.log(`ℹ️ Host disconnected. Room ${roomId} kept active.`);
             }
           }
 
-          // Grace-Period Room Cleanup
+          // Grace-Period Room Cleanup (KEPT ACTIVE PER USER REQUEST)
           if (room.currentUsers <= 0) {
-            if (room.isHelpRoom || room.createdByAdmin) {
-              room.status = "active";
-              room.isActive = true;
-              room.participants = [];
-              await room.save();
+            // Keep all rooms active but clear participants list
+            room.status = "active";
+            room.isActive = true;
+            room.participants = [];
+            room.currentUsers = 0;
+            await room.save();
 
-              await VideoRoom.updateOne(
-                { roomId },
-                { $set: { participants: [], "video.isPlaying": false } }
-              );
+            await VideoRoom.updateOne(
+              { roomId },
+              { $set: { participants: [], "video.isPlaying": false } }
+            );
 
-              seats.delete(roomId);
-              roomUsers.delete(roomId);
-              typingUsers.delete(roomId);
-              console.log("ℹ️ Help/Admin Room kept active on disconnect:", roomId);
-            } else {
-              // ✅ Immediately delete empty room on disconnect
-              try {
-                const activeRoom = await Room.findOne({ roomId });
-                if (activeRoom) {
-                  const roomName = `room:${roomId}`;
-                  const sockets = await io.in(roomName).fetchSockets();
-                  const remainingRoomSocketsCount = sockets.filter(s => s.id !== socket.id).length;
-                  if (remainingRoomSocketsCount === 0 && activeRoom.currentUsers <= 0) {
-                    activeRoom.status = "ended";
-                    await activeRoom.save();
-
-                    if (activeRoom.activePK) {
-                      await endPKInternal(activeRoom.activePK, io);
-                    }
-
-                    await Room.deleteOne({ roomId });
-                    await VideoRoom.deleteOne({ roomId });
-                    await MusicState.deleteOne({ roomId });
-                    roomManager.stopMusic(roomId);
-                    seats.delete(roomId);
-                    roomUsers.delete(roomId);
-                    roomMessages.delete(roomId);
-                    typingUsers.delete(roomId);
-                    console.log(`🗑 Empty room ${roomId} deleted immediately on disconnect.`);
-                  }
-                }
-              } catch (err) {
-                console.error("❌ Error during room cleanup on disconnect:", err);
-              }
-            }
+            seats.delete(roomId);
+            roomUsers.delete(roomId);
+            typingUsers.delete(roomId);
+            console.log("ℹ️ Room kept active on disconnect:", roomId);
           }
 
           await room.save();
