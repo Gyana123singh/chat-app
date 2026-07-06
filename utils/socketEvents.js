@@ -1764,6 +1764,7 @@ module.exports = (io) => {
           room.roomProfiles = room.roomProfiles.filter(
             (p) => p.userId.toString() !== userId.toString()
           );
+          room.markModified("roomProfiles");
         }
 
         await room.save();
