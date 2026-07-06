@@ -1842,7 +1842,7 @@ module.exports = (io) => {
       }
     });
     // ===============================
-    // 🔽 LEAVE SEAT (GO TO AUDIENCE)
+    // 🔽 LEAVE SEAT (GO TO AUDIENCES)
     // ===============================
     socket.on("room:leaveSeat", async ({ roomId }) => {
       const userId = socket.data.userId?.toString();
