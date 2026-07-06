@@ -536,7 +536,15 @@ module.exports = (io) => {
     socket.on("room:watch", async ({ roomId, user, password }) => {
       if (!roomId) return;
 
-      const safeUser = user || socket.data.user;
+      let safeUser = user || socket.data.user;
+      if ((!safeUser || !safeUser.id) && socket.data.userId) {
+        safeUser = {
+          id: socket.data.userId,
+          username: socket.data.username,
+          avatar: socket.data.avatar,
+        };
+      }
+
       if (!safeUser || !safeUser.id) {
         console.error("❌ room:watch without user identity", { roomId });
         return;
@@ -721,7 +729,15 @@ module.exports = (io) => {
     socket.on("room:join", async ({ roomId, user, password }) => {
       if (!roomId) return;
 
-      const safeUser = user || socket.data.user;
+      let safeUser = user || socket.data.user;
+      if ((!safeUser || !safeUser.id) && socket.data.userId) {
+        safeUser = {
+          id: socket.data.userId,
+          username: socket.data.username,
+          avatar: socket.data.avatar,
+        };
+      }
+
       if (!safeUser || !safeUser.id) {
         console.error("❌ room:join without user identity", { roomId });
         return;
@@ -1247,10 +1263,12 @@ module.exports = (io) => {
         // =========================
         // REMOVE PARTICIPANT & UPDATE ROOM USERS
         // =========================
+        console.log(`[DEBUG LEAVE] userId=${userId}, hostId=${room.host}, participants before filter:`, room.participants.map(p => ({ user: p.user?.toString(), role: p.role })));
         room.participants = room.participants.filter(
-          (p) => p.user.toString() !== userId.toString(),
+          (p) => p.user && p.user.toString() !== userId.toString(),
         );
         room.currentUsers = room.participants.length;
+        console.log(`[DEBUG LEAVE] participants after filter:`, room.participants.map(p => ({ user: p.user?.toString(), role: p.role })), `currentUsers=${room.currentUsers}`);
 
         if (roomUsers.has(roomId)) {
           roomUsers.get(roomId).delete(userId.toString());
@@ -3520,10 +3538,12 @@ module.exports = (io) => {
         const room = await Room.findOne({ roomId });
         if (room) {
           // Remove from participants & update room users
+          console.log(`[DEBUG DISCONNECT] userId=${userId}, hostId=${room.host}, participants before filter:`, room.participants.map(p => ({ user: p.user?.toString(), role: p.role })));
           room.participants = room.participants.filter(
-            (p) => p.user.toString() !== userId.toString(),
+            (p) => p.user && p.user.toString() !== userId.toString(),
           );
           room.currentUsers = room.participants.length;
+          console.log(`[DEBUG DISCONNECT] participants after filter:`, room.participants.map(p => ({ user: p.user?.toString(), role: p.role })), `currentUsers=${room.currentUsers}`);
           room.lastActivityAt = new Date();
 
           // Remove from VideoRoom participants
