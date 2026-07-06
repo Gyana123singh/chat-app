@@ -1722,16 +1722,35 @@ module.exports = (io) => {
     });
 
     socket.on("pk:vote", async ({ roomId, pkId, toUserId }) => {
+      console.log("🗳️ Socket pk:vote event received:", { roomId, pkId, toUserId });
       try {
         const userId = socket.data.userId;
-        if (!userId || !roomId || !pkId || !toUserId) return;
+        if (!userId) {
+          console.warn("⚠️ pk:vote rejected: userId is missing on socket.data");
+          return;
+        }
+        if (!roomId || !pkId || !toUserId) {
+          console.warn("⚠️ pk:vote rejected: missing fields in payload", { roomId, pkId, toUserId });
+          return;
+        }
 
         const pk = await PKBattle.findById(pkId);
-        if (!pk || pk.status !== "running") return;
-        if (pk.mode !== "votes" && pk.mode !== "points") return;
+        if (!pk) {
+          console.warn(`⚠️ pk:vote rejected: PK battle ${pkId} not found`);
+          return;
+        }
+        if (pk.status !== "running") {
+          console.warn(`⚠️ pk:vote rejected: PK battle status is ${pk.status}, not running`);
+          return;
+        }
+        if (pk.mode !== "votes" && pk.mode !== "points") {
+          console.warn(`⚠️ pk:vote rejected: PK mode is ${pk.mode}, not votes or points`);
+          return;
+        }
 
         // Check if user already voted in this PK match
         if (pk.voters && pk.voters.some(id => id.toString() === userId.toString())) {
+          console.warn(`⚠️ pk:vote rejected: User ${userId} already voted in PK ${pkId}`);
           return socket.emit("pk:error", { message: "You have already voted in this PK battle" });
         }
 
@@ -1740,6 +1759,7 @@ module.exports = (io) => {
         } else if (pk.rightUser.userId.toString() === toUserId.toString()) {
           pk.rightUser.score += 1;
         } else {
+          console.warn(`⚠️ pk:vote rejected: toUserId ${toUserId} does not match leftUser ${pk.leftUser.userId} or rightUser ${pk.rightUser.userId}`);
           return;
         }
 
@@ -1748,6 +1768,7 @@ module.exports = (io) => {
         pk.voters.push(userId);
 
         await pk.save();
+        console.log(`✅ Vote recorded for ${toUserId} in PK ${pkId}. Scores: L=${pk.leftUser.score}, R=${pk.rightUser.score}`);
 
         io.to(`room:${roomId}`).emit("pk:update", {
           pkId: pk._id,
