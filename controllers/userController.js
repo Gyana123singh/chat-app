@@ -1,12 +1,15 @@
-// controllers/userController.js
 const User = require("../models/users");
 const cloudinary = require("../config/cloudinary");
 const bcrypt = require("bcryptjs");
+const mongoose = require("mongoose");
 
 // ================= GET PROFILE =================
 exports.getUserById = async (req, res) => {
   try {
-    const userId = req.user.id;
+    let userId = req.user.id;
+    if (req.query.userId && mongoose.Types.ObjectId.isValid(req.query.userId)) {
+      userId = req.query.userId;
+    }
 
     const user = await User.findById(userId).select(
       "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday birthDate birthdate dob age"
