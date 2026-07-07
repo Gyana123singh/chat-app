@@ -1,5 +1,6 @@
 const Leaderboard = require("../models/trophyLeaderBoard");
 const User = require("../models/users");
+const mongoose = require("mongoose");
 
 /**
  * 🏆 GET LEADERBOARD - Main trophy page function
@@ -349,7 +350,10 @@ exports.updateAllRanks = async () => {
  */
 exports.getUserLevel = async (req, res) => {
   try {
-    const userId = req.user?.id;
+    let userId = req.user?.id;
+    if (req.query.userId && mongoose.Types.ObjectId.isValid(req.query.userId)) {
+      userId = req.query.userId;
+    }
 
     if (!userId) {
       return res.status(401).json({
