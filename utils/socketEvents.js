@@ -2462,7 +2462,7 @@ module.exports = (io) => {
             }
 
             // Create special invitation private message
-            const inviteText = `I invited you to join my audio room! [ROOM_INVITATION:${roomId}:${room.title || "Live Room"}:${room.backgroundImage || ""}]`;
+            const inviteText = `I invited you to join my audio room! [ROOM_INVITATION:${roomId}|${room.title || "Live Room"}|${room.backgroundImage || ""}|${inviter.username || "Host"}|${inviter.profile?.avatar || ""}|${inviter.displayId || ""}]`;
             
             const message = await PrivateMessage.create({
               conversationId: conversation._id,
