@@ -18,6 +18,9 @@ const Message = require("../models/message");
 const RoomInvite = require("../models/roomInvite");
 const Block = require("../models/blockUsers");
 const ProfitLossConfig = require("../models/profitLossConfig");
+const Conversation = require("../models/conversation");
+const PrivateMessage = require("../models/privateMessage");
+const Notification = require("../models/notification");
 async function getRoomSafe(roomId) {
   return await Room.findOne({ roomId });
 }
@@ -2411,10 +2414,6 @@ module.exports = (io) => {
 
         const inviter = await User.findById(inviterId);
 
-        const Conversation = require("../models/conversation");
-        const PrivateMessage = require("../models/privateMessage");
-        const Notification = require("../models/notification");
-
         const invite = await RoomInvite.create({
           roomId,
           roomTitle: room.title || "Live Room",
@@ -2507,6 +2506,9 @@ module.exports = (io) => {
             );
           } catch (chatErr) {
             console.error("⚠️ Failed to send room invitation via 1v1 private chat:", chatErr);
+            socket.emit("invite:error", {
+              message: `Failed to send to DM: ${chatErr.message || chatErr}`
+            });
           }
         }
 
