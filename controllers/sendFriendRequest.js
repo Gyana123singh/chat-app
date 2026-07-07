@@ -287,3 +287,31 @@ exports.getFriendSuggestions = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+/* ======================
+   UNFRIEND
+====================== */
+exports.unfriend = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { friendId } = req.body;
+
+    if (!friendId) {
+      return res.status(400).json({ message: "Friend ID is required" });
+    }
+
+    await Friend.deleteMany({
+      $or: [
+        { userId, friendId },
+        { userId: friendId, friendId: userId },
+      ],
+    });
+
+    res.json({
+      success: true,
+      message: "Unfriended successfully",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

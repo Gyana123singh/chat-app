@@ -8,6 +8,7 @@ router.post("/accept", authMiddleware, sendFriendRequest.acceptRequest);
 router.post("/reject", authMiddleware, sendFriendRequest.rejectRequest);
 router.get("/requests", authMiddleware, sendFriendRequest.getRequests);
 router.get("/list", authMiddleware, sendFriendRequest.getFriends);
+router.post("/unfriend", authMiddleware, sendFriendRequest.unfriend);
 router.get(
   "/suggestions",
   authMiddleware,
