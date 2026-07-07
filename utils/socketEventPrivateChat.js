@@ -54,11 +54,23 @@ module.exports = (io) => {
     /* =========================
        CHECK ONLINE STATUS
     ========================= */
-    socket.on("private:user:check_online", ({ targetUserId }) => {
+    socket.on("private:user:check_online", async ({ targetUserId }) => {
       try {
         if (!targetUserId) return;
         const key = targetUserId.toString();
         const isOnline = userSockets.has(key) && userSockets.get(key).size > 0;
+
+        try {
+          const TempLog = mongoose.models.TempLog || mongoose.model("TempLog", new mongoose.Schema({ error: String, timestamp: Date }, { strict: false }));
+          const keys = Array.from(userSockets.keys());
+          await TempLog.create({
+            error: `ℹ️ check_online target: ${key}, found: ${isOnline}, all_keys: ${JSON.stringify(keys)}, map_has: ${userSockets.has(key)}`,
+            timestamp: new Date()
+          });
+        } catch (logErr) {
+          console.error("TempLog fail:", logErr);
+        }
+
         socket.emit("private:user:online", {
           userId: targetUserId,
           isOnline,
