@@ -7,8 +7,12 @@ const mongoose = require("mongoose");
 exports.getUserById = async (req, res) => {
   try {
     let userId = req.user.id;
+    console.log(`🔍 [getUserById] req.user.id: "${req.user.id}", req.query.userId: "${req.query.userId}"`);
     if (req.query.userId && mongoose.Types.ObjectId.isValid(req.query.userId)) {
       userId = req.query.userId;
+      console.log(`🔍 [getUserById] Using query userId: "${userId}"`);
+    } else {
+      console.log(`🔍 [getUserById] Using req.user.id fallback: "${userId}"`);
     }
 
     const user = await User.findById(userId).select(
