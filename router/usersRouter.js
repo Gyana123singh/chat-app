@@ -6,6 +6,7 @@ const userPhoneOtpAuth = require("../controllers/authController");
 const { authMiddleware } = require("../middleware/auth");
 
 router.get("/profile", authMiddleware, userController.getUserById);
+router.get("/profile-details/:userId", authMiddleware, userController.getProfileDetails);
 router.put("/edit-profile", authMiddleware, userController.updateProfile);
 router.get("/get-all-users", userController.getAllUsers);
 router.get("/search", userController.searchUsers);

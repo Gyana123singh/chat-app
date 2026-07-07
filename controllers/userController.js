@@ -67,6 +67,64 @@ exports.getUserById = async (req, res) => {
   }
 };
 
+exports.getProfileDetails = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or missing user ID",
+      });
+    }
+
+    const user = await User.findById(userId).select(
+      "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday birthDate birthdate dob age"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        id: user._id,
+        displayId: user.displayId,
+        username: user.username,
+        avatar: user.profile?.avatar,
+        bio: user.profile?.bio,
+        language: user.profile?.language,
+        theme: user.profile?.theme,
+
+        country: user.country,
+        countryCode: user.countryCode,
+        phone: user.phone,
+        gender: user.gender || "Other",
+        birthday: user.birthday || null,
+        birthDate: user.birthDate || user.birthday || null,
+        birthdate: user.birthdate || user.birthday || null,
+        dob: user.dob || user.birthday || null,
+        age: user.age || 18,
+
+        coins: user.stats?.coins,
+        followers: user.stats?.followers,
+        following: user.stats?.following,
+        giftsReceived: user.stats?.giftsReceived,
+        totalHostingMinutes: user.stats?.totalHostingMinutes,
+
+        role: user.role,
+        isVerified: user.isVerified,
+        lastSeen: user.lastSeen,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ================= UPDATE PROFILE =================
 exports.updateProfile = async (req, res) => {
   try {
