@@ -52,6 +52,23 @@ module.exports = (io) => {
     });
 
     /* =========================
+       CHECK ONLINE STATUS
+    ========================= */
+    socket.on("private:user:check_online", ({ targetUserId }) => {
+      try {
+        if (!targetUserId) return;
+        const key = targetUserId.toString();
+        const isOnline = userSockets.has(key) && userSockets.get(key).size > 0;
+        socket.emit("private:user:online", {
+          userId: targetUserId,
+          isOnline,
+        });
+      } catch (err) {
+        console.error("❌ check online error:", err);
+      }
+    });
+
+    /* =========================
        JOIN CONVERSATION
     ========================= */
     socket.on("private:conversation:join", async ({ conversationId }) => {
