@@ -2414,6 +2414,16 @@ module.exports = (io) => {
 
         const inviter = await User.findById(inviterId);
 
+        try {
+          const TempLog = mongoose.models.TempLog || mongoose.model("TempLog", new mongoose.Schema({ error: String, timestamp: Date }, { strict: false }));
+          await TempLog.create({ 
+            error: `ℹ️ Reached room:invite! roomId: ${roomId}, inviterId: ${inviterId}, invitedUsers: ${JSON.stringify(invitedUsers)}`, 
+            timestamp: new Date() 
+          });
+        } catch (logErr) {
+          console.error("❌ TempLog failed:", logErr);
+        }
+
         const invite = await RoomInvite.create({
           roomId,
           roomTitle: room.title || "Live Room",
