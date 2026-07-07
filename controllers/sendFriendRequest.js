@@ -1,6 +1,8 @@
 const Friend = require("../models/friend");
 const FriendRequest = require("../models/friendRequest");
 const User = require("../models/users");
+const Conversation = require("../models/conversation");
+const PrivateMessage = require("../models/privateMessage");
 const mongoose = require("mongoose");
 
 /* ======================
@@ -300,12 +302,23 @@ exports.unfriend = async (req, res) => {
       return res.status(400).json({ message: "Friend ID is required" });
     }
 
+    // Remove friend records in both directions
     await Friend.deleteMany({
       $or: [
         { userId, friendId },
         { userId: friendId, friendId: userId },
       ],
     });
+
+    // Also delete the conversation and its messages
+    const conversation = await Conversation.findOne({
+      participants: { $all: [userId, friendId] },
+    });
+
+    if (conversation) {
+      await PrivateMessage.deleteMany({ conversationId: conversation._id });
+      await Conversation.deleteOne({ _id: conversation._id });
+    }
 
     res.json({
       success: true,
