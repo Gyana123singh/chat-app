@@ -37,14 +37,26 @@ module.exports = (io) => {
           isOnline: true,
         });
 
-        // Auto join conversations
+        // Auto join conversations and push other participants' online status
         const conversations = await Conversation.find({
           participants: userId,
           isActive: true,
-        }).select("_id");
+        });
 
         conversations.forEach((conv) => {
           socket.join(`private:${conv._id}`);
+          
+          const otherUserId = conv.participants.find(
+            (p) => p && p.toString() !== userId.toString()
+          );
+          if (otherUserId) {
+            const otherStr = otherUserId.toString();
+            const isOnline = userSockets.has(otherStr) && userSockets.get(otherStr).size > 0;
+            socket.emit("private:user:online", {
+              userId: otherStr,
+              isOnline,
+            });
+          }
         });
       } catch (error) {
         console.error("❌ private:user:connect error:", error);
