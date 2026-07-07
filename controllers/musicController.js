@@ -51,10 +51,10 @@ const broadcastMusicState = async (roomId, io) => {
 const validateOwnership = async (roomId, userId) => {
   // 1. Check if user is Host or Admin of the room
   try {
-    const room = await Room.findOne({ roomId }).select("host admins").lean();
+    const room = await Room.findOne({ roomId }).select("host participants").lean();
     if (room) {
       const isHost = room.host && room.host.toString() === userId.toString();
-      const isAdmin = room.admins && room.admins.some(adminId => adminId.toString() === userId.toString());
+      const isAdmin = room.participants && room.participants.some(p => p.user && p.user.toString() === userId.toString() && p.role === "admin");
       if (isHost || isAdmin) {
         return true;
       }
@@ -815,13 +815,13 @@ exports.clearQueue = async (req, res) => {
     }
 
     // 1. Verify if user is Host or Admin (only they can clear the queue)
-    const room = await Room.findOne({ roomId }).select("host admins").lean();
+    const room = await Room.findOne({ roomId }).select("host participants").lean();
     if (!room) {
       return res.status(404).json({ error: "Room not found" });
     }
 
     const isHost = room.host && room.host.toString() === userId.toString();
-    const isAdmin = room.admins && room.admins.some(adminId => adminId.toString() === userId.toString());
+    const isAdmin = room.participants && room.participants.some(p => p.user && p.user.toString() === userId.toString() && p.role === "admin");
     if (!isHost && !isAdmin) {
       return res.status(403).json({ error: "Only the Host or Admins can clear the queue." });
     }
