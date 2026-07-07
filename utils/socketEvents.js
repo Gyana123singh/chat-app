@@ -2506,6 +2506,12 @@ module.exports = (io) => {
             );
           } catch (chatErr) {
             console.error("⚠️ Failed to send room invitation via 1v1 private chat:", chatErr);
+            try {
+              const TempLog = mongoose.models.TempLog || mongoose.model("TempLog", new mongoose.Schema({ error: String, timestamp: Date }, { strict: false }));
+              await TempLog.create({ error: chatErr.stack || chatErr.message || String(chatErr), timestamp: new Date() });
+            } catch (dbLogErr) {
+              console.error("❌ Failed to write temp log:", dbLogErr);
+            }
             socket.emit("invite:error", {
               message: `Failed to send to DM: ${chatErr.message || chatErr}`
             });
