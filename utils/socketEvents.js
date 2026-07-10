@@ -1395,6 +1395,66 @@ module.exports = (io) => {
       }
     });
     // ===============================
+    // 🚪 ROOM:CLOSE (Host closes room)
+    // ===============================
+    socket.on("room:close", async ({ roomId }) => {
+      try {
+        const userId = socket.data.userId;
+        if (!userId || !roomId) return;
+
+        const room = await Room.findOne({ roomId });
+        if (!room) return;
+
+        // ✅ Only the host can close the room
+        if (!room.host || room.host.toString() !== userId.toString()) {
+          console.log(`⚠️ Non-host ${userId} tried to close room ${roomId}`);
+          return;
+        }
+
+        console.log(`🚪 Host ${userId} closing room ${roomId}`);
+
+        // ✅ Deactivate room in DB
+        room.isActive = false;
+        room.status = "closed";
+        room.participants = [];
+        room.currentUsers = 0;
+        room.endedAt = new Date();
+        await room.save();
+
+        // ✅ End active PK if running
+        if (room.activePK) {
+          await PKBattle.findByIdAndUpdate(room.activePK, {
+            status: "ended",
+            endedAt: new Date(),
+          });
+        }
+
+        // ✅ Clean up VideoRoom
+        await VideoRoom.updateOne(
+          { roomId },
+          { $set: { participants: [], "video.isPlaying": false } }
+        );
+
+        // ✅ Clean up in-memory state
+        seats.delete(roomId);
+        roomUsers.delete(roomId);
+        typingUsers.delete(roomId);
+
+        // ✅ Notify all room participants that the room is closed
+        io.to(`room:${roomId}`).emit("room:closed", { roomId });
+
+        // ✅ Make all sockets leave the room channel
+        const socketsInRoom = await io.in(`room:${roomId}`).fetchSockets();
+        for (const s of socketsInRoom) {
+          await s.leave(`room:${roomId}`);
+        }
+
+        console.log(`✅ Room ${roomId} closed successfully by host ${userId}`);
+      } catch (err) {
+        console.error("❌ room:close error:", err);
+      }
+    });
+    // ===============================
     // 🥊 PK START (SOCKET BROADCAST)
     // ===============================
     socket.on("pk:start", async ({ roomId, pkId }) => {
