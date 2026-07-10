@@ -221,41 +221,41 @@ global.io = io;
 
 console.log("🚀 Socket.IO + Music Streaming ready");
 
-setInterval(
-  async () => {
-    try {
-      // Find rooms with zero users that are NOT help rooms and NOT admin-created
-      const zombieRooms = await Room.find({
-        currentUsers: 0,
-        isHelpRoom: { $ne: true },
-        createdByAdmin: { $ne: true },
-      });
-
-      for (const room of zombieRooms) {
-        // ✅ End active PK if running
-        if (room.activePK) {
-          const PKBattle = require("./models/pkBattle");
-          await PKBattle.findByIdAndUpdate(room.activePK, {
-            status: "ended",
-            endedAt: new Date(),
-          });
-        }
-
-        await Room.deleteOne({ roomId: room.roomId });
-
-        await VideoRoom.deleteOne({ roomId: room.roomId });
-        await fs.remove(
-          path.resolve(process.cwd(), "uploads", "videos", room.roomId),
-        );
-
-        await MusicState.deleteOne({ roomId: room.roomId });
-      }
-    } catch (err) {
-      console.error("❌ cleanup worker:", err.message);
-    }
-  },
-  5 * 60 * 1000,
-);
+// setInterval(
+//   async () => {
+//     try {
+//       // Find rooms with zero users that are NOT help rooms and NOT admin-created
+//       const zombieRooms = await Room.find({
+//         currentUsers: 0,
+//         isHelpRoom: { $ne: true },
+//         createdByAdmin: { $ne: true },
+//       });
+// 
+//       for (const room of zombieRooms) {
+//         // ✅ End active PK if running
+//         if (room.activePK) {
+//           const PKBattle = require("./models/pkBattle");
+//           await PKBattle.findByIdAndUpdate(room.activePK, {
+//             status: "ended",
+//             endedAt: new Date(),
+//           });
+//         }
+// 
+//         await Room.deleteOne({ roomId: room.roomId });
+// 
+//         await VideoRoom.deleteOne({ roomId: room.roomId });
+//         await fs.remove(
+//           path.resolve(process.cwd(), "uploads", "videos", room.roomId),
+//         );
+// 
+//         await MusicState.deleteOne({ roomId: room.roomId });
+//       }
+//     } catch (err) {
+//       console.error("❌ cleanup worker:", err.message);
+//     }
+//   },
+//   5 * 60 * 1000,
+// );
 
 /* ===================== CRON ===================== */
 const cron = require("./utils/cron");
