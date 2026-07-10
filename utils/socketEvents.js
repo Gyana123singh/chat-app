@@ -2988,17 +2988,26 @@ module.exports = (io) => {
     // GET ROOM MEMBERS FOR MEMBER TAB
     socket.on("room:members", async ({ roomId }) => {
       try {
+        console.log(`🔍 [Socket room:members] Request for roomId: ${roomId}`);
         if (!roomId) return socket.emit("room:members:response", { success: false, message: "Missing roomId" });
 
         const roomDoc = await Room.findOne({ roomId }).lean();
         if (!roomDoc) {
+          console.log(`⚠️ [Socket room:members] Room not found for: ${roomId}`);
           return socket.emit("room:members:response", { success: true, members: [] });
         }
 
+        console.log(`🏠 [Socket room:members] Room found. Database _id: ${roomDoc._id}`);
+
+        // Convert roomDoc._id to clean mongoose ObjectId for reliable lookup in recentRooms array
+        const roomObjectId = new mongoose.Types.ObjectId(roomDoc._id.toString());
+
         // 1. Find all users who joined (saved) this room
-        const joinedUsers = await User.find({ recentRooms: roomDoc._id })
+        const joinedUsers = await User.find({ recentRooms: roomObjectId })
           .select("_id username displayId profile.avatar profile.frame profile.bubble country gender age level")
           .lean();
+        
+        console.log(`👥 [Socket room:members] Found ${joinedUsers.length} users with this room in recentRooms`);
 
         // 2. Find all currently active participants in the room
         const participantIds = (roomDoc.participants || []).map((p) => p.user.toString());
@@ -3043,6 +3052,7 @@ module.exports = (io) => {
           };
         });
 
+        console.log(`✅ [Socket room:members] Returning ${members.length} total members to client`);
         socket.emit("room:members:response", { success: true, members });
       } catch (err) {
         console.error("❌ room:members error:", err);
