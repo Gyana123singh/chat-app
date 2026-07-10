@@ -2995,17 +2995,42 @@ module.exports = (io) => {
           return socket.emit("room:members:response", { success: true, members: [] });
         }
 
-        const participantIds = (roomDoc.participants || []).map((p) => p.user.toString());
-
-        const users = await User.find({ _id: { $in: participantIds } })
+        // 1. Find all users who joined (saved) this room
+        const joinedUsers = await User.find({ recentRooms: roomDoc._id })
           .select("_id username displayId profile.avatar profile.frame profile.bubble country gender age level")
           .lean();
 
-        const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+        // 2. Find all currently active participants in the room
+        const participantIds = (roomDoc.participants || []).map((p) => p.user.toString());
+        const currentParticipants = await User.find({ _id: { $in: participantIds } })
+          .select("_id username displayId profile.avatar profile.frame profile.bubble country gender age level")
+          .lean();
 
-        const members = (roomDoc.participants || []).map((p) => {
-          const uid = p.user.toString();
-          const u = userMap.get(uid) || {};
+        // 3. Combine them in a Map to avoid duplicates
+        const userMap = new Map();
+        for (const u of joinedUsers) {
+          userMap.set(u._id.toString(), u);
+        }
+        for (const u of currentParticipants) {
+          userMap.set(u._id.toString(), u);
+        }
+
+        // 4. Ensure host is included
+        if (roomDoc.host) {
+          const hostId = roomDoc.host.toString();
+          if (!userMap.has(hostId)) {
+            const hostUser = await User.findById(roomDoc.host)
+              .select("_id username displayId profile.avatar profile.frame profile.bubble country gender age level")
+              .lean();
+            if (hostUser) {
+              userMap.set(hostId, hostUser);
+            }
+          }
+        }
+
+        const members = Array.from(userMap.values()).map((u) => {
+          const uid = u._id.toString();
+          const p = (roomDoc.participants || []).find((p) => p.user && p.user.toString() === uid) || {};
           return {
             userId: uid,
             username: u.username || null,
