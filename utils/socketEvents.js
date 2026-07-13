@@ -1384,6 +1384,7 @@ module.exports = (io) => {
         io.to(roomName).emit("room:userLeft", {
           userId,
           displayId: socket.data.displayId || socket.data.user?.displayId || null,
+          username: socket.data.username || socket.data.user?.username || null,
         });
         await broadcastRoomUsers(roomId, userId);
         await broadcastWatcherCount(roomId, io, userId);
