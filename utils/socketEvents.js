@@ -2597,6 +2597,24 @@ module.exports = (io) => {
         console.error("❌ room invite error:", err);
       }
     });
+    socket.on("room:seat:invite", async ({ roomId, targetUserId, seatIndex }) => {
+      try {
+        const inviterId = socket.data.userId;
+        const inviterUsername = socket.data.username;
+        if (!inviterId || !targetUserId || !roomId) return;
+
+        console.log(`📩 seat:invite received for room ${roomId} from ${inviterUsername} targeting ${targetUserId} on seat index ${seatIndex}`);
+
+        io.to(targetUserId.toString()).emit("room:seat:invite:received", {
+          roomId,
+          inviterId,
+          inviterName: inviterUsername || "Host",
+          seatIndex,
+        });
+      } catch (err) {
+        console.error("❌ room:seat:invite error:", err);
+      }
+    });
     /* =========================
        CHAT
     ========================= */
