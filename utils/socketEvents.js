@@ -414,7 +414,7 @@ module.exports = (io) => {
             gender: dbUser?.gender || "Other",
             age: dbUser?.age || 18,
             mic: micStates.get(userIdStr) || {
-              muted: false,
+              muted: true,
               speaking: false,
             },
             deafened: deafenStates.get(userIdStr) || false,
@@ -515,7 +515,7 @@ module.exports = (io) => {
       socket.data.avatar = avatar;
 
       socket.join(userId.toString());
-      micStates.set(userId, { muted: false, speaking: false });
+      micStates.set(userId, { muted: true, speaking: false });
 
       // 🔥 Cache profile data
       const user = await User.findById(userId)
@@ -2061,7 +2061,7 @@ module.exports = (io) => {
 
         // ✅ UPDATE USER STATE
         socket.data.isWatcher = false;
-        micStates.set(userId, { muted: false, speaking: false });
+        micStates.set(userId, { muted: true, speaking: false });
 
         // Place user at target index
         roomSeats[targetIndex] = userId;
@@ -2933,7 +2933,7 @@ module.exports = (io) => {
           frame: s.data.user?.frame || s.data.profile?.frame || null,
           bubble: s.data.user?.bubble || s.data.profile?.bubble || null,
           mic: micStates.get(s.data.userId?.toString()) || {
-            muted: false,
+            muted: true,
             speaking: false,
           },
           deafened: deafenStates.get(s.data.userId?.toString()) || false,
