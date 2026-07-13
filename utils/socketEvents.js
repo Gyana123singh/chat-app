@@ -970,11 +970,12 @@ module.exports = (io) => {
         // ✅ Broadcast Watcher Count
         await broadcastWatcherCount(roomId, io);
 
+        const joinedUser = socket.data.user || {};
         socket.to(roomName).emit("room:userJoined", {
-          id: socket.data.user.id,
-          displayId: socket.data.user.displayId, // ✅ FIXED
-          username: socket.data.user.username,
-          avatar: socket.data.user.avatar,
+          id: joinedUser.id || socket.data.userId,
+          displayId: joinedUser.displayId || socket.data.displayId || null,
+          username: joinedUser.username || socket.data.username || "A user",
+          avatar: joinedUser.avatar || socket.data.avatar || "",
         });
 
         //room:seatCount
