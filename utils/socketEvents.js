@@ -3034,22 +3034,13 @@ module.exports = (io) => {
         
         console.log(`👥 [Socket room:members] Found ${joinedUsers.length} users with this room in recentRooms`);
 
-        // 2. Find all currently active participants in the room
-        const participantIds = (roomDoc.participants || []).map((p) => p.user.toString());
-        const currentParticipants = await User.find({ _id: { $in: participantIds } })
-          .select("_id username displayId profile.avatar profile.frame profile.bubble country gender age level")
-          .lean();
-
-        // 3. Combine them in a Map to avoid duplicates
+        // 2. Combine joinedUsers in a Map
         const userMap = new Map();
         for (const u of joinedUsers) {
           userMap.set(u._id.toString(), u);
         }
-        for (const u of currentParticipants) {
-          userMap.set(u._id.toString(), u);
-        }
 
-        // 4. Ensure host is included
+        // 3. Ensure host is included
         if (roomDoc.host) {
           const hostId = roomDoc.host.toString();
           if (!userMap.has(hostId)) {
