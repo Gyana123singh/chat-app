@@ -3142,8 +3142,8 @@ module.exports = (io) => {
       const userId = socket.data.userId;
       if (!userId || !roomId) return;
 
-      const allowed = await isHost(roomId, userId);
-      if (!allowed) return socket.emit("error:permission", { message: "Only host can mute all" });
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can mute all" });
 
       const sockets = await io.in(`room:${roomId}`).fetchSockets();
 

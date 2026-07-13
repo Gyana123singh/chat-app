@@ -664,10 +664,13 @@ exports.updateRoom = async (req, res) => {
       });
     }
 
-    if (room.host.toString() !== req.user.id) {
+    const isHost = room.host.toString() === req.user.id;
+    const isAdmin = Array.isArray(room.admins) && room.admins.some(adminId => adminId.toString() === req.user.id);
+
+    if (!isHost && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only host can update room",
+        message: "Only host or admin can update room",
       });
     }
 
@@ -1054,10 +1057,13 @@ exports.setPassword = async (req, res) => {
       });
     }
 
-    if (room.host.toString() !== req.user.id) {
+    const isHost = room.host.toString() === req.user.id;
+    const isAdmin = Array.isArray(room.admins) && room.admins.some(adminId => adminId.toString() === req.user.id);
+
+    if (!isHost && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only the host can set a room password",
+        message: "Only the host or an admin can set a room password",
       });
     }
 
@@ -1101,10 +1107,13 @@ exports.unlockRoom = async (req, res) => {
       });
     }
 
-    if (room.host.toString() !== req.user.id) {
+    const isHost = room.host.toString() === req.user.id;
+    const isAdmin = Array.isArray(room.admins) && room.admins.some(adminId => adminId.toString() === req.user.id);
+
+    if (!isHost && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: "Only the host can unlock the room",
+        message: "Only the host or an admin can unlock the room",
       });
     }
 
