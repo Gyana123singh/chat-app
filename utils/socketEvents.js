@@ -2606,6 +2606,7 @@ module.exports = (io) => {
         console.log(`📩 seat:invite received for room ${roomId} from ${inviterUsername} targeting ${targetUserId} on seat index ${seatIndex}`);
 
         const targetSocketIds = getUserSocketIds(targetUserId);
+        console.log(`🔌 Active socket IDs for user ${targetUserId}:`, targetSocketIds);
         targetSocketIds.forEach((ts) => {
           io.to(ts).emit("room:seat:invite:received", {
             roomId,
