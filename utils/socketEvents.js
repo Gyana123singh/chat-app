@@ -2605,11 +2605,15 @@ module.exports = (io) => {
 
         console.log(`📩 seat:invite received for room ${roomId} from ${inviterUsername} targeting ${targetUserId} on seat index ${seatIndex}`);
 
-        io.to(targetUserId.toString()).emit("room:seat:invite:received", {
-          roomId,
-          inviterId,
-          inviterName: inviterUsername || "Host",
-          seatIndex,
+        const targetSocketIds = getUserSocketIds(targetUserId);
+        targetSocketIds.forEach((ts) => {
+          io.to(ts).emit("room:seat:invite:received", {
+            roomId,
+            inviterId,
+            inviterName: inviterUsername || "Host",
+            targetUserId: targetUserId,
+            seatIndex,
+          });
         });
       } catch (err) {
         console.error("❌ room:seat:invite error:", err);
