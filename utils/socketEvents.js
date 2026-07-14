@@ -407,6 +407,7 @@ module.exports = (io) => {
             isBackground: backgroundUsers.has(userIdStr),
             isAdmin: admins.has(userIdStr),
             isHost: userIdStr === hostId,
+            role: userIdStr === hostId ? "host" : admins.has(userIdStr) ? "admin" : "listener",
             frame: dbUser?.profile?.frame?.icon || null,
             bubble: dbUser?.profile?.bubble || null,
             level: dbUser?.level?.personal?.level || 1,
@@ -3059,9 +3060,16 @@ module.exports = (io) => {
           }
         }
 
+        const adminsSet = new Set((roomDoc.admins || []).map(id => id.toString()));
         const members = Array.from(userMap.values()).map((u) => {
           const uid = u._id.toString();
           const p = (roomDoc.participants || []).find((p) => p.user && p.user.toString() === uid) || {};
+          let role = p.role || "listener";
+          if (roomDoc.host?.toString() === uid) {
+            role = "host";
+          } else if (adminsSet.has(uid)) {
+            role = "admin";
+          }
           return {
             userId: uid,
             username: u.username || null,
@@ -3069,7 +3077,7 @@ module.exports = (io) => {
             avatar: u.profile?.avatar || p.avatar || null,
             frame: u.profile?.frame?.icon || null,
             bubble: u.profile?.bubble || null,
-            role: p.role || (roomDoc.host?.toString() === uid ? "host" : "listener"),
+            role: role,
             joinedAt: p.joinedAt || null,
           };
         });
