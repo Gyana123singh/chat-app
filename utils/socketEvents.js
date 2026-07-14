@@ -3717,6 +3717,26 @@ module.exports = (io) => {
     });
 
     /* =========================
+       EMOJI REACTIONS
+    ========================= */
+    socket.on("send_emoji", (payload) => {
+      try {
+        const { roomId, userId, emoji } = payload || {};
+        if (!roomId || !userId || !emoji) return;
+
+        // Broadcast to all other users in the room
+        socket.to(`room:${roomId}`).emit("receive_emoji", {
+          userId,
+          emoji,
+        });
+
+        console.log(`😂 Emoji sent by ${userId} in room ${roomId}: ${emoji}`);
+      } catch (err) {
+        console.error("❌ send_emoji error:", err);
+      }
+    });
+
+    /* =========================
        DISCONNECT
     ========================= */
     socket.on("disconnect", async () => {
