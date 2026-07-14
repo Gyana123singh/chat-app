@@ -900,25 +900,33 @@ module.exports = (io) => {
         if (!alreadyJoined) {
           roomDoc.lastActivityAt = new Date();
 
+          let role = "listener";
+          if (roomDoc.host.toString() === userId.toString()) {
+            role = "host";
+          } else if (roomDoc.admins && roomDoc.admins.some(id => id.toString() === userId.toString())) {
+            role = "admin";
+          }
+
           roomDoc.participants.push({
             user: userId,
-
-            role:
-              roomDoc.host.toString() === userId.toString()
-                ? "host"
-                : "listener",
-
+            role: role,
             avatar: freshAvatar,
-
             joinedAt: new Date(),
           });
         } else {
-          // Sync existing participant's avatar with their fresh profile avatar
+          // Sync existing participant's avatar with their fresh profile avatar and check if their role is admin
           const pIdx = roomDoc.participants.findIndex(
             (p) => p.user.toString() === userId.toString(),
           );
           if (pIdx !== -1) {
             roomDoc.participants[pIdx].avatar = freshAvatar;
+            let role = "listener";
+            if (roomDoc.host.toString() === userId.toString()) {
+              role = "host";
+            } else if (roomDoc.admins && roomDoc.admins.some(id => id.toString() === userId.toString())) {
+              role = "admin";
+            }
+            roomDoc.participants[pIdx].role = role;
           }
         }
 
@@ -1471,10 +1479,10 @@ module.exports = (io) => {
           return socket.emit("pk:error", { message: "Room not found" });
         }
 
-        // ✅ ONLY HOST ALLOWED
-        if (!room.host || room.host.toString() !== userId.toString()) {
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) {
           return socket.emit("pk:error", {
-            message: "Only host can start PK",
+            message: "Only host or admin can start PK",
           });
         }
 
@@ -1855,10 +1863,10 @@ module.exports = (io) => {
         const room = await Room.findOne({ roomId });
         if (!room) return;
 
-        // Only host can change room avatar
-        if (!room.host || room.host.toString() !== userId.toString()) {
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) {
           return socket.emit("error:permission", {
-            message: "Only host can update room avatar",
+            message: "Only host/admin can update room avatar",
           });
         }
 
@@ -1907,11 +1915,10 @@ module.exports = (io) => {
       try {
         const userId = socket.data.userId;
 
-        const room = await Room.findOne({ roomId });
-
-        if (!room || room.host.toString() !== userId.toString()) {
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) {
           return socket.emit("pk:error", {
-            message: "Only host can end PK",
+            message: "Only host or admin can end PK",
           });
         }
 
@@ -1927,11 +1934,10 @@ module.exports = (io) => {
 
         if (!userId || !roomId) return;
 
-        const room = await Room.findOne({ roomId });
-
-        if (!room || room.host.toString() !== userId.toString()) {
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) {
           return socket.emit("pk:error", {
-            message: "Only host can force end PK",
+            message: "Only host or admin can force end PK",
           });
         }
 
