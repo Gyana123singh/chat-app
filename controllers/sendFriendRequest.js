@@ -214,18 +214,21 @@ exports.getFriends = async (req, res) => {
     const friends = await Friend.find({ userId })
       .populate({
         path: "friendId",
-        select: "_id username profile.avatar lastSeen level stats",
+        select: "_id username displayId profile.avatar lastSeen level stats",
       })
       .lean();
 
-    const formatted = friends.map((f) => ({
-      _id: f.friendId._id,
-      username: f.friendId.username,
-      avatar: f.friendId.profile?.avatar,
-      lastSeen: f.friendId.lastSeen,
-      level: f.friendId.level,
-      stats: f.friendId.stats,
-    }));
+    const formatted = friends
+      .filter((f) => f.friendId)
+      .map((f) => ({
+        _id: f.friendId._id,
+        username: f.friendId.username,
+        displayId: f.friendId.displayId,
+        avatar: f.friendId.profile?.avatar,
+        lastSeen: f.friendId.lastSeen,
+        level: f.friendId.level,
+        stats: f.friendId.stats,
+      }));
 
     res.json({
       success: true,
