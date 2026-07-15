@@ -46,6 +46,21 @@ connectMongose().then(async () => {
     const { migrateMusicData, restoreAllMusicStates } = require("./controllers/musicController");
     await migrateMusicData();
     await restoreAllMusicStates();
+
+    // Backfill displayId for existing users
+    const User = require("./models/users");
+    const generateDisplayId = require("./utils/generateDisplayId");
+    const usersWithoutId = await User.find({
+      $or: [{ displayId: { $exists: false } }, { displayId: null }],
+    });
+    if (usersWithoutId.length > 0) {
+      console.log(`[Backfill] Found ${usersWithoutId.length} users without displayId. Assigning...`);
+      for (const u of usersWithoutId) {
+        u.displayId = await generateDisplayId();
+        await u.save();
+      }
+      console.log("[Backfill] Assigned displayId to all users successfully!");
+    }
   } catch (err) {
     console.error("❌ Failed to run startup migrations/restores:", err);
   }
