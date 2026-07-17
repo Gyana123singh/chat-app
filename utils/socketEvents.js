@@ -3260,7 +3260,7 @@ module.exports = (io) => {
     // MIC OFF (Force mute one user - HOST/ADMIN ONLY)
     socket.on("room:mic:forceOff", async (payload) => {
       const roomId = payload.roomId;
-      const targetUserId = payload.targetUserId || payload.userId;
+      const targetUserId = (payload.targetUserId || payload.userId)?.toString();
       const userId = socket.data.userId;
       if (!userId || !roomId || !targetUserId) return;
 
@@ -3271,15 +3271,13 @@ module.exports = (io) => {
 
       io.to(`room:${roomId}`).emit("mic:update", {
         userId: targetUserId,
-        displayId: null, // We don't have it here easily, but the ID is enough for the UI to find the user
+        displayId: null,
         muted: true,
         speaking: false,
       });
 
-      const targetSocket = onlineUsers.get(targetUserId);
-      if (targetSocket) {
-        io.to(targetSocket).emit("mic:forceMuted");
-      }
+      // Emit to all user's sockets via their private room (userId.toString())
+      io.to(targetUserId).emit("mic:forceMuted");
 
       // Track force-muted user
       if (!forceMutedUsers.has(roomId)) {
@@ -3291,7 +3289,7 @@ module.exports = (io) => {
     // FORCE UNMUTE ONE USER (HOST/ADMIN ONLY)
     socket.on("room:mic:forceUnmute", async (payload) => {
       const roomId = payload.roomId;
-      const targetUserId = payload.targetUserId || payload.userId;
+      const targetUserId = (payload.targetUserId || payload.userId)?.toString();
       const userId = socket.data.userId;
       if (!userId || !roomId || !targetUserId) return;
 
@@ -3313,10 +3311,8 @@ module.exports = (io) => {
         speaking: false,
       });
 
-      const targetSocket = onlineUsers.get(targetUserId);
-      if (targetSocket) {
-        io.to(targetSocket).emit("mic:forceUnmuted");
-      }
+      // Emit to all user's sockets via their private room (userId.toString())
+      io.to(targetUserId).emit("mic:forceUnmuted");
     });
 
     // MUTE EVERYONE (HOST ONLY)
