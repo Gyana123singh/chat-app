@@ -799,6 +799,7 @@ module.exports = (io) => {
         const roomDoc = await Room.findOne({ roomId }).select("+password");
         // ❌ ROOM NOT FOUND
         if (!roomDoc) {
+          socket.leave(roomName);
           return socket.emit("room:error", {
             message: "Room not found",
           });
@@ -831,13 +832,23 @@ module.exports = (io) => {
 
         // ❌ BLOCKED USER
         if (roomDoc.blockedUsers && roomDoc.blockedUsers.some(id => id.toString() === userId.toString())) {
+          socket.leave(roomName);
           return socket.emit("room:error", {
             message: "You are blocked from this room",
           });
         }
 
+        // ❌ KICKED USER
+        if (roomDoc.kickedUsers && roomDoc.kickedUsers.some(k => k.userId && k.userId.toString() === userId.toString())) {
+          socket.leave(roomName);
+          return socket.emit("room:error", {
+            message: "You have been kicked from this room",
+          });
+        }
+
         // ❌ ROOM ENDED
         if (roomDoc.status === "ended") {
+          socket.leave(roomName);
           return socket.emit("room:error", {
             message: "Room ended",
           });
@@ -887,6 +898,7 @@ module.exports = (io) => {
         // Verify password first if room is locked and user is not host/creator (prevent bypasses)
         if (roomDoc.isLocked && hostId !== userIdString && creatorId !== userIdString) {
           if (!password || password !== roomDoc.password) {
+            socket.leave(roomName);
             return socket.emit("room:error", {
               message: "Incorrect or missing password for this room",
               isLocked: true,
@@ -3494,11 +3506,16 @@ module.exports = (io) => {
           if (!room.kickedUsers) room.kickedUsers = [];
           room.kickedUsers.push({ userId: targetUserId, kickedAt: new Date() });
           room.participants = room.participants.filter(
-            (p) => p.user.toString() !== targetUserId.toString()
+            (p) => p.user && p.user.toString() !== targetUserId.toString()
           );
           room.currentUsers = room.participants.length;
           await room.save();
         }
+
+        // ✅ CLEAN SERVER MEMORY FOR KICKED USER
+        if (roomUsers.has(roomId)) roomUsers.get(roomId).delete(targetUserId.toString());
+        if (typingUsers.has(roomId)) typingUsers.get(roomId).delete(targetUserId.toString());
+        backgroundUsers.delete(targetUserId.toString());
 
         // ✅ REMOVE FROM SEATS (preserve positions)
         let roomSeats = seats.get(roomId) || [];
@@ -3512,6 +3529,17 @@ module.exports = (io) => {
             displayId: targetDisplayId,
             seatNumber: idx + 1,
           });
+        }
+
+        // ✅ FORCE ALL SOCKETS OF KICKED USER IN THIS ROOM TO LEAVE
+        const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
+        for (const s of roomSockets) {
+          if (s.data.userId && s.data.userId.toString() === targetUserId.toString()) {
+            io.to(s.id).emit("room:kicked", { roomId, message: "You have been kicked from the room" });
+            s.data.hasLeftRoom = true;
+            await s.leave(`room:${roomId}`);
+            s.data.roomId = null;
+          }
         }
 
         const targetSocketIds = getUserSocketIds(targetUserId);
@@ -3567,7 +3595,7 @@ module.exports = (io) => {
             room.blockedUsers.push(new mongoose.Types.ObjectId(targetUserId));
           }
           room.participants = room.participants.filter(
-            (p) => p.user.toString() !== targetUserId.toString()
+            (p) => p.user && p.user.toString() !== targetUserId.toString()
           );
           room.currentUsers = room.participants.length;
           await room.save();
@@ -3590,6 +3618,17 @@ module.exports = (io) => {
             displayId: targetDisplayId,
             seatNumber: idx + 1,
           });
+        }
+
+        // ✅ FORCE ALL SOCKETS OF BLOCKED USER IN THIS ROOM TO LEAVE
+        const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
+        for (const s of roomSockets) {
+          if (s.data.userId && s.data.userId.toString() === targetUserId.toString()) {
+            io.to(s.id).emit("room:blocked", { roomId, message: "You have been blocked from this room" });
+            s.data.hasLeftRoom = true;
+            await s.leave(`room:${roomId}`);
+            s.data.roomId = null;
+          }
         }
 
         const targetSocketIds = getUserSocketIds(targetUserId);
