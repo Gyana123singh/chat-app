@@ -202,6 +202,11 @@ const roomSchema = new mongoose.Schema(
       default: [],
     },
 
+    mutedSeats: {
+      type: [Number],
+      default: [],
+    },
+
     roomProfiles: [
       {
         userId: {
