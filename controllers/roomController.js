@@ -607,6 +607,11 @@ exports.getAllRooms = async (req, res) => {
 
     let query = { isActive: true, privacy: "public" };
 
+    if (!search) {
+      query.hostOnline = true;
+      query.currentUsers = { $gt: 0 };
+    }
+
     if (category) {
       query.category = category;
     }
@@ -970,7 +975,7 @@ exports.leaveRoom = async (req, res) => {
 
 exports.getPopularRooms = async (req, res) => {
   try {
-    const rooms = await Room.find({ isActive: true, privacy: "public" })
+    const rooms = await Room.find({ isActive: true, privacy: "public", hostOnline: true, currentUsers: { $gt: 0 } })
       .populate("host", "username profile.avatar")
       .sort({ isHelpRoom: -1, "stats.totalJoins": -1 })
       .limit(10);
