@@ -3095,8 +3095,8 @@ module.exports = (io) => {
       const userId = socket.data.userId;
       if (!userId || !roomId || !seatNumber) return;
 
-      const allowed = await isHost(roomId, userId);
-      if (!allowed) return socket.emit("error:permission", { message: "Only host can lock seats" });
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can lock seats" });
 
       const room = await getRoomSafe(roomId);
       if (!room) {
@@ -3124,8 +3124,8 @@ module.exports = (io) => {
       const userId = socket.data.userId;
       if (!userId || !roomId || !seatNumber) return;
 
-      const allowed = await isHost(roomId, userId);
-      if (!allowed) return socket.emit("error:permission", { message: "Only host can unlock seats" });
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can unlock seats" });
 
       const room = await getRoomSafe(roomId);
       if (!room) {
