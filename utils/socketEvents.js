@@ -504,6 +504,7 @@ module.exports = (io) => {
       if (!userId) return;
 
       onlineUsers.set(userId, socket.id);
+      User.findByIdAndUpdate(userId, { lastSeen: new Date() }).catch(e => console.error("Error updating lastSeen on connect:", e));
       // ✅ RESET BACKGROUND STATE
 
       addUserSocket(userId, socket.id);
@@ -4030,6 +4031,7 @@ module.exports = (io) => {
         onlineUsers.delete(userId);
         micStates.delete(userId);
         deafenStates.delete(userId.toString());
+        User.findByIdAndUpdate(userId, { lastSeen: new Date() }).catch(e => console.error("Error updating lastSeen on disconnect:", e));
 
         if (roomStayTimers.has(userId)) {
           clearInterval(roomStayTimers.get(userId));
