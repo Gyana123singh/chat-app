@@ -347,6 +347,7 @@ module.exports = (io) => {
   const roomMessages = new Map(); // roomId -> [messages]
   const typingUsers = new Map(); // roomId -> Set of userIds typing
   const roomUsers = new Map(); // roomId -> Set of userIds in room
+  const forceMutedUsers = new Map(); // roomId -> Set of userIds force-muted by host/admin
 
   // ✅ HELPER: Broadcast Room Users (Full State)
   const broadcastRoomUsers = async (roomId, excludeUserIds = []) => {
@@ -2288,6 +2289,17 @@ module.exports = (io) => {
       const { userId, roomId } = socket.data;
       if (!userId || !roomId) return;
 
+      // Block unmuting if user is force-muted by host/admin
+      try {
+        const forceMutedSet = forceMutedUsers.get(roomId);
+        if (forceMutedSet && forceMutedSet.has(userId)) {
+          socket.emit("mic:forceMuted");
+          return;
+        }
+      } catch (err) {
+        console.error("❌ mic:unmute force-mute check error:", err);
+      }
+
       // Block unmuting if user is occupying a muted seat
       try {
         const roomSeats = seats.get(roomId) || [];
@@ -3254,6 +3266,43 @@ module.exports = (io) => {
       const targetSocket = onlineUsers.get(targetUserId);
       if (targetSocket) {
         io.to(targetSocket).emit("mic:forceMuted");
+      }
+
+      // Track force-muted user
+      if (!forceMutedUsers.has(roomId)) {
+        forceMutedUsers.set(roomId, new Set());
+      }
+      forceMutedUsers.get(roomId).add(targetUserId);
+    });
+
+    // FORCE UNMUTE ONE USER (HOST/ADMIN ONLY)
+    socket.on("room:mic:forceUnmute", async (payload) => {
+      const roomId = payload.roomId;
+      const targetUserId = payload.targetUserId || payload.userId;
+      const userId = socket.data.userId;
+      if (!userId || !roomId || !targetUserId) return;
+
+      const allowed = await isHostOrAdmin(roomId, userId);
+      if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can force unmute" });
+
+      // Remove from force-muted tracking
+      const forceMutedSet = forceMutedUsers.get(roomId);
+      if (forceMutedSet) {
+        forceMutedSet.delete(targetUserId);
+      }
+
+      micStates.set(targetUserId, { muted: false, speaking: false });
+
+      io.to(`room:${roomId}`).emit("mic:update", {
+        userId: targetUserId,
+        displayId: null,
+        muted: false,
+        speaking: false,
+      });
+
+      const targetSocket = onlineUsers.get(targetUserId);
+      if (targetSocket) {
+        io.to(targetSocket).emit("mic:forceUnmuted");
       }
     });
 
