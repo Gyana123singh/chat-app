@@ -607,11 +607,6 @@ exports.getAllRooms = async (req, res) => {
 
     let query = { isActive: true, privacy: "public" };
 
-    if (!search) {
-      query.hostOnline = true;
-      query.currentUsers = { $gt: 0 };
-    }
-
     if (category) {
       query.category = category;
     }
