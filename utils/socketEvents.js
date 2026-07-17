@@ -3486,6 +3486,9 @@ module.exports = (io) => {
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can kick out" });
 
+        const targetUser = await User.findById(targetUserId).lean();
+        const targetDisplayId = targetUser?.displayId || null;
+
         const room = await Room.findOne({ roomId });
         if (room) {
           if (!room.kickedUsers) room.kickedUsers = [];
@@ -3501,8 +3504,15 @@ module.exports = (io) => {
         let roomSeats = seats.get(roomId) || [];
         const normalized = roomSeats.map((id) => (id ? id.toString() : null));
         const idx = normalized.indexOf(targetUserId.toString());
-        if (idx >= 0) normalized[idx] = null;
-        seats.set(roomId, normalized);
+        if (idx >= 0) {
+          normalized[idx] = null;
+          seats.set(roomId, normalized);
+          io.to(`room:${roomId}`).emit("room:seat:removed", {
+            userId: targetUserId.toString(),
+            displayId: targetDisplayId,
+            seatNumber: idx + 1,
+          });
+        }
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
@@ -3517,8 +3527,18 @@ module.exports = (io) => {
           }
         }
 
+        io.to(`room:${roomId}`).emit("room:userLeft", {
+          userId: targetUserId.toString(),
+          displayId: targetDisplayId,
+        });
+
+        deafenStates.delete(targetUserId.toString());
+        micStates.delete(targetUserId.toString());
+        micStates.delete(targetUserId);
+
         // Broadcast updated users list
         await broadcastRoomUsers(roomId, targetUserId);
+        await broadcastWatcherCount(roomId, io, targetUserId);
 
         console.log(`👢 User ${targetUserId} kicked from ${roomId}`);
       } catch (err) {
@@ -3536,6 +3556,9 @@ module.exports = (io) => {
 
         const allowed = await isHostOrAdmin(roomId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can block user" });
+
+        const targetUser = await User.findById(targetUserId).lean();
+        const targetDisplayId = targetUser?.displayId || null;
 
         const room = await Room.findOne({ roomId });
         if (room) {
@@ -3559,8 +3582,15 @@ module.exports = (io) => {
         let roomSeats = seats.get(roomId) || [];
         const normalized = roomSeats.map((id) => (id ? id.toString() : null));
         const idx = normalized.indexOf(targetUserId.toString());
-        if (idx >= 0) normalized[idx] = null;
-        seats.set(roomId, normalized);
+        if (idx >= 0) {
+          normalized[idx] = null;
+          seats.set(roomId, normalized);
+          io.to(`room:${roomId}`).emit("room:seat:removed", {
+            userId: targetUserId.toString(),
+            displayId: targetDisplayId,
+            seatNumber: idx + 1,
+          });
+        }
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
@@ -3575,8 +3605,18 @@ module.exports = (io) => {
           }
         }
 
+        io.to(`room:${roomId}`).emit("room:userLeft", {
+          userId: targetUserId.toString(),
+          displayId: targetDisplayId,
+        });
+
+        deafenStates.delete(targetUserId.toString());
+        micStates.delete(targetUserId.toString());
+        micStates.delete(targetUserId);
+
         // Broadcast updated users list
         await broadcastRoomUsers(roomId, targetUserId);
+        await broadcastWatcherCount(roomId, io, targetUserId);
 
         console.log(`🚫 User ${targetUserId} blocked from ${roomId}`);
       } catch (err) {
