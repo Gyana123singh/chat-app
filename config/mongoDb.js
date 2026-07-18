@@ -1,7 +1,23 @@
 const mongoose = require("mongoose");
 const User = require("../models/users");
+const StoreCategory = require("../models/storeCategory");
 const bcrypt = require("bcryptjs");
 const generateDisplayId = require("../utils/generateDisplayId");
+
+const seedStoreCategories = async () => {
+  try {
+    const defaultCategories = ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI"];
+    for (const type of defaultCategories) {
+      const exists = await StoreCategory.findOne({ type });
+      if (!exists) {
+        await StoreCategory.create({ type });
+        console.log(`🌱 Store category seeded: ${type}`);
+      }
+    }
+  } catch (error) {
+    console.error("❌ Seeding store categories failed:", error);
+  }
+};
 
 const seedAdminUser = async () => {
   try {
@@ -62,6 +78,7 @@ const connectMongose = async () => {
 
     console.log("✅ MongoDB connected successfully");
     await seedAdminUser();
+    await seedStoreCategories();
   } catch (error) {
     console.error("❌ MongoDB connection failed:");
     console.error(error);
