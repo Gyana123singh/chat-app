@@ -166,7 +166,7 @@ module.exports = (socket, io) => {
             giftId: gift._id.toString(),
             giftName: gift.name,
             giftIcon: gift.icon,
-            duration: finalDuration
+            duration: duration
           });
         }
 
