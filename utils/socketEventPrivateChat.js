@@ -356,6 +356,136 @@ module.exports = (io) => {
     );
 
     /* =========================
+       RING GIFT ACCEPT/REJECT
+    ========================= */
+    socket.on("private:message:accept_ring", async (payload, callback) => {
+      try {
+        const userId = socket.data.userId;
+        const { messageId, conversationId } = payload;
+        if (!userId || !messageId || !conversationId) {
+          return socket.emit("private:message:error", { error: "Missing fields" });
+        }
+
+        const message = await Message.findById(messageId);
+        if (!message) {
+          return socket.emit("private:message:error", { error: "Message not found" });
+        }
+
+        if (message.recipient.toString() !== userId.toString()) {
+          return socket.emit("private:message:error", { error: "Unauthorized" });
+        }
+
+        if (!message.text.includes("|pending]")) {
+          return socket.emit("private:message:error", { error: "Ring gift already processed" });
+        }
+
+        // Extract gift details from: [RING_GIFT:giftId|giftName|giftIcon|pending]
+        const text = message.text;
+        const startIndex = text.indexOf("[RING_GIFT:") + "[RING_GIFT:".length;
+        const endIndex = text.lastIndexOf("]");
+        if (endIndex <= startIndex) {
+          return socket.emit("private:message:error", { error: "Invalid message format" });
+        }
+
+        const content = text.substring(startIndex, endIndex);
+        const parts = content.split("|");
+        const giftId = parts[0];
+        const giftName = parts[1];
+        const giftIcon = parts[2];
+
+        const StoreGift = require("../models/storeGift");
+        const StoreGiftInventory = require("../models/storeGiftInventory");
+        const User = require("../models/users");
+
+        const gift = await StoreGift.findById(giftId).lean();
+        if (!gift) {
+          return socket.emit("private:message:error", { error: "Gift details not found in DB" });
+        }
+
+        const finalDuration = 1; // 1 day standard duration for rings
+        const expiresAt = new Date(Date.now() + finalDuration * 86400000);
+
+        // Disable previous active ring
+        await StoreGiftInventory.updateMany(
+          { userId, effectType: "RING", isActive: true },
+          { $set: { isActive: false } }
+        );
+
+        // Save new active Ring to Inventory
+        await StoreGiftInventory.create({
+          userId,
+          giftId: gift._id,
+          effectType: "RING",
+          icon: giftIcon,
+          animationUrl: gift.animationUrl || giftIcon,
+          duration: finalDuration,
+          expiresAt,
+          isActive: true,
+        });
+
+        // Apply active ring to user profile
+        await User.findByIdAndUpdate(userId, {
+          $set: { "profile.ring": giftIcon }
+        });
+
+        // Update message status to accepted
+        message.text = `[RING_GIFT:${giftId}|${giftName}|${giftIcon}|accepted]`;
+        await message.save();
+
+        await message.populate([
+          { path: "sender", select: "username profile.avatar" },
+          { path: "recipient", select: "username profile.avatar" },
+        ]);
+
+        // Broadcast updated message to chat room
+        io.to(`private:${conversationId}`).emit("private:message:receive", message);
+
+        // Emit global profile:update to update UI and avatar decoration in real-time
+        io.to(userId.toString()).emit("profile:update", {
+          effectType: "RING",
+          ring: giftIcon,
+        });
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+      } catch (err) {
+        console.error("❌ Accept ring error:", err);
+        socket.emit("private:message:error", { error: "Failed to accept ring" });
+      }
+    });
+
+    socket.on("private:message:reject_ring", async (payload, callback) => {
+      try {
+        const userId = socket.data.userId;
+        const { messageId, conversationId } = payload;
+        if (!userId || !messageId || !conversationId) return;
+
+        const message = await Message.findById(messageId);
+        if (!message || message.recipient.toString() !== userId.toString()) return;
+
+        if (!message.text.includes("|pending]")) return;
+
+        // Update status to rejected
+        message.text = message.text.replace("|pending]", "|rejected]");
+        await message.save();
+
+        await message.populate([
+          { path: "sender", select: "username profile.avatar" },
+          { path: "recipient", select: "username profile.avatar" },
+        ]);
+
+        io.to(`private:${conversationId}`).emit("private:message:receive", message);
+
+        if (typeof callback === "function") {
+          callback({ success: true });
+        }
+      } catch (err) {
+        console.error("❌ Reject ring error:", err);
+      }
+    });
+
+    /* =========================
        DISCONNECT
     ========================= */
     socket.on("disconnect", () => {

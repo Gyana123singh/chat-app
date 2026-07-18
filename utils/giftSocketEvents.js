@@ -100,6 +100,110 @@ module.exports = (socket, io) => {
         });
       }
 
+      if (gift.effectType === "RING") {
+        const Conversation = require("../models/conversation");
+        const PrivateMessage = require("../models/privateMessage");
+        const Notification = require("../models/notification");
+        
+        const sorted = [senderId.toString(), receiverId.toString()].sort();
+        const hash = sorted.join("_");
+        
+        let conversation = await Conversation.findOne({
+          participantsHash: hash,
+          isActive: true,
+        });
+        
+        if (!conversation) {
+          conversation = await Conversation.create({
+            participants: sorted,
+            participantsHash: hash,
+          });
+        }
+        
+        // Save Transaction
+        await StoreGiftTransaction.create({
+          senderId,
+          receiverIds: [receiverId],
+          giftId: gift._id,
+          giftName: gift.name,
+          giftIcon: gift.icon,
+          giftPrice: gift.price,
+          giftCategory: gift.category,
+          giftRarity: gift.rarity,
+          quantitySent: 1,
+          totalCoinsDeducted: gift.price,
+          recipientCount: 1,
+          status: "completed",
+          completedAt: new Date(),
+        });
+
+        // Create Private Message in pending status
+        const messageText = `[RING_GIFT:${gift._id}|${gift.name}|${gift.icon}|pending]`;
+        const message = await PrivateMessage.create({
+          conversationId: conversation._id,
+          sender: senderId,
+          recipient: receiverId,
+          text: messageText,
+          attachment: null,
+        });
+        
+        conversation.lastMessage = message._id;
+        conversation.lastMessageTime = new Date();
+        await conversation.save();
+        
+        // Check if receiver is online
+        const receiverSockets = await io.in(receiverId.toString()).fetchSockets();
+        const isOnline = receiverSockets.length > 0;
+        
+        if (isOnline) {
+          console.log(`📱 Receiver ${receiverId} is online. Emitting ring:gift:popup`);
+          io.to(receiverId.toString()).emit("ring:gift:popup", {
+            messageId: message._id.toString(),
+            conversationId: conversation._id.toString(),
+            senderId: senderId.toString(),
+            senderUsername: senderUsername || "Someone",
+            senderAvatar: senderAvatar || "",
+            giftId: gift._id.toString(),
+            giftName: gift.name,
+            giftIcon: gift.icon,
+            duration: finalDuration
+          });
+        }
+
+        // Send real-time private message update
+        await message.populate([
+          { path: "sender", select: "username profile.avatar" },
+          { path: "recipient", select: "username profile.avatar" },
+        ]);
+        io.to(`private:${conversation._id}`).emit("private:message:receive", message);
+        
+        // Create Notification
+        const notification = await Notification.create({
+          user: receiverId,
+          type: "message",
+          title: "New Ring Gift",
+          body: `${senderUsername || "User"} sent you a Ring!`,
+          data: {
+            conversationId: conversation._id,
+            senderId,
+          },
+        });
+        io.to(`notify:${receiverId}`).emit("notification:new", notification);
+        
+        // Update Leaderboard
+        await trophyController.updateLeaderboardOnGift(senderId, gift.price);
+        
+        // Respond to Sender
+        socket.emit("store:gift:success", {
+          balance: sender.coins,
+        });
+        
+        if (typeof callback === "function") {
+          callback({ success: true, balance: sender.coins });
+        }
+        return;
+      }
+
       /* ===============================
            ⏳ Duration Logic
         =============================== */
