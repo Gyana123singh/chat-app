@@ -3,6 +3,111 @@ const cloudinary = require("../config/cloudinary");
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 
+const PrivateMessage = require("../models/privateMessage");
+const StoreGiftTransaction = require("../models/storeGiftTransaction");
+
+async function resolveRingPartner(user) {
+  if (!user || !user.profile || !user.profile.ring) {
+    return null;
+  }
+
+  let ringPartner = user.profile.ringPartner
+    ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner })
+    : null;
+
+  // 1. If userId is stored, fetch fresh username & avatar
+  if (ringPartner && ringPartner.userId) {
+    try {
+      const partner = await User.findById(ringPartner.userId)
+        .select("username profile.avatar")
+        .lean();
+      if (partner) {
+        ringPartner = {
+          userId: partner._id,
+          username: partner.username,
+          avatar: partner.profile?.avatar || ringPartner.avatar || null,
+        };
+        return ringPartner;
+      }
+    } catch (err) {
+      console.error("Error resolving ringPartner by userId:", err);
+    }
+  }
+
+  // 2. Fallback: Find partner from accepted PrivateMessage
+  try {
+    const ringMsg = await PrivateMessage.findOne({
+      $or: [{ sender: user._id }, { recipient: user._id }],
+      text: { $regex: /\[RING_GIFT:.*\|accepted\]/ }
+    }).sort({ updatedAt: -1 }).lean();
+
+    if (ringMsg) {
+      const partnerId = ringMsg.sender.toString() === user._id.toString()
+        ? ringMsg.recipient
+        : ringMsg.sender;
+
+      const partner = await User.findById(partnerId)
+        .select("username profile.avatar")
+        .lean();
+
+      if (partner) {
+        ringPartner = {
+          userId: partner._id,
+          username: partner.username,
+          avatar: partner.profile?.avatar || null,
+        };
+
+        // Persist to user's profile in DB
+        User.findByIdAndUpdate(user._id, {
+          $set: { "profile.ringPartner": ringPartner }
+        }).catch(e => console.error("Error saving ringPartner back to user:", e));
+
+        return ringPartner;
+      }
+    }
+  } catch (err) {
+    console.error("Error resolving ringPartner from PrivateMessage:", err);
+  }
+
+  // 3. Fallback: Find partner from StoreGiftTransaction
+  try {
+    const tx = await StoreGiftTransaction.findOne({
+      $or: [{ senderId: user._id }, { receiverIds: user._id }],
+      giftCategory: "RING"
+    }).sort({ createdAt: -1 }).lean();
+
+    if (tx) {
+      const partnerId = tx.senderId.toString() === user._id.toString()
+        ? (tx.receiverIds && tx.receiverIds[0])
+        : tx.senderId;
+
+      if (partnerId) {
+        const partner = await User.findById(partnerId)
+          .select("username profile.avatar")
+          .lean();
+
+        if (partner) {
+          ringPartner = {
+            userId: partner._id,
+            username: partner.username,
+            avatar: partner.profile?.avatar || null,
+          };
+
+          User.findByIdAndUpdate(user._id, {
+            $set: { "profile.ringPartner": ringPartner }
+          }).catch(e => console.error("Error saving ringPartner from tx:", e));
+
+          return ringPartner;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error resolving ringPartner from StoreGiftTransaction:", err);
+  }
+
+  return ringPartner;
+}
+
 // ================= GET PROFILE =================
 exports.getUserById = async (req, res) => {
   try {
@@ -26,23 +131,7 @@ exports.getUserById = async (req, res) => {
       });
     }
 
-    let ringPartner = user.profile?.ringPartner ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner }) : null;
-    if (user.profile?.ringPartner?.userId) {
-      try {
-        const partner = await User.findById(user.profile.ringPartner.userId)
-          .select("username profile.avatar")
-          .lean();
-        if (partner) {
-          ringPartner = {
-            userId: partner._id,
-            username: partner.username,
-            avatar: partner.profile?.avatar || ringPartner?.avatar,
-          };
-        }
-      } catch (pErr) {
-        console.error("Error fetching ringPartner user:", pErr);
-      }
-    }
+    const ringPartner = await resolveRingPartner(user);
 
     res.status(200).json({
       success: true,
@@ -112,23 +201,7 @@ exports.getProfileDetails = async (req, res) => {
       });
     }
 
-    let ringPartner = user.profile?.ringPartner ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner }) : null;
-    if (user.profile?.ringPartner?.userId) {
-      try {
-        const partner = await User.findById(user.profile.ringPartner.userId)
-          .select("username profile.avatar")
-          .lean();
-        if (partner) {
-          ringPartner = {
-            userId: partner._id,
-            username: partner.username,
-            avatar: partner.profile?.avatar || ringPartner?.avatar,
-          };
-        }
-      } catch (pErr) {
-        console.error("Error fetching ringPartner user:", pErr);
-      }
-    }
+    const ringPartner = await resolveRingPartner(user);
 
     res.status(200).json({
       success: true,
