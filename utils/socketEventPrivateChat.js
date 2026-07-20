@@ -2,6 +2,8 @@ const Message = require("../models/privateMessage");
 const Conversation = require("../models/conversation");
 const Notification = require("../models/notification");
 const Block = require("../models/blockUsers");
+const User = require("../models/users");
+const StoreGiftInventory = require("../models/storeGiftInventory");
 const mongoose = require("mongoose");
 
 module.exports = (io) => {
@@ -18,6 +20,8 @@ module.exports = (io) => {
       try {
         if (!userId) return;
 
+        socket.userId = userId;
+        socket.data = socket.data || {};
         socket.data.userId = userId;
         socket.data.username = username;
         socket.data.avatar = avatar;
@@ -610,17 +614,25 @@ module.exports = (io) => {
 
     socket.on("cp:breakup:request", async (data, callback) => {
       try {
-        const userId = socket.data.userId || socket.userId;
-        const { partnerUserId } = data || {};
-
-        if (!userId || !partnerUserId) {
-          if (typeof callback === "function") callback({ success: false, message: "Invalid payload" });
+        const userId = socket.data?.userId || socket.userId;
+        if (!userId) {
+          if (typeof callback === "function") callback({ success: false, message: "Unauthorized (Please re-login)" });
           return;
         }
 
-        const senderUser = await User.findById(userId).select("username profile.avatar");
+        const senderUser = await User.findById(userId).select("username profile.avatar profile.ringPartner");
         if (!senderUser) {
           if (typeof callback === "function") callback({ success: false, message: "Sender not found" });
+          return;
+        }
+
+        let partnerUserId = data?.partnerUserId;
+        if (!partnerUserId && senderUser.profile?.ringPartner) {
+          partnerUserId = senderUser.profile.ringPartner.userId ? senderUser.profile.ringPartner.userId.toString() : null;
+        }
+
+        if (!partnerUserId) {
+          if (typeof callback === "function") callback({ success: false, message: "Partner user ID not found" });
           return;
         }
 
@@ -664,7 +676,7 @@ module.exports = (io) => {
         if (typeof callback === "function") callback({ success: true });
       } catch (err) {
         console.error("❌ CP breakup request error:", err);
-        if (typeof callback === "function") callback({ success: false, message: "Server error" });
+        if (typeof callback === "function") callback({ success: false, message: err.message || "Server error" });
       }
     });
 
