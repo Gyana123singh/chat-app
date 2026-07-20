@@ -144,7 +144,7 @@ exports.getUserById = async (req, res) => {
     }
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday birthDate birthdate dob age"
+      "username phone country countryCode role lastSeen profile stats coins isVerified displayId gender birthday birthDate birthdate dob age"
     );
 
     if (!user) {
