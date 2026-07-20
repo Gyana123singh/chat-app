@@ -636,16 +636,28 @@ module.exports = (io) => {
           return;
         }
 
-        // Find or create conversation
+        // Find or create conversation with participantsHash
+        const sortedParticipants = [userId.toString(), partnerUserId.toString()].sort();
+        const participantsHash = sortedParticipants.join("_");
+
         let conversation = await Conversation.findOne({
-          isGroup: false,
-          participants: { $all: [userId, partnerUserId] },
+          participantsHash: participantsHash,
+          isActive: true,
         });
+
+        if (!conversation) {
+          conversation = await Conversation.findOne({
+            isGroup: false,
+            participants: { $all: [userId, partnerUserId] },
+          });
+        }
 
         if (!conversation) {
           conversation = await Conversation.create({
             isGroup: false,
-            participants: [userId, partnerUserId],
+            participants: sortedParticipants,
+            participantsHash: participantsHash,
+            isActive: true,
           });
         }
 
