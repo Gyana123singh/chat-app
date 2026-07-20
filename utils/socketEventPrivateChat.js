@@ -26,6 +26,7 @@ module.exports = (io) => {
         socket.data.username = username;
         socket.data.avatar = avatar;
 
+        socket.join(userId.toString());
         socket.join(`notify:${userId}`);
 
         if (!userSockets.has(userId)) {
