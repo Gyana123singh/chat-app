@@ -36,6 +36,11 @@ exports.getUserById = async (req, res) => {
         bio: user.profile?.bio,
         language: user.profile?.language,
         theme: user.profile?.theme,
+        ring: user.profile?.ring,
+        frame: user.profile?.frame,
+        bubble: user.profile?.bubble,
+        entranceEffect: user.profile?.entranceEffect,
+        profile: user.profile,
 
         country: user.country,
         countryCode: user.countryCode,
@@ -98,6 +103,11 @@ exports.getProfileDetails = async (req, res) => {
         bio: user.profile?.bio,
         language: user.profile?.language,
         theme: user.profile?.theme,
+        ring: user.profile?.ring,
+        frame: user.profile?.frame,
+        bubble: user.profile?.bubble,
+        entranceEffect: user.profile?.entranceEffect,
+        profile: user.profile,
 
         country: user.country,
         countryCode: user.countryCode,
