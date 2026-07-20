@@ -15,17 +15,17 @@ async function resolveRingPartner(user) {
     ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner })
     : null;
 
-  // 1. If userId is stored, fetch fresh username & avatar
+  // 1. If userId is stored in ringPartner, fetch fresh username & avatar
   if (ringPartner && ringPartner.userId) {
     try {
       const partner = await User.findById(ringPartner.userId)
-        .select("username profile.avatar")
+        .select("username profile.avatar avatar")
         .lean();
       if (partner) {
         ringPartner = {
           userId: partner._id,
           username: partner.username,
-          avatar: partner.profile?.avatar || ringPartner.avatar || null,
+          avatar: partner.profile?.avatar || partner.avatar || ringPartner.avatar || null,
         };
         return ringPartner;
       }
@@ -34,11 +34,11 @@ async function resolveRingPartner(user) {
     }
   }
 
-  // 2. Fallback: Find partner from accepted PrivateMessage
+  // 2. Find partner from accepted PrivateMessage
   try {
     const ringMsg = await PrivateMessage.findOne({
       $or: [{ sender: user._id }, { recipient: user._id }],
-      text: { $regex: /\[RING_GIFT:.*\|accepted\]/ }
+      text: { $regex: /\[RING_GIFT:/i }
     }).sort({ updatedAt: -1 }).lean();
 
     if (ringMsg) {
@@ -47,14 +47,14 @@ async function resolveRingPartner(user) {
         : ringMsg.sender;
 
       const partner = await User.findById(partnerId)
-        .select("username profile.avatar")
+        .select("username profile.avatar avatar")
         .lean();
 
       if (partner) {
         ringPartner = {
           userId: partner._id,
           username: partner.username,
-          avatar: partner.profile?.avatar || null,
+          avatar: partner.profile?.avatar || partner.avatar || null,
         };
 
         // Persist to user's profile in DB
@@ -69,11 +69,34 @@ async function resolveRingPartner(user) {
     console.error("Error resolving ringPartner from PrivateMessage:", err);
   }
 
-  // 3. Fallback: Find partner from StoreGiftTransaction
+  // 3. Find partner by searching another user who has the EXACT same ring equipped!
+  try {
+    const partner = await User.findOne({
+      _id: { $ne: user._id },
+      "profile.ring": user.profile.ring
+    }).select("username profile.avatar avatar").lean();
+
+    if (partner) {
+      ringPartner = {
+        userId: partner._id,
+        username: partner.username,
+        avatar: partner.profile?.avatar || partner.avatar || null,
+      };
+
+      User.findByIdAndUpdate(user._id, {
+        $set: { "profile.ringPartner": ringPartner }
+      }).catch(e => console.error("Error saving ringPartner from ring match:", e));
+
+      return ringPartner;
+    }
+  } catch (err) {
+    console.error("Error resolving ringPartner from ring match:", err);
+  }
+
+  // 4. Find partner from StoreGiftTransaction
   try {
     const tx = await StoreGiftTransaction.findOne({
-      $or: [{ senderId: user._id }, { receiverIds: user._id }],
-      giftCategory: "RING"
+      $or: [{ senderId: user._id }, { receiverIds: user._id }]
     }).sort({ createdAt: -1 }).lean();
 
     if (tx) {
@@ -81,16 +104,16 @@ async function resolveRingPartner(user) {
         ? (tx.receiverIds && tx.receiverIds[0])
         : tx.senderId;
 
-      if (partnerId) {
+      if (partnerId && partnerId.toString() !== user._id.toString()) {
         const partner = await User.findById(partnerId)
-          .select("username profile.avatar")
+          .select("username profile.avatar avatar")
           .lean();
 
         if (partner) {
           ringPartner = {
             userId: partner._id,
             username: partner.username,
-            avatar: partner.profile?.avatar || null,
+            avatar: partner.profile?.avatar || partner.avatar || null,
           };
 
           User.findByIdAndUpdate(user._id, {
