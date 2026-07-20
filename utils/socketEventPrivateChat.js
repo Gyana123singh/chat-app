@@ -405,15 +405,18 @@ module.exports = (io) => {
         const finalDuration = 1; // 1 day standard duration for rings
         const expiresAt = new Date(Date.now() + finalDuration * 86400000);
 
-        // Disable previous active ring
+        const recipientId = userId.toString();
+        const senderId = message.sender.toString();
+
+        // Disable previous active ring for both recipient and sender
         await StoreGiftInventory.updateMany(
-          { userId, effectType: "RING", isActive: true },
+          { userId: { $in: [recipientId, senderId] }, effectType: "RING", isActive: true },
           { $set: { isActive: false } }
         );
 
-        // Save new active Ring to Inventory
+        // Save new active Ring to Inventory for recipient
         await StoreGiftInventory.create({
-          userId,
+          userId: recipientId,
           giftId: gift._id,
           effectType: "RING",
           icon: giftIcon,
@@ -423,8 +426,23 @@ module.exports = (io) => {
           isActive: true,
         });
 
-        // Apply active ring to user profile
-        await User.findByIdAndUpdate(userId, {
+        // Save new active Ring to Inventory for sender as well
+        await StoreGiftInventory.create({
+          userId: senderId,
+          giftId: gift._id,
+          effectType: "RING",
+          icon: giftIcon,
+          animationUrl: gift.animationUrl || giftIcon,
+          duration: finalDuration,
+          expiresAt,
+          isActive: true,
+        });
+
+        // Apply active ring to user profile for BOTH recipient and sender
+        await User.findByIdAndUpdate(recipientId, {
+          $set: { "profile.ring": giftIcon }
+        });
+        await User.findByIdAndUpdate(senderId, {
           $set: { "profile.ring": giftIcon }
         });
 
@@ -440,8 +458,12 @@ module.exports = (io) => {
         // Broadcast updated message to chat room
         io.to(`private:${conversationId}`).emit("private:message:receive", message);
 
-        // Emit global profile:update to update UI and avatar decoration in real-time
-        io.to(userId.toString()).emit("profile:update", {
+        // Emit global profile:update to update UI and avatar decoration in real-time for BOTH users
+        io.to(recipientId).emit("profile:update", {
+          effectType: "RING",
+          ring: giftIcon,
+        });
+        io.to(senderId).emit("profile:update", {
           effectType: "RING",
           ring: giftIcon,
         });
