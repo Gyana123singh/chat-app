@@ -438,12 +438,33 @@ module.exports = (io) => {
           isActive: true,
         });
 
+        const recipientUser = await User.findById(recipientId).select("username profile.avatar").lean();
+        const senderUser = await User.findById(senderId).select("username profile.avatar").lean();
+
+        const recipientPartnerData = {
+          userId: senderUser?._id || senderId,
+          username: senderUser?.username || "Friend",
+          avatar: senderUser?.profile?.avatar || null,
+        };
+
+        const senderPartnerData = {
+          userId: recipientUser?._id || recipientId,
+          username: recipientUser?.username || "Friend",
+          avatar: recipientUser?.profile?.avatar || null,
+        };
+
         // Apply active ring to user profile for BOTH recipient and sender
         await User.findByIdAndUpdate(recipientId, {
-          $set: { "profile.ring": giftIcon }
+          $set: {
+            "profile.ring": giftIcon,
+            "profile.ringPartner": recipientPartnerData,
+          }
         });
         await User.findByIdAndUpdate(senderId, {
-          $set: { "profile.ring": giftIcon }
+          $set: {
+            "profile.ring": giftIcon,
+            "profile.ringPartner": senderPartnerData,
+          }
         });
 
         // Update message status to accepted
@@ -462,10 +483,12 @@ module.exports = (io) => {
         io.to(recipientId).emit("profile:update", {
           effectType: "RING",
           ring: giftIcon,
+          ringPartner: recipientPartnerData,
         });
         io.to(senderId).emit("profile:update", {
           effectType: "RING",
           ring: giftIcon,
+          ringPartner: senderPartnerData,
         });
 
         if (typeof callback === "function") {

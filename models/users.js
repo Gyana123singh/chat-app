@@ -96,6 +96,22 @@ const userSchema = new mongoose.Schema(
         default: null,
       },
 
+      ringPartner: {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+        username: {
+          type: String,
+          default: null,
+        },
+        avatar: {
+          type: String,
+          default: null,
+        },
+      },
+
       bubble: {
         type: String,
         default: null,

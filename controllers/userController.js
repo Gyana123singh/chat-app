@@ -26,6 +26,24 @@ exports.getUserById = async (req, res) => {
       });
     }
 
+    let ringPartner = user.profile?.ringPartner ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner }) : null;
+    if (user.profile?.ringPartner?.userId) {
+      try {
+        const partner = await User.findById(user.profile.ringPartner.userId)
+          .select("username profile.avatar")
+          .lean();
+        if (partner) {
+          ringPartner = {
+            userId: partner._id,
+            username: partner.username,
+            avatar: partner.profile?.avatar || ringPartner?.avatar,
+          };
+        }
+      } catch (pErr) {
+        console.error("Error fetching ringPartner user:", pErr);
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -37,6 +55,7 @@ exports.getUserById = async (req, res) => {
         language: user.profile?.language,
         theme: user.profile?.theme,
         ring: user.profile?.ring,
+        ringPartner,
         frame: user.profile?.frame,
         bubble: user.profile?.bubble,
         entranceEffect: user.profile?.entranceEffect,
@@ -93,6 +112,24 @@ exports.getProfileDetails = async (req, res) => {
       });
     }
 
+    let ringPartner = user.profile?.ringPartner ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner }) : null;
+    if (user.profile?.ringPartner?.userId) {
+      try {
+        const partner = await User.findById(user.profile.ringPartner.userId)
+          .select("username profile.avatar")
+          .lean();
+        if (partner) {
+          ringPartner = {
+            userId: partner._id,
+            username: partner.username,
+            avatar: partner.profile?.avatar || ringPartner?.avatar,
+          };
+        }
+      } catch (pErr) {
+        console.error("Error fetching ringPartner user:", pErr);
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -104,6 +141,7 @@ exports.getProfileDetails = async (req, res) => {
         language: user.profile?.language,
         theme: user.profile?.theme,
         ring: user.profile?.ring,
+        ringPartner,
         frame: user.profile?.frame,
         bubble: user.profile?.bubble,
         entranceEffect: user.profile?.entranceEffect,
