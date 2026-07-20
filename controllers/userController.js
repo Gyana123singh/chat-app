@@ -183,7 +183,7 @@ exports.getUserById = async (req, res) => {
         dob: user.dob || user.birthday || null,
         age: user.age || 18,
 
-        coins: user.stats?.coins,
+        coins: Math.max(user.coins || 0, user.stats?.coins || 0),
         followers: user.stats?.followers,
         following: user.stats?.following,
         giftsReceived: user.stats?.giftsReceived,
@@ -214,7 +214,7 @@ exports.getProfileDetails = async (req, res) => {
     }
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats isVerified displayId gender birthday birthDate birthdate dob age"
+      "username phone country countryCode role lastSeen profile stats coins isVerified displayId gender birthday birthDate birthdate dob age"
     );
 
     if (!user) {
@@ -253,7 +253,7 @@ exports.getProfileDetails = async (req, res) => {
         dob: user.dob || user.birthday || null,
         age: user.age || 18,
 
-        coins: user.stats?.coins,
+        coins: Math.max(user.coins || 0, user.stats?.coins || 0),
         followers: user.stats?.followers,
         following: user.stats?.following,
         giftsReceived: user.stats?.giftsReceived,

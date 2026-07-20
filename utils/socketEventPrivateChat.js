@@ -549,18 +549,26 @@ module.exports = (io) => {
           return;
         }
 
-        const currentCoins = (user.stats && user.stats.coins !== undefined) ? user.stats.coins : (user.coins || 0);
+        const currentCoins = Math.max(user.coins || 0, user.stats?.coins || 0);
         if (currentCoins < 60000) {
-          if (typeof callback === "function") callback({ success: false, message: "Insufficient coins (Requires 60,000 coins)" });
+          if (typeof callback === "function") {
+            callback({ success: false, message: `Insufficient coins (Available: ${currentCoins} coins, required: 60,000)` });
+          }
           return;
         }
 
         // Deduct 60,000 coins
-        if (user.stats && user.stats.coins !== undefined) {
+        if (user.coins >= 60000) {
+          user.coins -= 60000;
+          if (user.stats && user.stats.coins) user.stats.coins = user.coins;
+        } else if (user.stats && user.stats.coins >= 60000) {
           user.stats.coins -= 60000;
+          user.coins = user.stats.coins;
         } else {
           user.coins = Math.max(0, (user.coins || 0) - 60000);
         }
+
+        const updatedCoins = Math.max(user.coins || 0, user.stats?.coins || 0);
 
         const partnerId = partnerUserId || user.profile?.ringPartner?.userId;
 
@@ -600,11 +608,11 @@ module.exports = (io) => {
           effectType: "RING",
           ring: null,
           ringPartner: null,
-          coins: (user.stats && user.stats.coins !== undefined) ? user.stats.coins : user.coins,
+          coins: updatedCoins,
         });
 
         if (typeof callback === "function") {
-          callback({ success: true, coins: (user.stats && user.stats.coins !== undefined) ? user.stats.coins : user.coins });
+          callback({ success: true, coins: updatedCoins });
         }
       } catch (err) {
         console.error("❌ CP instant breakup error:", err);
