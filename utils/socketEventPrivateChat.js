@@ -530,6 +530,212 @@ module.exports = (io) => {
       }
     });
 
+    socket.on("cp:breakup:instant", async (data, callback) => {
+      try {
+        const userId = socket.data.userId || socket.userId;
+        const { partnerUserId } = data || {};
+        if (!userId) {
+          if (typeof callback === "function") callback({ success: false, message: "Unauthorized" });
+          return;
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+          if (typeof callback === "function") callback({ success: false, message: "User not found" });
+          return;
+        }
+
+        const currentCoins = (user.stats && user.stats.coins !== undefined) ? user.stats.coins : (user.coins || 0);
+        if (currentCoins < 60000) {
+          if (typeof callback === "function") callback({ success: false, message: "Insufficient coins (Requires 60,000 coins)" });
+          return;
+        }
+
+        // Deduct 60,000 coins
+        if (user.stats && user.stats.coins !== undefined) {
+          user.stats.coins -= 60000;
+        } else {
+          user.coins = Math.max(0, (user.coins || 0) - 60000);
+        }
+
+        const partnerId = partnerUserId || user.profile?.ringPartner?.userId;
+
+        // Clear ring & ringPartner for sender
+        user.profile.ring = null;
+        user.profile.ringPartner = null;
+        await user.save();
+
+        // Clear ring & ringPartner for partner without sending notification
+        if (partnerId) {
+          await User.findByIdAndUpdate(partnerId, {
+            $set: {
+              "profile.ring": null,
+              "profile.ringPartner": null,
+            }
+          });
+
+          await StoreGiftInventory.updateMany(
+            { userId: partnerId, effectType: "RING" },
+            { $set: { isActive: false } }
+          );
+
+          io.to(partnerId.toString()).emit("profile:update", {
+            effectType: "RING",
+            ring: null,
+            ringPartner: null,
+          });
+        }
+
+        await StoreGiftInventory.updateMany(
+          { userId, effectType: "RING" },
+          { $set: { isActive: false } }
+        );
+
+        // Emit profile update to sender with updated coins
+        io.to(userId.toString()).emit("profile:update", {
+          effectType: "RING",
+          ring: null,
+          ringPartner: null,
+          coins: (user.stats && user.stats.coins !== undefined) ? user.stats.coins : user.coins,
+        });
+
+        if (typeof callback === "function") {
+          callback({ success: true, coins: (user.stats && user.stats.coins !== undefined) ? user.stats.coins : user.coins });
+        }
+      } catch (err) {
+        console.error("❌ CP instant breakup error:", err);
+        if (typeof callback === "function") callback({ success: false, message: "Server error" });
+      }
+    });
+
+    socket.on("cp:breakup:request", async (data, callback) => {
+      try {
+        const userId = socket.data.userId || socket.userId;
+        const { partnerUserId } = data || {};
+
+        if (!userId || !partnerUserId) {
+          if (typeof callback === "function") callback({ success: false, message: "Invalid payload" });
+          return;
+        }
+
+        const senderUser = await User.findById(userId).select("username profile.avatar");
+        if (!senderUser) {
+          if (typeof callback === "function") callback({ success: false, message: "Sender not found" });
+          return;
+        }
+
+        // Find or create conversation
+        let conversation = await Conversation.findOne({
+          isGroup: false,
+          participants: { $all: [userId, partnerUserId] },
+        });
+
+        if (!conversation) {
+          conversation = await Conversation.create({
+            isGroup: false,
+            participants: [userId, partnerUserId],
+          });
+        }
+
+        const msgText = `[CP_BREAKUP_REQUEST:${userId}|${senderUser.username}|pending]`;
+        const message = await Message.create({
+          conversationId: conversation._id,
+          sender: userId,
+          recipient: partnerUserId,
+          text: msgText,
+        });
+
+        await message.populate([
+          { path: "sender", select: "username profile.avatar" },
+          { path: "recipient", select: "username profile.avatar" },
+        ]);
+
+        // Broadcast to 1-to-1 private chat
+        io.to(`private:${conversation._id}`).emit("private:message:receive", message);
+
+        // Emit real-time breakup popup to partner if online
+        io.to(partnerUserId.toString()).emit("cp:breakup:popup", {
+          messageId: message._id,
+          senderId: userId,
+          senderName: senderUser.username,
+          senderAvatar: senderUser.profile?.avatar,
+        });
+
+        if (typeof callback === "function") callback({ success: true });
+      } catch (err) {
+        console.error("❌ CP breakup request error:", err);
+        if (typeof callback === "function") callback({ success: false, message: "Server error" });
+      }
+    });
+
+    socket.on("cp:breakup:respond", async (data, callback) => {
+      try {
+        const userId = socket.data.userId || socket.userId;
+        const { messageId, accepted } = data || {};
+
+        if (!messageId) {
+          if (typeof callback === "function") callback({ success: false, message: "Invalid messageId" });
+          return;
+        }
+
+        const message = await Message.findById(messageId);
+        if (!message) {
+          if (typeof callback === "function") callback({ success: false, message: "Message not found" });
+          return;
+        }
+
+        const senderId = message.sender.toString();
+        const recipientId = message.recipient.toString();
+
+        if (accepted) {
+          // Remove active ring & ringPartner for BOTH users
+          await User.findByIdAndUpdate(senderId, {
+            $set: { "profile.ring": null, "profile.ringPartner": null }
+          });
+          await User.findByIdAndUpdate(recipientId, {
+            $set: { "profile.ring": null, "profile.ringPartner": null }
+          });
+
+          await StoreGiftInventory.updateMany(
+            { userId: { $in: [senderId, recipientId] }, effectType: "RING" },
+            { $set: { isActive: false } }
+          );
+
+          message.text = `[CP_BREAKUP_REQUEST:${senderId}|${accepted ? "accepted" : "rejected"}]`;
+          await message.save();
+
+          await message.populate([
+            { path: "sender", select: "username profile.avatar" },
+            { path: "recipient", select: "username profile.avatar" },
+          ]);
+
+          io.to(`private:${message.conversationId}`).emit("private:message:receive", message);
+
+          // Update profiles on both phones in real-time
+          io.to(senderId).emit("profile:update", { effectType: "RING", ring: null, ringPartner: null });
+          io.to(recipientId).emit("profile:update", { effectType: "RING", ring: null, ringPartner: null });
+
+          io.to(senderId).emit("cp:breakup:result", { accepted: true, message: "Breakup request was accepted." });
+        } else {
+          message.text = `[CP_BREAKUP_REQUEST:${senderId}|rejected]`;
+          await message.save();
+
+          await message.populate([
+            { path: "sender", select: "username profile.avatar" },
+            { path: "recipient", select: "username profile.avatar" },
+          ]);
+
+          io.to(`private:${message.conversationId}`).emit("private:message:receive", message);
+          io.to(senderId).emit("cp:breakup:result", { accepted: false, message: "Breakup request was rejected." });
+        }
+
+        if (typeof callback === "function") callback({ success: true });
+      } catch (err) {
+        console.error("❌ CP breakup respond error:", err);
+        if (typeof callback === "function") callback({ success: false, message: "Server error" });
+      }
+    });
+
     /* =========================
        DISCONNECT
     ========================= */
