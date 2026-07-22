@@ -40,6 +40,11 @@ const roomSchema = new mongoose.Schema(
       maxlength: 150,
     },
 
+    descriptionUpdatedBy: {
+      type: String,
+      default: "",
+    },
+
     activePK: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "PKBattle",

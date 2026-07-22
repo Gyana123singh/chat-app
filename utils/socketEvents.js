@@ -712,6 +712,7 @@ module.exports = (io) => {
         socket.emit("room:description", {
           roomId,
           description: roomDoc?.description || "",
+          updatedBy: roomDoc?.descriptionUpdatedBy || "",
         });
 
         /* ===== VIDEO ===== */
@@ -866,6 +867,7 @@ module.exports = (io) => {
         socket.emit("room:description", {
           roomId,
           description: roomDoc?.description || "",
+          updatedBy: roomDoc?.descriptionUpdatedBy || "",
         });
 
         // ===============================
@@ -1223,9 +1225,13 @@ module.exports = (io) => {
           });
         }
 
+        const username = socket.data.user?.username || socket.data.username || "Host/Admin";
         const room = await Room.findOneAndUpdate(
           { roomId },
-          { description: cleanDesc },
+          { 
+            description: cleanDesc,
+            descriptionUpdatedBy: username,
+          },
           { new: true },
         );
 
@@ -1235,6 +1241,7 @@ module.exports = (io) => {
         io.to(`room:${roomId}`).emit("room:description", {
           roomId,
           description: room.description,
+          updatedBy: room.descriptionUpdatedBy || "",
         });
 
         console.log("✅ Room description updated:", cleanDesc);
