@@ -1388,6 +1388,15 @@ module.exports = (io) => {
           typingUsers.delete(roomId);
 
           await socket.leave(`room:${roomId}`);
+          
+          // 🔥 Tell global feed watchers that the room is now empty so it disappears instantly
+          io.emit("room:updated", {
+            roomId: room.roomId,
+            participantCount: 0,
+            seatCount: 0,
+            isActive: true,
+          });
+          
           console.log("ℹ️ Room kept active on leave:", roomId);
           return;
         }
@@ -4065,6 +4074,15 @@ module.exports = (io) => {
             seats.delete(roomId);
             roomUsers.delete(roomId);
             typingUsers.delete(roomId);
+            
+            // 🔥 Tell global feed watchers that the room is now empty so it disappears instantly
+            io.emit("room:updated", {
+              roomId: room.roomId,
+              participantCount: 0,
+              seatCount: 0,
+              isActive: true,
+            });
+            
             console.log("ℹ️ Room kept active on disconnect:", roomId);
           }
 
