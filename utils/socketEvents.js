@@ -1197,11 +1197,12 @@ module.exports = (io) => {
     socket.on("room:description:update", async (data, arg2) => {
       try {
         const userId = socket.data.userId;
-        let roomId, description;
+        let roomId, description, senderName;
 
         if (typeof data === "object" && data !== null && !Array.isArray(data)) {
           roomId = data.roomId;
           description = data.description;
+          senderName = data.senderName;
         } else {
           roomId = data;
           description = arg2;
@@ -1225,7 +1226,7 @@ module.exports = (io) => {
           });
         }
 
-        const username = socket.data.user?.username || socket.data.username || "Host/Admin";
+        const username = senderName || socket.data.user?.username || socket.data.username || "Host/Admin";
         const room = await Room.findOneAndUpdate(
           { roomId },
           { 
