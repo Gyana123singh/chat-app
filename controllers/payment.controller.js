@@ -293,6 +293,7 @@ exports.transferCoins = async (req, res) => {
     await receiver.save();
 
     await Transaction.create({
+      transactionId: uuidv4(),
       userId: sender._id,
       type: "COIN_TRANSFER",
       amount: 0,
@@ -303,6 +304,7 @@ exports.transferCoins = async (req, res) => {
     });
 
     await Transaction.create({
+      transactionId: uuidv4(),
       userId: receiver._id,
       type: "COIN_TRANSFER",
       amount: 0,
