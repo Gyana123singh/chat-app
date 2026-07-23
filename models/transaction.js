@@ -7,7 +7,7 @@ const transactionSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     type: {
       type: String,
-      enum: ["COIN_RECHARGE", "COIN_SPENT", "COIN_REFUND"],
+      enum: ["COIN_RECHARGE", "COIN_SPENT", "COIN_REFUND", "COIN_TRANSFER"],
       default: "COIN_RECHARGE",
     },
     packageId: {

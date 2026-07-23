@@ -245,7 +245,75 @@ exports.getPurchaseHistory = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error fetching purchase history",
-      error: error.message,
     });
+  }
+};
+
+// POST /api/coins/transfer
+exports.transferCoins = async (req, res) => {
+  try {
+    const senderId = req.user.id;
+    const { receiverDisplayId, amount } = req.body;
+    const transferAmount = parseInt(amount);
+
+    if (!receiverDisplayId || !transferAmount || transferAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Valid receiver ID and amount are required" });
+    }
+
+    const User = require("../models/users");
+    const Transaction = require("../models/transaction");
+
+    const sender = await User.findById(senderId);
+    if (!sender || sender.coins < transferAmount) {
+      return res.status(400).json({ success: false, message: "Insufficient coins" });
+    }
+
+    // Try finding by displayId or username
+    const receiver = await User.findOne({
+      $or: [{ displayId: receiverDisplayId }, { username: receiverDisplayId }]
+    });
+
+    if (!receiver) {
+      return res.status(404).json({ success: false, message: "Receiver not found" });
+    }
+
+    if (receiver._id.toString() === senderId.toString()) {
+      return res.status(400).json({ success: false, message: "Cannot transfer coins to yourself" });
+    }
+
+    sender.coins -= transferAmount;
+    receiver.coins += transferAmount;
+    
+    await sender.save();
+    await receiver.save();
+
+    await Transaction.create({
+      userId: sender._id,
+      type: "COIN_TRANSFER",
+      amount: 0,
+      coinsAdded: -transferAmount,
+      status: "SUCCESS",
+      receiver: receiver._id,
+      message: `Transferred coins to ${receiver.username}`
+    });
+
+    await Transaction.create({
+      userId: receiver._id,
+      type: "COIN_TRANSFER",
+      amount: 0,
+      coinsAdded: transferAmount,
+      status: "SUCCESS",
+      sender: sender._id,
+      message: `Received coins from ${sender.username}`
+    });
+
+    return res.json({
+      success: true,
+      message: "Coins transferred successfully",
+      newBalance: sender.coins,
+    });
+  } catch (error) {
+    console.error("Error transferring coins:", error);
+    return res.status(500).json({ success: false, message: "Error transferring coins", error: error.message });
   }
 };
