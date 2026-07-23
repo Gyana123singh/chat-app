@@ -3553,7 +3553,9 @@ module.exports = (io) => {
           });
         }
 
-        // ✅ FORCE ALL SOCKETS OF KICKED USER IN THIS ROOM TO LEAVE
+        // ✅ FORCE ALL SOCKETS OF KICKED USER TO LEAVE
+        const processedSockets = new Set();
+        
         const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
         for (const s of roomSockets) {
           if (s.data.userId && s.data.userId.toString() === targetUserId.toString()) {
@@ -3561,18 +3563,21 @@ module.exports = (io) => {
             s.data.hasLeftRoom = true;
             await s.leave(`room:${roomId}`);
             s.data.roomId = null;
+            processedSockets.add(s.id);
           }
         }
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
           for (const ts of targetSocketIds) {
-            io.to(ts).emit("room:kicked", { roomId, message: "You have been kicked from the room" });
-            const targetSocket = io.sockets.sockets.get(ts);
-            if (targetSocket) {
-              targetSocket.data.hasLeftRoom = true;
-              await targetSocket.leave(`room:${roomId}`);
-              targetSocket.data.roomId = null;
+            if (!processedSockets.has(ts)) {
+              io.to(ts).emit("room:kicked", { roomId, message: "You have been kicked from the room" });
+              const targetSocket = io.sockets.sockets.get(ts);
+              if (targetSocket) {
+                targetSocket.data.hasLeftRoom = true;
+                await targetSocket.leave(`room:${roomId}`);
+                targetSocket.data.roomId = null;
+              }
             }
           }
         }
@@ -3642,7 +3647,9 @@ module.exports = (io) => {
           });
         }
 
-        // ✅ FORCE ALL SOCKETS OF BLOCKED USER IN THIS ROOM TO LEAVE
+        // ✅ FORCE ALL SOCKETS OF BLOCKED USER TO LEAVE
+        const processedSocketsBlock = new Set();
+        
         const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
         for (const s of roomSockets) {
           if (s.data.userId && s.data.userId.toString() === targetUserId.toString()) {
@@ -3650,18 +3657,21 @@ module.exports = (io) => {
             s.data.hasLeftRoom = true;
             await s.leave(`room:${roomId}`);
             s.data.roomId = null;
+            processedSocketsBlock.add(s.id);
           }
         }
 
         const targetSocketIds = getUserSocketIds(targetUserId);
         if (targetSocketIds.length) {
           for (const ts of targetSocketIds) {
-            io.to(ts).emit("room:blocked", { roomId, message: "You have been blocked from this room" });
-            const targetSocket = io.sockets.sockets.get(ts);
-            if (targetSocket) {
-              targetSocket.data.hasLeftRoom = true;
-              await targetSocket.leave(`room:${roomId}`);
-              targetSocket.data.roomId = null;
+            if (!processedSocketsBlock.has(ts)) {
+              io.to(ts).emit("room:blocked", { roomId, message: "You have been blocked from this room" });
+              const targetSocket = io.sockets.sockets.get(ts);
+              if (targetSocket) {
+                targetSocket.data.hasLeftRoom = true;
+                await targetSocket.leave(`room:${roomId}`);
+                targetSocket.data.roomId = null;
+              }
             }
           }
         }
