@@ -897,6 +897,21 @@ module.exports = (io) => {
         const creatorId = roomDoc.creator?.toString();
         const userIdString = userId.toString();
 
+        // Verify block first
+        if (hostId) {
+          const isBlocked = await Block.findOne({
+            blocker: hostId,
+            blocked: userIdString,
+          });
+          if (isBlocked) {
+            socket.leave(roomName);
+            return socket.emit("room:error", {
+              message: "You have been blocked, you can't enter the room",
+              isBlocked: true,
+            });
+          }
+        }
+
         // Verify password first if room is locked and user is not host/creator (prevent bypasses)
         if (roomDoc.isLocked && hostId !== userIdString && creatorId !== userIdString) {
           if (!password || password !== roomDoc.password) {

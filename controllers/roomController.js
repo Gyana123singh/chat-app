@@ -3,6 +3,7 @@ const Room = require("../models/room");
 const User = require("../models/users");
 const { v4: uuidv4 } = require("uuid");
 const VideoRoom = require("../models/videoRoom");
+const Block = require("../models/blockUsers");
 const mongoose = require("mongoose");
 
 const findRoomByIdOrUuid = async (roomId, populateField = "", selectFields = "") => {
@@ -804,6 +805,22 @@ exports.joinRoom = async (req, res) => {
       creatorId,
       joiningUserId: userIdString,
     });
+
+    // ✅ Block Verification
+    if (hostId) {
+      const isBlocked = await Block.findOne({
+        blocker: hostId,
+        blocked: userIdString,
+      });
+
+      if (isBlocked) {
+        return res.status(403).json({
+          success: false,
+          isBlocked: true,
+          message: "You have been blocked, you can't enter the room",
+        });
+      }
+    }
 
     // ✅ Password Lock Verification (Checked BEFORE alreadyJoined to prevent bypasses)
     if (room.isLocked && hostId !== userIdString && creatorId !== userIdString) {

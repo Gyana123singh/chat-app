@@ -164,8 +164,10 @@ module.exports = (io) => {
           });
 
           if (isBlocked) {
+            const recipientUser = await User.findById(recipientId).select("username").lean();
+            const recipientName = recipientUser ? recipientUser.username : "this user";
             return socket.emit("private:message:error", {
-              error: "You cannot message this user due to blocking",
+              error: `You have been blocked, you can't send message to ${recipientName}`,
             });
           }
 
