@@ -269,8 +269,13 @@ exports.transferCoins = async (req, res) => {
     }
 
     // Try finding by displayId or username
+    const searchConditions = [{ username: receiverDisplayId }];
+    if (!isNaN(receiverDisplayId)) {
+      searchConditions.push({ displayId: Number(receiverDisplayId) });
+    }
+
     const receiver = await User.findOne({
-      $or: [{ displayId: receiverDisplayId }, { username: receiverDisplayId }]
+      $or: searchConditions
     });
 
     if (!receiver) {
