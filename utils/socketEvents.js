@@ -900,8 +900,8 @@ module.exports = (io) => {
         // Verify block first
         if (hostId) {
           const isBlocked = await Block.findOne({
-            blocker: hostId,
-            blocked: userIdString,
+            blocker: new mongoose.Types.ObjectId(hostId),
+            blocked: new mongoose.Types.ObjectId(userIdString),
           });
           if (isBlocked) {
             socket.leave(roomName);

@@ -158,8 +158,8 @@ module.exports = (io) => {
           // ✅ BLOCK CHECK (MUTUAL)
           const isBlocked = await Block.findOne({
             $or: [
-              { blocker: senderId, blocked: recipientId },
-              { blocker: recipientId, blocked: senderId },
+              { blocker: new mongoose.Types.ObjectId(senderId), blocked: new mongoose.Types.ObjectId(recipientId) },
+              { blocker: new mongoose.Types.ObjectId(recipientId), blocked: new mongoose.Types.ObjectId(senderId) },
             ],
           });
 
