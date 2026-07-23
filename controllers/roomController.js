@@ -1024,11 +1024,28 @@ exports.getUserInRoomStatus = async (req, res) => {
     });
 
     if (activeRoom) {
-      return res.status(200).json({
-        success: true,
-        inRoom: true,
-        roomId: activeRoom.roomId,
-      });
+      // Additional verification using Socket.io to avoid MongoDB race condition ghosts
+      let actuallyInRoom = true;
+      const io = req.app.get("io");
+      if (io) {
+        try {
+          const roomName = `room:${activeRoom.roomId}`;
+          const sockets = await io.in(roomName).fetchSockets();
+          actuallyInRoom = sockets.some(
+            (s) => s.data.userId && s.data.userId.toString() === userId.toString()
+          );
+        } catch (err) {
+          console.error("Error fetching sockets for getUserInRoomStatus:", err);
+        }
+      }
+
+      if (actuallyInRoom) {
+        return res.status(200).json({
+          success: true,
+          inRoom: true,
+          roomId: activeRoom.roomId,
+        });
+      }
     }
 
     return res.status(200).json({
