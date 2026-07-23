@@ -831,13 +831,7 @@ module.exports = (io) => {
           }
         }
 
-        // ❌ BLOCKED USER
-        if (roomDoc.blockedUsers && roomDoc.blockedUsers.some(id => id.toString() === userId.toString())) {
-          socket.leave(roomName);
-          return socket.emit("room:error", {
-            message: "You are blocked from this room",
-          });
-        }
+
 
         // ❌ KICKED USER
         if (roomDoc.kickedUsers && roomDoc.kickedUsers.some(k => k.userId && k.userId.toString() === userId.toString())) {
