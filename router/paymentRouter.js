@@ -8,6 +8,7 @@ router.post("/verify-payment", authMiddleware, paymentController.verifyPayment);
 router.get("/balance", authMiddleware, paymentController.getBalance);
 router.get("/purchase/history", authMiddleware, paymentController.getPurchaseHistory);
 router.post("/transfer", authMiddleware, paymentController.transferCoins);
+router.get("/transfer-history", authMiddleware, paymentController.getTransferHistory);
 // router.post("/handle-webhook", paymentController.handleWebhook);
 // router.post("/refund-payment", authMiddleware, paymentController.refundPayment);
 

@@ -249,6 +249,46 @@ exports.getPurchaseHistory = async (req, res) => {
   }
 };
 
+// GET /api/payment/transfer-history
+exports.getTransferHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 50, skip = 0 } = req.query;
+
+    const transactions = await Transaction.find({
+      userId,
+      type: "COIN_TRANSFER",
+      status: "SUCCESS",
+    })
+      .populate("sender", "username profile.avatar displayId")
+      .populate("receiver", "username profile.avatar displayId")
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip(Number(skip))
+      .lean();
+
+    const total = await Transaction.countDocuments({
+      userId,
+      type: "COIN_TRANSFER",
+      status: "SUCCESS",
+    });
+
+    return res.json({
+      success: true,
+      history: transactions,
+      total,
+      limit: Number(limit),
+      skip: Number(skip),
+    });
+  } catch (error) {
+    console.error("Error fetching transfer history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching transfer history",
+    });
+  }
+};
+
 // POST /api/coins/transfer
 exports.transferCoins = async (req, res) => {
   try {
