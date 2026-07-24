@@ -127,6 +127,11 @@ const userSchema = new mongoose.Schema(
         default: "dark",
       },
 
+      themeUrl: {
+        type: String,
+        default: null,
+      },
+
       interests: [String],
     },
 

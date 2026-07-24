@@ -570,6 +570,7 @@ module.exports = (socket, io) => {
 
       if (gift.effectType === "THEME") {
         update["profile.theme"] = gift.name.toLowerCase();
+        update["profile.themeUrl"] = gift.animationUrl || gift.icon;
       }
 
       if (Object.keys(update).length > 0) {
@@ -608,6 +609,7 @@ module.exports = (socket, io) => {
               ? gift.animationUrl || gift.icon
               : null,
           theme: gift.effectType === "THEME" ? gift.name.toLowerCase() : null,
+          themeUrl: gift.effectType === "THEME" ? gift.animationUrl || gift.icon : null,
         });
       }
 
@@ -631,6 +633,7 @@ module.exports = (socket, io) => {
         if (gift.effectType === "THEME") {
           io.to(`room:${roomId}`).emit("room:theme:update", {
             theme: gift.name.toLowerCase(),
+            themeUrl: gift.animationUrl || gift.icon,
             triggeredBy: userId,
           });
         }
