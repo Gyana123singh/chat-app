@@ -647,18 +647,15 @@ exports.getAccountSecurity = async (req, res) => {
     }
 
     res.json({
-      securityStatus: "Safe",
-      lastLogin: user.lastLogin,
+      success: true,
+      displayId: user.displayId || user.diiId || "",
+      phone: user.phone || "",
+      email: user.email || "",
       accountInfo: {
-        diiId: user.diiId,
-        phone: user.phone,
-        email: user.email ? "Linked" : "Not Linked",
+        dilId: user.displayId || user.diiId || "",
+        phone: user.phone || "",
+        email: user.email || "",
       },
-      security: {
-        biometric: user.biometricEnabled,
-        protection: user.accountProtection,
-      },
-      thirdParty: user.thirdParty,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
