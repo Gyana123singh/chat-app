@@ -349,6 +349,22 @@ exports.getGiftAnalytics = async (req, res) => {
   }
 };
 
+const STORE_CATEGORIES = ["theme", "bubble", "frame", "ring", "entrance", "ride", "store", "emoji"];
+const STORE_EFFECT_TYPES = ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI"];
+
+function isStoreGiftTx(tx) {
+  if (!tx || !tx.giftId || !tx.giftId._id) return true;
+
+  const cat = (tx.giftCategory || tx.giftId.category || "").toLowerCase();
+  const effect = (tx.giftId.effectType || "").toUpperCase();
+  const name = (tx.giftName || tx.giftId.name || "").toLowerCase();
+
+  if (STORE_EFFECT_TYPES.includes(effect)) return true;
+  if (STORE_CATEGORIES.some((sc) => cat.includes(sc) || name.startsWith(sc))) return true;
+
+  return false;
+}
+
 /**
  * 🔥 GET GIFT WALL (SENT & RECEIVED BY SPECIFIC USER - EXCLUDES STORE ITEMS)
  */
@@ -357,39 +373,42 @@ exports.getGiftWall = async (req, res) => {
     const { userId } = req.params;
     const { type = "received", limit = 50, skip = 0 } = req.query;
 
-    let query = {};
-    if (type === "sent") {
-      query = { senderId: userId };
-    } else if (type === "received") {
-      query = { recipientIds: userId };
-    } else {
+    if (type !== "sent" && type !== "received") {
       return res.status(400).json({ success: false, message: "Invalid type. Use 'sent' or 'received'" });
     }
 
-    // Fetch ONLY regular gift transactions (exclude store gifts)
-    const transactions = await GiftTransaction.find(query)
-      .populate("senderId", "username profile.avatar displayId level")
-      .populate("recipientIds", "username profile.avatar displayId level")
-      .populate("giftId", "name icon rarity price")
-      .sort({ createdAt: -1 })
-      .lean();
+    // Fetch both sent & received to filter store items and calculate exact counts
+    const [allSent, allReceived] = await Promise.all([
+      GiftTransaction.find({ senderId: userId })
+        .populate("senderId", "username profile.avatar displayId level")
+        .populate("recipientIds", "username profile.avatar displayId level")
+        .populate("giftId", "name icon rarity price category effectType")
+        .sort({ createdAt: -1 })
+        .lean(),
+      GiftTransaction.find({ recipientIds: userId })
+        .populate("senderId", "username profile.avatar displayId level")
+        .populate("recipientIds", "username profile.avatar displayId level")
+        .populate("giftId", "name icon rarity price category effectType")
+        .sort({ createdAt: -1 })
+        .lean(),
+    ]);
 
-    const paginated = transactions.slice(Number(skip), Number(skip) + Number(limit));
+    const validSent = allSent.filter((tx) => !isStoreGiftTx(tx));
+    const validReceived = allReceived.filter((tx) => !isStoreGiftTx(tx));
 
-    // Calculate totals for regular gift transactions only
-    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId });
-    const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId });
+    const selectedList = type === "sent" ? validSent : validReceived;
+    const paginated = selectedList.slice(Number(skip), Number(skip) + Number(limit));
 
     res.status(200).json({
       success: true,
       data: {
         transactions: paginated,
         summary: {
-          totalSentGifts,
-          totalReceivedGifts,
+          totalSentGifts: validSent.length,
+          totalReceivedGifts: validReceived.length,
         },
         pagination: {
-          total: transactions.length,
+          total: selectedList.length,
           limit: Number(limit),
           skip: Number(skip),
         },
