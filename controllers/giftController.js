@@ -350,60 +350,35 @@ exports.getGiftAnalytics = async (req, res) => {
 };
 
 /**
- * 🔥 GET GIFT WALL (SENT & RECEIVED BY SPECIFIC USER)
+ * 🔥 GET GIFT WALL (SENT & RECEIVED BY SPECIFIC USER - EXCLUDES STORE ITEMS)
  */
 exports.getGiftWall = async (req, res) => {
   try {
     const { userId } = req.params;
     const { type = "received", limit = 50, skip = 0 } = req.query;
 
-    let query1 = {};
-    let query2 = {};
+    let query = {};
     if (type === "sent") {
-      query1 = { senderId: userId };
-      query2 = { senderId: userId };
+      query = { senderId: userId };
     } else if (type === "received") {
-      query1 = { recipientIds: userId };
-      query2 = { receiverIds: userId };
+      query = { recipientIds: userId };
     } else {
       return res.status(400).json({ success: false, message: "Invalid type. Use 'sent' or 'received'" });
     }
 
-    // Fetch from BOTH collections simultaneously
-    const [transactions1, transactions2] = await Promise.all([
-      GiftTransaction.find(query1)
-        .populate("senderId", "username profile.avatar displayId level")
-        .populate("recipientIds", "username profile.avatar displayId level")
-        .populate("giftId", "name icon rarity price")
-        .sort({ createdAt: -1 })
-        .lean(),
-      StoreGiftTransaction.find(query2)
-        .populate("senderId", "username profile.avatar displayId level")
-        .populate("receiverIds", "username profile.avatar displayId level")
-        .populate("giftId", "name icon rarity price")
-        .sort({ createdAt: -1 })
-        .lean()
-    ]);
+    // Fetch ONLY regular gift transactions (exclude store gifts)
+    const transactions = await GiftTransaction.find(query)
+      .populate("senderId", "username profile.avatar displayId level")
+      .populate("recipientIds", "username profile.avatar displayId level")
+      .populate("giftId", "name icon rarity price")
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Normalize StoreGiftTransaction fields to match the GiftTransaction UI structure
-    const normalized2 = transactions2.map(t => ({
-      ...t,
-      recipientIds: t.receiverIds,
-      quantity: t.quantitySent || 1,
-    }));
+    const paginated = transactions.slice(Number(skip), Number(skip) + Number(limit));
 
-    // Merge and sort by time
-    const allTransactions = [...transactions1, ...normalized2]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    const paginated = allTransactions.slice(Number(skip), Number(skip) + Number(limit));
-
-    // Calculate totals across BOTH collections for the tab counters
-    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId }) +
-      await StoreGiftTransaction.countDocuments({ senderId: userId });
-
-    const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId }) +
-      await StoreGiftTransaction.countDocuments({ receiverIds: userId });
+    // Calculate totals for regular gift transactions only
+    const totalSentGifts = await GiftTransaction.countDocuments({ senderId: userId });
+    const totalReceivedGifts = await GiftTransaction.countDocuments({ recipientIds: userId });
 
     res.status(200).json({
       success: true,
@@ -414,7 +389,7 @@ exports.getGiftWall = async (req, res) => {
           totalReceivedGifts,
         },
         pagination: {
-          total: allTransactions.length,
+          total: transactions.length,
           limit: Number(limit),
           skip: Number(skip),
         },
