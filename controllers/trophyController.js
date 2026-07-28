@@ -9,7 +9,7 @@ const mongoose = require("mongoose");
  */
 exports.getLeaderboard = async (req, res) => {
   try {
-    const { period = "daily", page = 1, limit = 20 } = req.query;
+    const { period = "daily", page = 1, limit = 20, roomId } = req.query;
     const userId = req.user?.id;
 
     // Validate period
@@ -21,6 +21,89 @@ exports.getLeaderboard = async (req, res) => {
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // 🏆 ROOM-SPECIFIC LEADERBOARD
+    if (roomId && roomId.trim() !== "") {
+      const now = new Date();
+      let dateFilter = {};
+      if (period === "daily") {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        dateFilter = { createdAt: { $gte: startOfDay } };
+      } else if (period === "weekly") {
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay());
+        startOfWeek.setHours(0, 0, 0, 0);
+        dateFilter = { createdAt: { $gte: startOfWeek } };
+      } else if (period === "monthly") {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        dateFilter = { createdAt: { $gte: startOfMonth } };
+      }
+
+      const matchStage = {
+        roomIdString: roomId,
+        status: "completed",
+        ...dateFilter,
+      };
+
+      const agg = await GiftTransaction.aggregate([
+        { $match: matchStage },
+        {
+          $group: {
+            _id: "$senderId",
+            coins: { $sum: "$totalCoinsDeducted" },
+            giftsReceived: { $sum: 1 },
+            totalValue: { $sum: "$totalCoinsDeducted" },
+          },
+        },
+        { $sort: { coins: -1 } },
+        { $skip: skip },
+        { $limit: parseInt(limit) },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+      ]);
+
+      const formattedLeaderboard = agg.map((entry, index) => ({
+        rank: skip + index + 1,
+        userId: entry._id,
+        username: entry.user?.username || "Unknown",
+        avatar: entry.user?.profile?.avatar || null,
+        coins: entry.coins,
+        giftsReceived: entry.giftsReceived,
+        totalValue: entry.totalValue,
+        level: entry.user?.trophy?.level || 1,
+        badges: [],
+      }));
+
+      const totalContributorsAgg = await GiftTransaction.aggregate([
+        { $match: matchStage },
+        { $group: { _id: "$senderId" } },
+        { $count: "count" },
+      ]);
+      const totalCount = totalContributorsAgg[0]?.count || 0;
+
+      return res.status(200).json({
+        success: true,
+        period,
+        roomId,
+        leaderboard: formattedLeaderboard,
+        userRank: null,
+        userStats: null,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: totalCount,
+          pages: Math.ceil(totalCount / parseInt(limit)) || 1,
+        },
+      });
+    }
+
     const sortField = `${period}.coins`;
 
     // Get leaderboard data
