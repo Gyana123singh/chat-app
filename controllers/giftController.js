@@ -371,11 +371,7 @@ function isStoreGiftTx(tx) {
 exports.getGiftWall = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { type = "received", limit = 50, skip = 0 } = req.query;
-
-    if (type !== "sent" && type !== "received") {
-      return res.status(400).json({ success: false, message: "Invalid type. Use 'sent' or 'received'" });
-    }
+    const { type = "all", limit = 50, skip = 0 } = req.query;
 
     // Fetch both sent & received to filter store items and calculate exact counts
     const [allSent, allReceived] = await Promise.all([
@@ -396,7 +392,23 @@ exports.getGiftWall = async (req, res) => {
     const validSent = allSent.filter((tx) => !isStoreGiftTx(tx));
     const validReceived = allReceived.filter((tx) => !isStoreGiftTx(tx));
 
-    const selectedList = type === "sent" ? validSent : validReceived;
+    let selectedList;
+    if (type === "sent") {
+      selectedList = validSent;
+    } else if (type === "received") {
+      selectedList = validReceived;
+    } else {
+      const combinedMap = new Map();
+      [...validReceived, ...validSent].forEach((tx) => {
+        if (tx && tx._id) {
+          combinedMap.set(tx._id.toString(), tx);
+        }
+      });
+      selectedList = Array.from(combinedMap.values()).sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+      );
+    }
+
     const paginated = selectedList.slice(Number(skip), Number(skip) + Number(limit));
 
     res.status(200).json({
@@ -406,6 +418,7 @@ exports.getGiftWall = async (req, res) => {
         summary: {
           totalSentGifts: validSent.length,
           totalReceivedGifts: validReceived.length,
+          totalGifts: selectedList.length,
         },
         pagination: {
           total: selectedList.length,
