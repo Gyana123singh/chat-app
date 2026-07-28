@@ -2956,13 +2956,86 @@ module.exports = (io) => {
     ========================= */
     socket.on(
       "trophy:get-leaderboard",
-      async ({ period = "daily", page = 1, limit = 20 }) => {
+      async ({ period = "daily", page = 1, limit = 20, roomId }) => {
         try {
           if (!["daily", "weekly", "monthly", "allTime"].includes(period)) {
             return socket.emit("trophy:error", { message: "Invalid period" });
           }
 
           const skip = (page - 1) * limit;
+
+          if (roomId && roomId.trim() !== "") {
+            const now = new Date();
+            let dateFilter = {};
+            if (period === "daily") {
+              const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              dateFilter = { createdAt: { $gte: startOfDay } };
+            } else if (period === "weekly") {
+              const startOfWeek = new Date(now);
+              startOfWeek.setDate(now.getDate() - now.getDay());
+              startOfWeek.setHours(0, 0, 0, 0);
+              dateFilter = { createdAt: { $gte: startOfWeek } };
+            } else if (period === "monthly") {
+              const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+              dateFilter = { createdAt: { $gte: startOfMonth } };
+            }
+
+            const roomMatch = {
+              $or: [
+                { roomIdString: roomId },
+                { roomId: roomId },
+                ...(mongoose.Types.ObjectId.isValid(roomId)
+                  ? [{ roomId: new mongoose.Types.ObjectId(roomId) }, { roomIdString: new mongoose.Types.ObjectId(roomId) }]
+                  : []),
+              ],
+              status: "completed",
+              ...dateFilter,
+            };
+
+            const agg = await GiftTransaction.aggregate([
+              { $match: roomMatch },
+              {
+                $group: {
+                  _id: "$senderId",
+                  coins: { $sum: "$totalCoinsDeducted" },
+                  giftsReceived: { $sum: 1 },
+                  totalValue: { $sum: "$totalCoinsDeducted" },
+                },
+              },
+              { $sort: { coins: -1 } },
+              { $skip: skip },
+              { $limit: limit },
+              {
+                $lookup: {
+                  from: "users",
+                  localField: "_id",
+                  foreignField: "_id",
+                  as: "user",
+                },
+              },
+              { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+            ]);
+
+            const formatted = agg.map((e, i) => ({
+              rank: skip + i + 1,
+              userId: e._id,
+              username: e.user?.username || "Unknown",
+              avatar: e.user?.profile?.avatar || null,
+              level: e.user?.trophy?.level || 1,
+              coins: e.coins,
+              giftsReceived: e.giftsReceived,
+              totalValue: e.totalValue,
+            }));
+
+            return socket.emit("trophy:leaderboard-data", {
+              success: true,
+              period,
+              roomId,
+              leaderboard: formatted,
+              page,
+              limit,
+            });
+          }
 
           const rows = await Leaderboard.find()
             .populate("userId", "username profile.avatar")

@@ -40,7 +40,13 @@ exports.getLeaderboard = async (req, res) => {
       }
 
       const matchStage = {
-        roomIdString: roomId,
+        $or: [
+          { roomIdString: roomId },
+          { roomId: roomId },
+          ...(mongoose.Types.ObjectId.isValid(roomId)
+            ? [{ roomId: new mongoose.Types.ObjectId(roomId) }, { roomIdString: new mongoose.Types.ObjectId(roomId) }]
+            : []),
+        ],
         status: "completed",
         ...dateFilter,
       };
@@ -529,8 +535,19 @@ exports.getRoomContribution = async (req, res) => {
       return res.status(400).json({ success: false, message: "roomId required" });
     }
 
+    const roomMatch = {
+      $or: [
+        { roomIdString: roomId },
+        { roomId: roomId },
+        ...(mongoose.Types.ObjectId.isValid(roomId)
+          ? [{ roomId: new mongoose.Types.ObjectId(roomId) }, { roomIdString: new mongoose.Types.ObjectId(roomId) }]
+          : []),
+      ],
+      status: "completed",
+    };
+
     const result = await GiftTransaction.aggregate([
-      { $match: { roomIdString: roomId, status: "completed" } },
+      { $match: roomMatch },
       { $group: { _id: null, total: { $sum: "$totalCoinsDeducted" } } },
     ]);
 
