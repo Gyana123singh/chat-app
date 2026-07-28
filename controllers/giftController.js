@@ -353,14 +353,14 @@ const STORE_CATEGORIES = ["theme", "bubble", "frame", "ring", "entrance", "ride"
 const STORE_EFFECT_TYPES = ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI"];
 
 function isStoreGiftTx(tx) {
-  if (!tx || !tx.giftId || !tx.giftId._id) return true;
+  if (!tx) return true;
 
-  const cat = (tx.giftCategory || tx.giftId.category || "").toLowerCase();
-  const effect = (tx.giftId.effectType || "").toUpperCase();
-  const name = (tx.giftName || tx.giftId.name || "").toLowerCase();
+  const effect = ((tx.giftId && tx.giftId.effectType) || "").toUpperCase();
+  const cat = (tx.giftCategory || (tx.giftId && tx.giftId.category) || "").toLowerCase();
+  const name = (tx.giftName || (tx.giftId && tx.giftId.name) || "").toLowerCase();
 
-  if (STORE_EFFECT_TYPES.includes(effect)) return true;
-  if (STORE_CATEGORIES.some((sc) => cat.includes(sc) || name.startsWith(sc))) return true;
+  if (effect && STORE_EFFECT_TYPES.includes(effect)) return true;
+  if (cat && STORE_CATEGORIES.includes(cat)) return true;
 
   return false;
 }
