@@ -3264,8 +3264,8 @@ module.exports = (io) => {
         const userId = socket.data.userId;
         if (!userId || !roomId || !seatNumber) return;
 
-        const allowed = await isHost(roomId, userId);
-        if (!allowed) return socket.emit("error:permission", { message: "Only host can unmute seats" });
+        const allowed = await isHostOrAdmin(roomId, userId);
+        if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can unmute seats" });
 
         const room = await getRoomSafe(roomId);
         if (!room) return socket.emit("error", { message: "Room not found" });
@@ -3278,6 +3278,28 @@ module.exports = (io) => {
 
         io.to(`room:${roomId}`).emit("room:seat:unmuted", { seatNumber: numSeat });
         io.to(`room:${roomId}`).emit("room:seats:mutedAll", { mutedSeats: room.mutedSeats || [] });
+
+        // Force unmute the user currently occupying this seat
+        const roomSeats = seats.get(roomId) || [];
+        const targetUserId = roomSeats[numSeat - 1];
+        if (targetUserId) {
+          const forceMutedSet = forceMutedUsers.get(roomId);
+          if (forceMutedSet) {
+            forceMutedSet.delete(targetUserId.toString());
+          }
+          micStates.set(targetUserId.toString(), { muted: false, speaking: false });
+          io.to(`room:${roomId}`).emit("mic:update", {
+            userId: targetUserId.toString(),
+            displayId: null,
+            muted: false,
+            speaking: false,
+          });
+          const targetSocket = onlineUsers.get(targetUserId.toString());
+          if (targetSocket) {
+            io.to(targetSocket).emit("mic:forceUnmuted");
+          }
+          io.to(targetUserId.toString()).emit("mic:forceUnmuted");
+        }
       } catch (err) {
         console.error("❌ room:seat:unmute error:", err);
       }
