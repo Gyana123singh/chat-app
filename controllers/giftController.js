@@ -349,18 +349,13 @@ exports.getGiftAnalytics = async (req, res) => {
   }
 };
 
-const STORE_CATEGORIES = ["theme", "bubble", "frame", "ring", "entrance", "ride", "store", "emoji"];
 const STORE_EFFECT_TYPES = ["ENTRANCE", "FRAME", "RING", "BUBBLE", "THEME", "EMOJI"];
 
 function isStoreGiftTx(tx) {
   if (!tx) return true;
 
-  const effect = ((tx.giftId && tx.giftId.effectType) || "").toUpperCase();
-  const cat = (tx.giftCategory || (tx.giftId && tx.giftId.category) || "").toLowerCase();
-  const name = (tx.giftName || (tx.giftId && tx.giftId.name) || "").toLowerCase();
-
+  const effect = ((tx.giftId && tx.giftId.effectType) || tx.effectType || "").toUpperCase();
   if (effect && STORE_EFFECT_TYPES.includes(effect)) return true;
-  if (cat && STORE_CATEGORIES.includes(cat)) return true;
 
   return false;
 }
