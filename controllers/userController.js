@@ -562,31 +562,41 @@ exports.searchUsers = async (req, res) => {
   try {
     const { query } = req.query;
 
-    if (!query || query.length < 2) {
+    if (!query || query.trim().length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Query must be at least 2 characters",
+        message: "Query required",
       });
     }
 
-    const isNumeric = /^\d+$/.test(query);
+    const trimmed = query.trim();
+    const isNumeric = /^\d+$/.test(trimmed);
+
     const searchQuery = {
       $or: [
-        { username: { $regex: query, $options: "i" } },
-        { email: { $regex: query, $options: "i" } },
+        { username: { $regex: trimmed, $options: "i" } },
+        { email: { $regex: trimmed, $options: "i" } },
+        { displayId: trimmed },
+        { displayId: { $regex: trimmed, $options: "i" } },
       ],
     };
 
     if (isNumeric) {
-      searchQuery.$or.push({ displayId: Number(query) });
+      searchQuery.$or.push({ displayId: Number(trimmed) });
+    }
+
+    if (mongoose.Types.ObjectId.isValid(trimmed)) {
+      searchQuery.$or.push({ _id: new mongoose.Types.ObjectId(trimmed) });
     }
 
     const users = await User.find(searchQuery)
-      .select("username profile.avatar stats displayId")
-      .limit(20);
+      .select("_id username email displayId profile.avatar role")
+      .limit(20)
+      .lean();
 
     res.status(200).json({
       success: true,
+      data: users,
       users,
     });
   } catch (error) {
