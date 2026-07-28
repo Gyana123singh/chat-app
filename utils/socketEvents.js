@@ -1826,9 +1826,23 @@ module.exports = (io) => {
         });
 
         // =========================
-        // 🏆 UPDATE TROPHY / LEADERBOARD
+        // 🏆 UPDATE TROPHY / LEADERBOARD & ROOM CONTRIBUTION
         // =========================
         await trophyController.updateLeaderboardOnGift(fromUserId, totalCost);
+
+        try {
+          const roomContribResult = await GiftTransaction.aggregate([
+            { $match: { roomIdString: roomId, status: "completed" } },
+            { $group: { _id: null, total: { $sum: "$totalCoinsDeducted" } } },
+          ]);
+          const roomTotalContrib = roomContribResult[0]?.total || 0;
+          io.to(`room:${roomId}`).emit("room:contribution:update", {
+            roomId,
+            totalContribution: roomTotalContrib,
+          });
+        } catch (e) {
+          console.error("❌ room contribution update error:", e);
+        }
       } catch (err) {
         console.error("❌ gift:send FULL ERROR:", err);
         socket.emit("gift:error", { message: "Gift send failed" });

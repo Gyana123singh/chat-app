@@ -15,6 +15,9 @@ router.get("/leaderboard", trophyController.getLeaderboard);
 // Query: ?period=daily|weekly|monthly|allTime
 router.get("/top-contributors", trophyController.getTopContributors);
 
+// Get total contribution for a specific room
+router.get("/room-contribution/:roomId", trophyController.getRoomContribution);
+
 /**
  * 🏆 PROTECTED ROUTES - Auth required
  */

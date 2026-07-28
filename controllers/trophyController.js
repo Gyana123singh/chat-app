@@ -1,5 +1,6 @@
 const Leaderboard = require("../models/trophyLeaderBoard");
 const User = require("../models/users");
+const GiftTransaction = require("../models/giftTransaction");
 const mongoose = require("mongoose");
 
 /**
@@ -432,5 +433,32 @@ exports.getUserLevel = async (req, res) => {
       message: "Error fetching user level",
       error: error.message,
     });
+  }
+};
+
+/**
+ * 🏆 GET ROOM CONTRIBUTION - Returns total gift coins spent in a specific room
+ */
+exports.getRoomContribution = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: "roomId required" });
+    }
+
+    const result = await GiftTransaction.aggregate([
+      { $match: { roomIdString: roomId, status: "completed" } },
+      { $group: { _id: null, total: { $sum: "$totalCoinsDeducted" } } },
+    ]);
+
+    const totalContribution = result[0]?.total || 0;
+    return res.json({
+      success: true,
+      roomId,
+      totalContribution,
+    });
+  } catch (err) {
+    console.error("❌ Error getRoomContribution:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
