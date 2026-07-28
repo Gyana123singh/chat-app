@@ -335,12 +335,20 @@ module.exports = (socket, io) => {
           },
         });
       }
-      // 🔥 Notify room theme change
+      // 🔥 Notify room theme change ONLY if receiver is the host/creator of this room
       if (gift.effectType === "THEME" && roomId) {
-        io.to(`room:${roomId}`).emit("room:theme:update", {
-          theme: gift.name.toLowerCase(),
-          triggeredBy: senderId,
-        });
+        const roomObj = await Room.findOne({ roomId }).select("host creator").lean();
+        const isReceiverHost = roomObj && (
+          (roomObj.host && roomObj.host.toString() === receiverId.toString()) ||
+          (roomObj.creator && roomObj.creator.toString() === receiverId.toString())
+        );
+        if (isReceiverHost) {
+          io.to(`room:${roomId}`).emit("room:theme:update", {
+            theme: gift.name.toLowerCase(),
+            themeUrl: gift.animationUrl || gift.icon,
+            triggeredBy: senderId,
+          });
+        }
       }
       /* ===============================
            🧾 Save Transaction
@@ -629,13 +637,20 @@ module.exports = (socket, io) => {
           });
         }
 
-        // 🎨 Notify room about THEME change
+        // 🎨 Notify room about THEME change ONLY if buyer is the host/creator of this room
         if (gift.effectType === "THEME") {
-          io.to(`room:${roomId}`).emit("room:theme:update", {
-            theme: gift.name.toLowerCase(),
-            themeUrl: gift.animationUrl || gift.icon,
-            triggeredBy: userId,
-          });
+          const roomObj = await Room.findOne({ roomId }).select("host creator").lean();
+          const isBuyerHost = roomObj && (
+            (roomObj.host && roomObj.host.toString() === userId.toString()) ||
+            (roomObj.creator && roomObj.creator.toString() === userId.toString())
+          );
+          if (isBuyerHost) {
+            io.to(`room:${roomId}`).emit("room:theme:update", {
+              theme: gift.name.toLowerCase(),
+              themeUrl: gift.animationUrl || gift.icon,
+              triggeredBy: userId,
+            });
+          }
         }
 
         // 🎬 Broadcast gift animation to room
