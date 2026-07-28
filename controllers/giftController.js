@@ -404,6 +404,18 @@ exports.getGiftWall = async (req, res) => {
       );
     }
 
+    const totalSentCoins = validSent.reduce(
+      (sum, tx) => sum + (tx.totalCoinsDeducted || ((tx.giftPrice || 0) * (tx.quantity || 1))),
+      0,
+    );
+
+    const totalReceivedCoins = validReceived.reduce((sum, tx) => {
+      if (tx.totalCoinsDeducted && tx.recipientCount && tx.recipientCount > 1) {
+        return sum + Math.round(tx.totalCoinsDeducted / tx.recipientCount);
+      }
+      return sum + (tx.totalCoinsDeducted || ((tx.giftPrice || 0) * (tx.quantity || 1)));
+    }, 0);
+
     const paginated = selectedList.slice(Number(skip), Number(skip) + Number(limit));
 
     res.status(200).json({
@@ -411,8 +423,11 @@ exports.getGiftWall = async (req, res) => {
       data: {
         transactions: paginated,
         summary: {
-          totalSentGifts: validSent.length,
-          totalReceivedGifts: validReceived.length,
+          totalSentGifts: totalSentCoins,
+          totalReceivedGifts: totalReceivedCoins,
+          totalSentCoins,
+          totalReceivedCoins,
+          totalGiftsCount: selectedList.length,
           totalGifts: selectedList.length,
         },
         pagination: {
