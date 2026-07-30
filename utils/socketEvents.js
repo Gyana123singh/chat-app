@@ -3881,6 +3881,85 @@ module.exports = (io) => {
       }
     });
 
+    // BAN USER FROM GLOBAL APP (SUPER ADMIN ONLY)
+    socket.on("room:appBanUser", async (payload) => {
+      try {
+        const roomId = payload.roomId;
+        const targetUserId = payload.targetUserId || payload.userId;
+        const userId = socket.data.userId;
+        if (!userId || !targetUserId) return;
+
+        const isSuper = await isSuperAdmin(userId);
+        if (!isSuper) {
+          return socket.emit("error:permission", { message: "Only Super Admin can ban users from the app" });
+        }
+
+        const isTargetSuper = await isSuperAdmin(targetUserId);
+        if (isTargetSuper) {
+          return socket.emit("error:permission", { message: "Cannot ban the Super Admin" });
+        }
+
+        // Set isBanned = true in database
+        await User.findByIdAndUpdate(
+          targetUserId,
+          { isBanned: true, isActive: false }
+        );
+
+        console.log(`🚫 User ${targetUserId} globally banned by Super Admin ${userId}`);
+
+        // If roomId is provided, kick target out of room
+        if (roomId) {
+          const room = await Room.findOne({ roomId });
+          if (room) {
+            room.participants = room.participants.filter(
+              (p) => p.user && p.user.toString() !== targetUserId.toString()
+            );
+            room.currentUsers = room.participants.length;
+            await room.save();
+          }
+
+          let roomSeats = seats.get(roomId) || [];
+          const normalized = roomSeats.map((id) => (id ? id.toString() : null));
+          const idx = normalized.indexOf(targetUserId.toString());
+          if (idx >= 0) {
+            normalized[idx] = null;
+            seats.set(roomId, normalized);
+            io.to(`room:${roomId}`).emit("room:seat:removed", {
+              userId: targetUserId.toString(),
+              seatNumber: idx + 1,
+            });
+          }
+
+          io.to(`room:${roomId}`).emit("room:userLeft", {
+            userId: targetUserId.toString(),
+          });
+          await broadcastRoomUsers(roomId, targetUserId);
+          await broadcastWatcherCount(roomId, io, targetUserId);
+        }
+
+        // Emit app:banned to ALL sockets of target user
+        const targetSocketIds = getUserSocketIds(targetUserId);
+        targetSocketIds.forEach((ts) => {
+          io.to(ts).emit("app:banned", {
+            message: "Your account has been banned from using the app by Super Admin.",
+          });
+          io.to(ts).emit("user:banned", {
+            userId: targetUserId.toString(),
+            message: "Your account has been banned from using the app by Super Admin.",
+          });
+          const targetSocket = io.sockets.sockets.get(ts);
+          if (targetSocket) {
+            targetSocket.data.hasLeftRoom = true;
+            if (roomId) targetSocket.leave(`room:${roomId}`);
+            targetSocket.data.roomId = null;
+          }
+        });
+
+      } catch (err) {
+        console.error("❌ room:appBanUser error:", err);
+      }
+    });
+
     // BLOCK USER FROM ROOM
     socket.on("room:blockUser", async (payload) => {
       try {

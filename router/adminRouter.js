@@ -18,12 +18,13 @@ const {
   createHelpRoom,
   updateHelpRoom,
   deleteHelpRoom,
+  toggleUserBan,
 } = require("../controllers/adminContrroler");
 const upload = require("../middleware/multer.middleware");
 const { authMiddleware } = require("../middleware/auth");
 
 const adminCheck = (req, res, next) => {
-  if (req.user?.role !== "admin") {
+  if (req.user?.role !== "admin" && req.user?.role !== "superadmin") {
     return res.status(403).json({
       success: false,
       message: "Access denied. Admin role required.",
@@ -37,6 +38,7 @@ router.post("/admin/login", adminLogin);
 
 // api for getting all users
 router.get("/get-all-user", getAllUsers);
+router.post("/toggle-user-ban", toggleUserBan);
 router.post("/coin-mapping", updateCoinMapping); // api for post coin mapping
 router.get("/get-coin-mapping", getCoinMapping); // api for getting coin mapping
 router.post("/calculate-coins", calculateCoins); // api for calculate coins

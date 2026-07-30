@@ -870,3 +870,44 @@ exports.deleteHelpRoom = async (req, res) => {
     });
   }
 };
+
+exports.toggleUserBan = async (req, res) => {
+  try {
+    const { userId, isBanned } = req.body;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "userId is required" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    if (user.email && user.email.trim().toLowerCase() === adminEmail) {
+      return res.status(400).json({ success: false, message: "Cannot ban Super Admin" });
+    }
+
+    user.isBanned = typeof isBanned === "boolean" ? isBanned : !user.isBanned;
+    await user.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      if (user.isBanned) {
+        io.emit("user:banned", { userId: user._id.toString(), message: "Your account has been banned by Admin." });
+      } else {
+        io.emit("user:unbanned", { userId: user._id.toString(), message: "Your account has been unbanned by Admin." });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `User ${user.isBanned ? "banned" : "unbanned"} successfully`,
+      isBanned: user.isBanned,
+      user,
+    });
+  } catch (error) {
+    console.error("❌ toggleUserBan error:", error);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};

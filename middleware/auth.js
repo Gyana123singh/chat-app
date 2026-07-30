@@ -35,6 +35,16 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
+    const User = require("../models/users");
+    const userDoc = await User.findById(req.user.id).select("isBanned role email").lean();
+    if (userDoc && userDoc.isBanned) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been banned from using the app.",
+        isBanned: true,
+      });
+    }
+
     next();
   } catch (error) {
     console.error("AUTH ERROR:", error.message);
