@@ -50,6 +50,12 @@ exports.adminLogin = async (req, res) => {
       });
     }
 
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    if (admin.email && admin.email.trim().toLowerCase() === adminEmail && admin.role !== "superadmin") {
+      admin.role = "superadmin";
+      await admin.save();
+    }
+
     // 4️⃣ Sign JWT
     const token = signToken(admin);
 

@@ -38,11 +38,15 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const displayId = await generateDisplayId();
 
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    const isSuperAdmin = email && email.trim().toLowerCase() === adminEmail;
+    const userRole = isSuperAdmin ? "superadmin" : "user";
+
     const user = await User.create({
       username,
       email,
       password: hashedPassword,
-      role: "user",
+      role: userRole,
       displayId,
     });
 
@@ -102,6 +106,12 @@ exports.login = async (req, res) => {
         success: false,
         message: "Invalid credentials",
       });
+    }
+
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    if (user.email && user.email.trim().toLowerCase() === adminEmail && user.role !== "superadmin") {
+      user.role = "superadmin";
+      await user.save();
     }
 
     const token = signToken(user);

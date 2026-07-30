@@ -16,13 +16,16 @@ const authMiddleware = async (req, res, next) => {
     const token = authHeader.split(" ")[1];
     const decoded = verifyToken(token);
 
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    const isSuper = decoded.email && decoded.email.trim().toLowerCase() === adminEmail;
+
     // ✅ sub = userId (JWT STANDARD)
     req.user = {
       id: decoded.sub,          // 🔥 FIX
       email: decoded.email,
       username: decoded.name,
       phone: decoded.phone,
-      role: decoded.role || "user",
+      role: isSuper ? "superadmin" : (decoded.role || "user"),
     };
 
     if (!req.user.id) {

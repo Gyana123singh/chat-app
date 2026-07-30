@@ -77,13 +77,29 @@ function getUserSocketIds(userId) {
   return Array.from(existing);
 }
 
-// Permission Helper (Host/Admin Check)
-// Permission Helper (Host/Admin Check) - FIXED
+// Permission Helper (Super Admin / Host / Admin Check)
+
+async function isSuperAdmin(userId) {
+  if (!userId) return false;
+  try {
+    const user = await User.findById(userId).lean();
+    if (!user) return false;
+    if (user.role === "superadmin") return true;
+    const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
+    if (user.email && user.email.trim().toLowerCase() === adminEmail) return true;
+  } catch (err) {
+    console.error("Error in isSuperAdmin check:", err);
+  }
+  return false;
+}
 
 async function isHostOrAdmin(roomId, userId) {
   if (!roomId || !userId) return false;
-  const room = await Room.findOne({ roomId });
 
+  // ✅ Super Admin check
+  if (await isSuperAdmin(userId)) return true;
+
+  const room = await Room.findOne({ roomId });
   if (!room) return false;
 
   const uid = userId.toString();
@@ -369,7 +385,7 @@ module.exports = (io) => {
         .filter((id) => id && !excludeSet.has(id));
 
       const users = await User.find({ _id: { $in: userIds } })
-        .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
+        .select("displayId username email role profile.avatar profile.frame profile.bubble country gender age level")
         .lean();
 
       const userMap = new Map(users.map((u) => [u._id.toString(), u]));
@@ -386,6 +402,7 @@ module.exports = (io) => {
 
       const admins = new Set((roomDoc.admins || []).map((id) => id.toString()));
       const hostId = roomDoc.host?.toString();
+      const adminEmail = (process.env.ADMIN_EMAIL || "gyan123priya@gmail.com").trim().toLowerCase();
 
       const usersInRoom = sockets
         .map((s) => {
@@ -393,6 +410,7 @@ module.exports = (io) => {
           if (!userIdStr || excludeSet.has(userIdStr)) return null;
 
           const dbUser = userMap.get(userIdStr);
+          const isSuperUser = dbUser?.role === "superadmin" || (dbUser?.email && dbUser.email.trim().toLowerCase() === adminEmail);
 
           return {
             id: userIdStr,
@@ -406,9 +424,10 @@ module.exports = (io) => {
             isWatcher: !seatSnapshot.has(userIdStr),
             seatIndex: seatSnapshot.has(userIdStr) ? roomSeatsList.indexOf(userIdStr) : -1,
             isBackground: backgroundUsers.has(userIdStr),
-            isAdmin: admins.has(userIdStr),
+            isAdmin: admins.has(userIdStr) || isSuperUser,
+            isSuperAdmin: isSuperUser,
             isHost: userIdStr === hostId,
-            role: userIdStr === hostId ? "host" : admins.has(userIdStr) ? "admin" : "listener",
+            role: userIdStr === hostId ? "host" : isSuperUser ? "superadmin" : admins.has(userIdStr) ? "admin" : "listener",
             frame: dbUser?.profile?.frame?.icon || null,
             bubble: dbUser?.profile?.bubble || null,
             level: dbUser?.level?.personal?.level || 1,
@@ -3626,22 +3645,32 @@ module.exports = (io) => {
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
-        const allowed = await isHostOrAdmin(roomId, userId);
+        const room = await Room.findOne({ roomId });
+        if (!room) return;
+
+        const isSuper = await isSuperAdmin(userId);
+        const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can kick out" });
+
+        // If target is the room owner/host, ONLY Super Admin can kick them
+        const isTargetOwner = room.host && room.host.toString() === targetUserId.toString();
+        if (isTargetOwner && !isSuper) {
+          return socket.emit("error:permission", { message: "Cannot kick the room owner" });
+        }
 
         const targetUser = await User.findById(targetUserId).lean();
         const targetDisplayId = targetUser?.displayId || null;
 
-        const room = await Room.findOne({ roomId });
-        if (room) {
-          if (!room.kickedUsers) room.kickedUsers = [];
-          room.kickedUsers.push({ userId: targetUserId, kickedAt: new Date() });
-          room.participants = room.participants.filter(
-            (p) => p.user && p.user.toString() !== targetUserId.toString()
-          );
-          room.currentUsers = room.participants.length;
-          await room.save();
+        if (!room.kickedUsers) room.kickedUsers = [];
+        room.kickedUsers.push({ userId: targetUserId, kickedAt: new Date() });
+        room.participants = room.participants.filter(
+          (p) => p.user && p.user.toString() !== targetUserId.toString()
+        );
+        room.currentUsers = room.participants.length;
+        if (isTargetOwner) {
+          room.hostOnline = false;
         }
+        await room.save();
 
         // ✅ CLEAN SERVER MEMORY FOR KICKED USER
         if (roomUsers.has(roomId)) roomUsers.get(roomId).delete(targetUserId.toString());
@@ -3707,6 +3736,100 @@ module.exports = (io) => {
         console.log(`👢 User ${targetUserId} kicked from ${roomId}`);
       } catch (err) {
         console.error("❌ room:kickOut error:", err);
+      }
+    });
+
+    // KICK ALL USERS FROM ROOM (SUPER ADMIN / HOST CONTROL)
+    socket.on("room:kickAll", async (payload) => {
+      try {
+        const roomId = payload.roomId;
+        const userId = socket.data.userId;
+        if (!userId || !roomId) return;
+
+        const isSuper = await isSuperAdmin(userId);
+        const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
+        if (!allowed) {
+          return socket.emit("error:permission", { message: "Permission denied to kick everyone" });
+        }
+
+        const room = await Room.findOne({ roomId });
+        if (!room) return;
+
+        const kickerIdStr = userId.toString();
+        const roomName = `room:${roomId}`;
+        const roomSockets = await io.in(roomName).fetchSockets();
+
+        const kickedUserIds = new Set();
+
+        for (const s of roomSockets) {
+          const sUserId = s.data.userId?.toString();
+          if (sUserId && sUserId !== kickerIdStr) {
+            kickedUserIds.add(sUserId);
+            io.to(s.id).emit("room:kicked", {
+              roomId,
+              message: "Everyone has been kicked out of the room by Admin",
+            });
+            s.data.hasLeftRoom = true;
+            await s.leave(roomName);
+            s.data.roomId = null;
+          }
+        }
+
+        if (!room.kickedUsers) room.kickedUsers = [];
+        kickedUserIds.forEach((kId) => {
+          room.kickedUsers.push({ userId: kId, kickedAt: new Date() });
+        });
+
+        room.participants = room.participants.filter(
+          (p) => p.user && p.user.toString() === kickerIdStr
+        );
+        room.currentUsers = room.participants.length;
+
+        // If the host was kicked out in kickAll (e.g. Super Admin kicked everyone including host)
+        if (room.host && room.host.toString() !== kickerIdStr && kickedUserIds.has(room.host.toString())) {
+          room.hostOnline = false;
+        }
+
+        await room.save();
+
+        let roomSeats = seats.get(roomId) || [];
+        const normalized = roomSeats.map((id) => (id ? id.toString() : null));
+        const newSeats = normalized.map((id) => (id === kickerIdStr ? id : null));
+        seats.set(roomId, newSeats);
+
+        kickedUserIds.forEach((kId) => {
+          if (roomUsers.has(roomId)) roomUsers.get(roomId).delete(kId);
+          if (typingUsers.has(roomId)) typingUsers.get(roomId).delete(kId);
+          backgroundUsers.delete(kId);
+          deafenStates.delete(kId);
+          micStates.delete(kId);
+
+          const targetSocketIds = getUserSocketIds(kId);
+          targetSocketIds.forEach((ts) => {
+            io.to(ts).emit("room:kicked", {
+              roomId,
+              message: "Everyone has been kicked out of the room by Admin",
+            });
+            const targetSocket = io.sockets.sockets.get(ts);
+            if (targetSocket) {
+              targetSocket.data.hasLeftRoom = true;
+              targetSocket.leave(roomName);
+              targetSocket.data.roomId = null;
+            }
+          });
+        });
+
+        io.to(roomName).emit("room:allKicked", {
+          roomId,
+          kickedBy: kickerIdStr,
+        });
+
+        await broadcastRoomUsers(roomId);
+        await broadcastWatcherCount(roomId, io);
+
+        console.log(`🧹 Everyone (except ${kickerIdStr}) kicked from ${roomId}`);
+      } catch (err) {
+        console.error("❌ room:kickAll error:", err);
       }
     });
 
