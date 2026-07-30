@@ -461,14 +461,26 @@ module.exports = (io) => {
       const hostIdStr = room.host?.toString();
       const adminIds = (room.admins || []).map((id) => id.toString());
 
-      // Find standard users on seats
-      const usersToKick = normalized.filter((id) => id && id !== hostIdStr && !adminIds.includes(id));
+      // Find standard users on seats (excluding host, admins, AND super admins)
+      const usersToKick = [];
+      for (const id of normalized) {
+        if (id && id !== hostIdStr && !adminIds.includes(id)) {
+          const isSuper = await isSuperAdmin(id);
+          if (!isSuper) {
+            usersToKick.push(id);
+          }
+        }
+      }
       if (usersToKick.length === 0) return;
 
-      // Build new seats array preserving positions (set non host/admins to null)
-      const newRoomSeats = normalized.map((id) => {
+      // Build new seats array preserving positions (keep host/admins/superadmins)
+      const superAdminFlags = await Promise.all(
+        normalized.map(async (id) => (id ? await isSuperAdmin(id) : false))
+      );
+
+      const newRoomSeats = normalized.map((id, index) => {
         if (!id) return null;
-        if (id === hostIdStr || adminIds.includes(id)) return id;
+        if (id === hostIdStr || adminIds.includes(id) || superAdminFlags[index]) return id;
         return null;
       });
       seats.set(roomId, newRoomSeats);
@@ -3607,7 +3619,13 @@ module.exports = (io) => {
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
-        const allowed = await isHostOrAdmin(roomId, userId);
+        const isSuper = await isSuperAdmin(userId);
+        const isTargetSuper = await isSuperAdmin(targetUserId);
+        if (isTargetSuper && !isSuper) {
+          return socket.emit("error:permission", { message: "Cannot remove super admin from seat" });
+        }
+
+        const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can remove from seat" });
 
         console.log("🪑 Force removing from seat:", targetUserId);
@@ -3649,6 +3667,11 @@ module.exports = (io) => {
         if (!room) return;
 
         const isSuper = await isSuperAdmin(userId);
+        const isTargetSuper = await isSuperAdmin(targetUserId);
+        if (isTargetSuper) {
+          return socket.emit("error:permission", { message: "Cannot kick out the super admin" });
+        }
+
         const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can kick out" });
 
@@ -3764,6 +3787,8 @@ module.exports = (io) => {
         for (const s of roomSockets) {
           const sUserId = s.data.userId?.toString();
           if (sUserId && sUserId !== kickerIdStr) {
+            const isSTargetSuper = await isSuperAdmin(sUserId);
+            if (isSTargetSuper) continue; // Never kick out Super Admin
             kickedUserIds.add(sUserId);
             io.to(s.id).emit("room:kicked", {
               roomId,
@@ -3841,8 +3866,20 @@ module.exports = (io) => {
         const userId = socket.data.userId;
         if (!userId || !roomId || !targetUserId) return;
 
-        const allowed = await isHostOrAdmin(roomId, userId);
+        const isSuper = await isSuperAdmin(userId);
+        const isTargetSuper = await isSuperAdmin(targetUserId);
+        if (isTargetSuper) {
+          return socket.emit("error:permission", { message: "Cannot block the super admin" });
+        }
+
+        const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can block user" });
+
+        const room = await Room.findOne({ roomId });
+        const isTargetOwner = room && room.host && room.host.toString() === targetUserId.toString();
+        if (isTargetOwner && !isSuper) {
+          return socket.emit("error:permission", { message: "Cannot block the room owner" });
+        }
 
         const targetUser = await User.findById(targetUserId).lean();
         const targetDisplayId = targetUser?.displayId || null;
