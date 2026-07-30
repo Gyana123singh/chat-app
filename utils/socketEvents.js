@@ -3819,8 +3819,26 @@ module.exports = (io) => {
 
         let roomSeats = seats.get(roomId) || [];
         const normalized = roomSeats.map((id) => (id ? id.toString() : null));
-        const newSeats = normalized.map((id) => (id === kickerIdStr ? id : null));
+        const superAdminFlags = await Promise.all(
+          normalized.map(async (id) => (id ? await isSuperAdmin(id) : false))
+        );
+
+        const newSeats = normalized.map((id, idx) => {
+          if (!id) return null;
+          if (id === kickerIdStr || superAdminFlags[idx]) return id;
+          return null;
+        });
         seats.set(roomId, newSeats);
+
+        // Notify room of seat removals for all kicked users
+        normalized.forEach((id, idx) => {
+          if (id && id !== kickerIdStr && !superAdminFlags[idx]) {
+            io.to(roomName).emit("room:seat:removed", {
+              userId: id,
+              seatNumber: idx + 1,
+            });
+          }
+        });
 
         kickedUserIds.forEach((kId) => {
           if (roomUsers.has(roomId)) roomUsers.get(roomId).delete(kId);
@@ -3828,6 +3846,11 @@ module.exports = (io) => {
           backgroundUsers.delete(kId);
           deafenStates.delete(kId);
           micStates.delete(kId);
+
+          // Emit room:userLeft to room occupants so UI removes user
+          io.to(roomName).emit("room:userLeft", {
+            userId: kId,
+          });
 
           const targetSocketIds = getUserSocketIds(kId);
           targetSocketIds.forEach((ts) => {
