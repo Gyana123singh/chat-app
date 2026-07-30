@@ -145,7 +145,7 @@ exports.registerUser = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find();
+    const users = await User.find().sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
