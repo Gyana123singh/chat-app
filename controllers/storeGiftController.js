@@ -243,3 +243,52 @@ exports.createGift = async (req, res) => {
     });
   }
 };
+
+/* ===============================
+   UPDATE GIFT (ADMIN)
+================================ */
+exports.updateGift = async (req, res) => {
+  try {
+    const { giftId, id } = req.params;
+    const targetId = giftId || id;
+    const { name, price, category, description, effectType, rarity } = req.body;
+
+    const gift = await StoreGift.findById(targetId);
+    if (!gift) {
+      return res.status(404).json({
+        success: false,
+        message: "Store Gift not found",
+      });
+    }
+
+    if (name) gift.name = name;
+    if (price) gift.price = Number(price);
+    if (category) gift.category = category;
+    if (description) gift.description = description;
+    if (effectType) gift.effectType = effectType;
+    if (rarity) gift.rarity = rarity;
+
+    if (req.file) {
+      gift.icon = req.file.path;
+      if (req.file.mimetype?.startsWith("image/") || req.file.mimetype?.startsWith("video/")) {
+        gift.animationUrl = req.file.path;
+      }
+    } else if (req.body.icon) {
+      gift.icon = req.body.icon;
+    }
+
+    await gift.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Store Gift updated successfully",
+      data: gift,
+    });
+  } catch (error) {
+    console.error("❌ Update Store Gift Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Error updating store gift",
+    });
+  }
+};

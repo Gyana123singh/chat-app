@@ -111,7 +111,6 @@ exports.getCategory = async (req, res) => {
     });
   }
 };
-// this for admin side to add gift and category
 exports.getAllGifts = async (req, res) => {
   try {
     const gifts = await Gift.find({ isAvailable: true }).sort({
@@ -127,6 +126,67 @@ exports.getAllGifts = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching gifts",
+    });
+  }
+};
+
+// UPDATE GIFT (ADMIN)
+exports.updateGift = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, price, category } = req.body;
+
+    const gift = await Gift.findById(id);
+    if (!gift) {
+      return res.status(404).json({
+        success: false,
+        message: "Gift not found",
+      });
+    }
+
+    if (name) gift.name = name;
+    if (price) gift.price = Number(price);
+    if (category) gift.category = category;
+    if (req.file) gift.icon = req.file.path;
+    else if (req.body.icon) gift.icon = req.body.icon;
+
+    await gift.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Gift updated successfully",
+      data: gift,
+    });
+  } catch (error) {
+    console.error("❌ Update Gift Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Error updating gift",
+    });
+  }
+};
+
+// DELETE GIFT (ADMIN)
+exports.deleteGift = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const gift = await Gift.findByIdAndDelete(id);
+    if (!gift) {
+      return res.status(404).json({
+        success: false,
+        message: "Gift not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Gift deleted successfully",
+    });
+  } catch (error) {
+    console.error("❌ Delete Gift Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Error deleting gift",
     });
   }
 };

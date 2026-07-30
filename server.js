@@ -117,13 +117,15 @@ app.use("/api/store-gift-send", sendStoreGiftRoutes);
 app.use("/api/private-chat", privateChatRouter);
 app.use("/api/trophies", trophyRouter);
 app.use("/api/level", levelRouter);
+const reportRouter = require("./router/reportRouter");
+
 app.use("/api/notifications", notificationRouter);
 app.use("/api/promotion", promotionRouter);
 app.use("/api/cp", cpRouter);
 app.use("/api/pk", pkRoutes);
 app.use("/api/room-invites", roomInviteRouter);
 app.use("/api/image-upload", chatUploadRouter);
-
+app.use("/api/reports", reportRouter);
 app.use("/api/private-upload", privateImageUpload);
 
 app.get("/", (req, res) => {

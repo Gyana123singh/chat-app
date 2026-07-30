@@ -14,6 +14,7 @@ const {
   getProfitLossConfig,
   updateProfitLossConfig,
   getDashboardStats,
+  getRevenueAnalytics,
   getHelpRooms,
   createHelpRoom,
   updateHelpRoom,
@@ -52,8 +53,10 @@ router.post("/deduct-coins", deductCoinsFromUser);
 router.get("/profit-loss-config", getProfitLossConfig);
 router.post("/profit-loss-config", updateProfitLossConfig);
 
-// dashboard statistics
+// dashboard statistics & revenue analytics
 router.get("/dashboard/stats", getDashboardStats);
+router.get("/revenue-analytics", getRevenueAnalytics);
+router.get("/admin/revenue-analytics", getRevenueAnalytics);
 
 // Help Room management
 router.get("/help-room", authMiddleware, adminCheck, getHelpRooms);

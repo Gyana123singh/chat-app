@@ -6,6 +6,9 @@ const { authMiddleware } = require("../middleware/auth");
 const multer = require("../middleware/multer.middleware");
 
 router.post("/addGift", multer.single("icon"), giftController.addGift);
+router.put("/update/:id", multer.single("icon"), giftController.updateGift);
+router.put("/edit/:id", multer.single("icon"), giftController.updateGift);
+router.delete("/delete/:id", giftController.deleteGift);
 router.get("/getAllGift", giftController.getAllGifts);
 router.post("/addCategory", giftController.addCategory);
 router.get("/getCategory", giftController.getCategory);

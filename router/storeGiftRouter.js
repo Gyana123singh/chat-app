@@ -17,5 +17,7 @@ router.delete("/delete/:giftId", giftController.deleteGift);
 
 // Admin routes
 router.post("/create", upload.single("icon"), giftController.createGift);
+router.put("/update/:giftId", upload.single("icon"), giftController.updateGift);
+router.put("/edit/:giftId", upload.single("icon"), giftController.updateGift);
 
 module.exports = router;
