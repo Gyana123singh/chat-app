@@ -3884,7 +3884,6 @@ module.exports = (io) => {
         const targetUser = await User.findById(targetUserId).lean();
         const targetDisplayId = targetUser?.displayId || null;
 
-        const room = await Room.findOne({ roomId });
         if (room) {
           if (!room.blockedUsers) room.blockedUsers = [];
           if (!room.blockedUsers.some(id => id.toString() === targetUserId.toString())) {
