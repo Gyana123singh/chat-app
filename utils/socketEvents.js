@@ -3628,6 +3628,20 @@ module.exports = (io) => {
         const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can remove from seat" });
 
+        const roomDoc = await Room.findOne({ roomId });
+        if (roomDoc) {
+          const isTargetOwner = roomDoc.host && roomDoc.host.toString() === targetUserId.toString();
+          if (isTargetOwner && !isSuper) {
+            return socket.emit("error:permission", { message: "Cannot remove room owner from seat" });
+          }
+
+          const isTargetAdmin = Array.isArray(roomDoc.admins) && roomDoc.admins.some((id) => id && id.toString() === targetUserId.toString());
+          const isOwner = roomDoc.host && roomDoc.host.toString() === userId.toString();
+          if (isTargetAdmin && !isSuper && !isOwner) {
+            return socket.emit("error:permission", { message: "Admins cannot remove other admins from seat" });
+          }
+        }
+
         console.log("🪑 Force removing from seat:", targetUserId);
 
         let roomSeats = seats.get(roomId) || [];
@@ -3679,6 +3693,13 @@ module.exports = (io) => {
         const isTargetOwner = room.host && room.host.toString() === targetUserId.toString();
         if (isTargetOwner && !isSuper) {
           return socket.emit("error:permission", { message: "Cannot kick the room owner" });
+        }
+
+        // If target is an admin, ONLY Super Admin or Room Owner/Host can kick them
+        const isTargetAdmin = Array.isArray(room.admins) && room.admins.some((id) => id && id.toString() === targetUserId.toString());
+        const isOwner = room.host && room.host.toString() === userId.toString();
+        if (isTargetAdmin && !isSuper && !isOwner) {
+          return socket.emit("error:permission", { message: "Admins cannot kick out other admins" });
         }
 
         const targetUser = await User.findById(targetUserId).lean();
@@ -3779,6 +3800,7 @@ module.exports = (io) => {
         if (!room) return;
 
         const kickerIdStr = userId.toString();
+        const isKickerOwner = room.host && room.host.toString() === kickerIdStr;
         const roomName = `room:${roomId}`;
         const roomSockets = await io.in(roomName).fetchSockets();
 
@@ -3789,6 +3811,13 @@ module.exports = (io) => {
           if (sUserId && sUserId !== kickerIdStr) {
             const isSTargetSuper = await isSuperAdmin(sUserId);
             if (isSTargetSuper) continue; // Never kick out Super Admin
+
+            const isSTargetOwner = room.host && room.host.toString() === sUserId;
+            if (isSTargetOwner && !isSuper) continue; // Never kick out Room Owner unless Super Admin
+
+            const isSTargetAdmin = Array.isArray(room.admins) && room.admins.some((id) => id && id.toString() === sUserId);
+            if (isSTargetAdmin && !isSuper && !isKickerOwner) continue; // Admin cannot kick other Admins
+
             kickedUserIds.add(sUserId);
             io.to(s.id).emit("room:kicked", {
               roomId,
