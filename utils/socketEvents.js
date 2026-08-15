@@ -125,6 +125,43 @@ async function isHost(roomId, userId) {
   return room.host.toString() === userId.toString();
 }
 
+// 🎬 Helper to trigger and broadcast entrance effect to room
+async function triggerEntranceEffect(io, roomId, userId) {
+  try {
+    if (!roomId || !userId) return;
+
+    const userDoc = await User.findById(userId)
+      .select("username profile.avatar level profile.entranceEffect")
+      .lean();
+
+    const activeEntrance = await StoreGiftInventory.findOne({
+      userId,
+      effectType: "ENTRANCE",
+      isActive: true,
+      expiresAt: { $gt: new Date() },
+    }).lean();
+
+    const animationUrl =
+      activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
+
+    if (animationUrl) {
+      const roomName = `room:${roomId}`;
+      console.log(`🎬 Triggering entrance effect for user ${userId} in room ${roomId}: ${animationUrl}`);
+      io.to(roomName).emit("room:effect", {
+        type: "ENTRANCE",
+        userId: userId.toString(),
+        username: userDoc?.username || "User",
+        avatar: userDoc?.profile?.avatar || null,
+        level: userDoc?.level || 1,
+        animationUrl,
+        duration: 4,
+      });
+    }
+  } catch (error) {
+    console.error("❌ Entrance error:", error.message);
+  }
+}
+
 // ✅ NEW: Broadcast Watcher Count Helper
 async function broadcastWatcherCount(roomId, io, excludeUserId = null) {
   if (!roomId) return;
@@ -768,6 +805,9 @@ module.exports = (io) => {
         socket.emit("room:updated", {
           room: roomDoc,
         });
+
+        // 🎬 ENTRANCE EFFECT
+        await triggerEntranceEffect(io, roomId, userId);
       } catch (err) {
         console.error("❌ room:watch error:", err);
       }
@@ -1120,35 +1160,7 @@ module.exports = (io) => {
         // ===============================
         // 🎬 ENTRANCE EFFECT
         // ===============================
-        try {
-          const userDoc = await User.findById(userId)
-            .select("username profile.avatar level profile.entranceEffect")
-            .lean();
-
-          const activeEntrance = await StoreGiftInventory.findOne({
-            userId,
-            effectType: "ENTRANCE",
-            isActive: true,
-            expiresAt: { $gt: new Date() },
-          }).lean();
-
-          const animationUrl =
-            activeEntrance?.animationUrl || userDoc?.profile?.entranceEffect;
-
-          if (animationUrl) {
-            socket.to(roomName).emit("room:effect", {
-              type: "ENTRANCE",
-              userId,
-              username: userDoc?.username || "User",
-              avatar: userDoc?.profile?.avatar || null,
-              level: userDoc?.level || 1,
-              animationUrl,
-              duration: 4,
-            });
-          }
-        } catch (error) {
-          console.error("❌ Entrance error:", error.message);
-        }
+        await triggerEntranceEffect(io, roomId, userId);
 
         // ✅ Emit latest room details to ensure syncing
         socket.emit("room:updated", {
