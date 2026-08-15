@@ -3628,20 +3628,6 @@ module.exports = (io) => {
         const allowed = isSuper || (await isHostOrAdmin(roomId, userId));
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can remove from seat" });
 
-        const roomDoc = await Room.findOne({ roomId });
-        if (roomDoc) {
-          const isTargetOwner = roomDoc.host && roomDoc.host.toString() === targetUserId.toString();
-          if (isTargetOwner && !isSuper) {
-            return socket.emit("error:permission", { message: "Cannot remove room owner from seat" });
-          }
-
-          const isTargetAdmin = Array.isArray(roomDoc.admins) && roomDoc.admins.some((id) => id && id.toString() === targetUserId.toString());
-          const isOwner = roomDoc.host && roomDoc.host.toString() === userId.toString();
-          if (isTargetAdmin && !isSuper && !isOwner) {
-            return socket.emit("error:permission", { message: "Admins cannot remove other admins from seat" });
-          }
-        }
-
         console.log("🪑 Force removing from seat:", targetUserId);
 
         let roomSeats = seats.get(roomId) || [];
