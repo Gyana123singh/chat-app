@@ -2233,9 +2233,11 @@ module.exports = (io) => {
           }
 
           if (!userDoc) {
-            userDoc = await User.findOne({
-              $or: [{ displayId: id }, { username: id }],
-            })
+            const userOr = [{ username: id }];
+            if (/^\d+$/.test(id)) {
+              userOr.push({ displayId: Number(id) });
+            }
+            userDoc = await User.findOne({ $or: userOr })
               .select("_id username displayId profile.avatar country gender age level")
               .lean();
           }

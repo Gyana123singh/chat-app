@@ -582,8 +582,6 @@ exports.searchUsers = async (req, res) => {
       $or: [
         { username: { $regex: trimmed, $options: "i" } },
         { email: { $regex: trimmed, $options: "i" } },
-        { displayId: trimmed },
-        { displayId: { $regex: trimmed, $options: "i" } },
       ],
     };
 
