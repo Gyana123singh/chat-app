@@ -277,6 +277,7 @@ module.exports = (socket, io) => {
 
       if (gift.effectType === "THEME") {
         update["profile.theme"] = gift.name.toLowerCase();
+        update["profile.themeUrl"] = gift.animationUrl || gift.icon;
       }
 
       if (Object.keys(update).length > 0) {
@@ -300,6 +301,11 @@ module.exports = (socket, io) => {
           if (gift.effectType === "FRAME") {
             s.data.profile.frame = gift.icon;
           }
+
+          if (gift.effectType === "THEME") {
+            s.data.profile.theme = gift.name.toLowerCase();
+            s.data.profile.themeUrl = gift.animationUrl || gift.icon;
+          }
         });
 
         /* ===============================
@@ -322,6 +328,7 @@ module.exports = (socket, io) => {
               ? gift.animationUrl || gift.icon
               : null,
           theme: gift.effectType === "THEME" ? gift.name.toLowerCase() : null,
+          themeUrl: gift.effectType === "THEME" ? gift.animationUrl || gift.icon : null,
         });
       }
 

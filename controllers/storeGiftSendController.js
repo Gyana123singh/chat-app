@@ -108,8 +108,10 @@ exports.sendGift = async (req, res) => {
       if (gift.effectType === "BUBBLE") update["profile.bubble"] = gift.icon;
       if (gift.effectType === "ENTRANCE")
         update["profile.entranceEffect"] = gift.animationUrl;
-      if (gift.effectType === "THEME")
+      if (gift.effectType === "THEME") {
         update["profile.theme"] = gift.name.toLowerCase();
+        update["profile.themeUrl"] = gift.animationUrl || gift.icon;
+      }
 
       if (Object.keys(update).length > 0) {
         await User.findByIdAndUpdate(rid, { $set: update }, { session });
@@ -151,6 +153,8 @@ exports.sendGift = async (req, res) => {
       animationUrl: gift.animationUrl,
       effectType: gift.effectType,
       duration,
+      theme: gift.effectType === "THEME" ? gift.name.toLowerCase() : null,
+      themeUrl: gift.effectType === "THEME" ? gift.animationUrl || gift.icon : null,
       sender: {
         id: sender._id,
         username: sender.username,
@@ -161,6 +165,11 @@ exports.sendGift = async (req, res) => {
     // Send animation to each receiver
     filteredReceivers.forEach((rid) => {
       io.to(rid.toString()).emit("gift:received", payload);
+      io.to(rid.toString()).emit("profile:update", {
+        effectType: gift.effectType,
+        theme: gift.effectType === "THEME" ? gift.name.toLowerCase() : null,
+        themeUrl: gift.effectType === "THEME" ? gift.animationUrl || gift.icon : null,
+      });
     });
 
     // Room broadcast and notification
@@ -219,6 +228,26 @@ exports.sendGift = async (req, res) => {
           userIds: filteredReceivers,
           animationUrl: gift.animationUrl,
         });
+      }
+
+      // Room theme broadcast if receiver is room host
+      if (gift.effectType === "THEME") {
+        const Room = require("../models/room");
+        const roomObj = await Room.findOne({ roomId }).select("host creator").lean();
+        if (roomObj) {
+          const isReceiverHost = filteredReceivers.some(
+            (rid) =>
+              (roomObj.host && roomObj.host.toString() === rid.toString()) ||
+              (roomObj.creator && roomObj.creator.toString() === rid.toString())
+          );
+          if (isReceiverHost) {
+            io.to(`room:${roomId}`).emit("room:theme:update", {
+              theme: gift.name.toLowerCase(),
+              themeUrl: gift.animationUrl || gift.icon,
+              triggeredBy: senderId,
+            });
+          }
+        }
       }
     }
 

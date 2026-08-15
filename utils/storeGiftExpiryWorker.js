@@ -25,7 +25,10 @@ async function expireStoreGifts() {
       if (gift.effectType === "BUBBLE") update["profile.bubble"] = null;
       if (gift.effectType === "ENTRANCE")
         update["profile.entranceEffect"] = null;
-      if (gift.effectType === "THEME") update["profile.theme"] = null;
+      if (gift.effectType === "THEME") {
+        update["profile.theme"] = null;
+        update["profile.themeUrl"] = null;
+      }
 
       if (Object.keys(update).length > 0) {
         await User.findByIdAndUpdate(gift.userId, { $set: update });

@@ -385,7 +385,7 @@ module.exports = (io) => {
         .filter((id) => id && !excludeSet.has(id));
 
       const users = await User.find({ _id: { $in: userIds } })
-        .select("displayId username email role profile.avatar profile.frame profile.bubble country gender age level")
+        .select("displayId username email role profile.avatar profile.frame profile.bubble profile.themeUrl country gender age level")
         .lean();
 
       const userMap = new Map(users.map((u) => [u._id.toString(), u]));
@@ -430,6 +430,7 @@ module.exports = (io) => {
             role: userIdStr === hostId ? "host" : isSuperUser ? "superadmin" : admins.has(userIdStr) ? "admin" : "listener",
             frame: dbUser?.profile?.frame?.icon || null,
             bubble: dbUser?.profile?.bubble || null,
+            themeUrl: dbUser?.profile?.themeUrl || null,
             level: dbUser?.level?.personal?.level || 1,
             country: dbUser?.country || "Unknown",
             gender: dbUser?.gender || "Other",
@@ -598,7 +599,7 @@ module.exports = (io) => {
 
       // ⭐ FETCH FULL USER (for metadata/displayId)
       const dbUser = await User.findById(userId)
-        .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
+        .select("displayId username profile.avatar profile.frame profile.bubble profile.themeUrl country gender age level")
         .lean();
 
       socket.data.displayId = dbUser?.displayId || socket.data.displayId || null;
@@ -614,6 +615,7 @@ module.exports = (io) => {
         age: dbUser?.age || 18,
         bubble: dbUser?.profile?.bubble || null,
         frame: dbUser?.profile?.frame?.icon || null,
+        themeUrl: dbUser?.profile?.themeUrl || null,
       };
 
       console.log("👀 User watching room:", { roomId, userId, username: socket.data.user.username });
@@ -803,7 +805,7 @@ module.exports = (io) => {
       // ❌ DO NOT ADD TO SEATS HERE
       // 🔥 attach displayId into user object
       const dbUser = await User.findById(safeUser.id)
-        .select("displayId username profile.avatar profile.frame profile.bubble country gender age level")
+        .select("displayId username profile.avatar profile.frame profile.bubble profile.themeUrl country gender age level")
         .lean();
 
       socket.data.displayId = dbUser?.displayId || socket.data.displayId || null;
@@ -819,6 +821,7 @@ module.exports = (io) => {
         age: dbUser?.age || 18,
         bubble: dbUser?.profile?.bubble || null,
         frame: dbUser?.profile?.frame?.icon || null,
+        themeUrl: dbUser?.profile?.themeUrl || null,
       };
       socket.data.userId = safeUser.id;
 
