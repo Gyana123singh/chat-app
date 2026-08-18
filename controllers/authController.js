@@ -17,22 +17,42 @@ exports.googleAuthSuccess = async (req, res) => {
 };
 
 // Helper to verify Google Token (supports both Google Console OAuth Client ID & Firebase Auth)
+function verifyGoogleTokenHttp(idToken) {
+  return new Promise((resolve) => {
+    const https = require("https");
+    const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    https
+      .get(url, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const payload = JSON.parse(data);
+            if (payload && payload.email) {
+              resolve({
+                uid: payload.sub,
+                email: payload.email,
+                name: payload.name || payload.email.split("@")[0],
+                picture: payload.picture || "",
+              });
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            resolve(null);
+          }
+        });
+      })
+      .on("error", () => resolve(null));
+  });
+}
+
 async function verifyGoogleTokenPayload(idToken) {
   // 1️⃣ Try Google Console OAuth Token Validation (https://oauth2.googleapis.com/tokeninfo)
   try {
-    const googleRes = await fetch(
-      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
-    );
-    if (googleRes.ok) {
-      const payload = await googleRes.json();
-      if (payload && payload.email) {
-        return {
-          uid: payload.sub,
-          email: payload.email,
-          name: payload.name || payload.email.split("@")[0],
-          picture: payload.picture || "",
-        };
-      }
+    const googleUserData = await verifyGoogleTokenHttp(idToken);
+    if (googleUserData && googleUserData.email) {
+      return googleUserData;
     }
   } catch (err) {
     console.log("Google TokenInfo check failed, trying Firebase Admin...", err.message);
