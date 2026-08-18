@@ -802,8 +802,20 @@ module.exports = (io) => {
         }
 
         // ✅ Emit latest room details to ensure syncing
+        const hostUserId = roomDoc.host || roomDoc.creator;
+        const hostUser = hostUserId
+          ? await User.findById(hostUserId).select("username profile.avatar profile.themeUrl").lean()
+          : null;
+
+        const updatedRoomPayload = {
+          ...roomDoc.toObject(),
+          creatorName: hostUser?.username || roomDoc.creatorName,
+          creatorAvatar: hostUser?.profile?.avatar || roomDoc.creatorAvatar,
+          hostThemeUrl: hostUser?.profile?.themeUrl || null,
+        };
+
         socket.emit("room:updated", {
-          room: roomDoc,
+          room: updatedRoomPayload,
         });
 
         // 🎬 ENTRANCE EFFECT
@@ -1164,7 +1176,7 @@ module.exports = (io) => {
 
         // ✅ Emit latest room details to ensure syncing
         socket.emit("room:updated", {
-          room: roomDoc,
+          room: updatedRoomPayload,
         });
 
         // ===============================

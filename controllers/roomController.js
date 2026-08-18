@@ -623,16 +623,30 @@ exports.getAllRooms = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const rooms = await Room.find(query)
-      .populate("host", "username profile.avatar stats")
+      .populate("host", "username profile.avatar profile.themeUrl stats")
       .sort({ isHelpRoom: -1, currentUsers: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     const total = await Room.countDocuments(query);
 
+    const formattedRooms = rooms.map((r) => {
+      const roomObj = r.toObject();
+      if (r.host && r.host.username) {
+        roomObj.creatorName = r.host.username;
+        if (r.host.profile?.avatar) {
+          roomObj.creatorAvatar = r.host.profile.avatar;
+        }
+        if (r.host.profile?.themeUrl) {
+          roomObj.hostThemeUrl = r.host.profile.themeUrl;
+        }
+      }
+      return roomObj;
+    });
+
     res.status(200).json({
       success: true,
-      rooms,
+      rooms: formattedRooms,
       pagination: {
         total,
         page: parseInt(page),

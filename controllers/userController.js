@@ -321,7 +321,14 @@ exports.updateProfile = async (req, res) => {
     const validCodes = ["+91", "+92", "+880"];
 
     // ✅ BASIC FIELDS
-    if (finalUsername) updateData.username = finalUsername;
+    if (finalUsername) {
+      updateData.username = finalUsername;
+      const Room = require("../models/room");
+      await Room.updateMany(
+        { $or: [{ host: userId }, { creator: userId }] },
+        { $set: { creatorName: finalUsername } }
+      );
+    }
 
     if (finalCountry) {
       if (!validCountries.includes(finalCountry)) {
