@@ -623,7 +623,7 @@ exports.getAllRooms = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const rooms = await Room.find(query)
-      .populate("host", "username profile.avatar profile.themeUrl stats")
+      .populate("host", "username displayId profile.avatar profile.themeUrl stats")
       .sort({ isHelpRoom: -1, currentUsers: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -634,6 +634,9 @@ exports.getAllRooms = async (req, res) => {
       const roomObj = r.toObject();
       if (r.host && r.host.username) {
         roomObj.creatorName = r.host.username;
+        if (r.host.displayId) {
+          roomObj.hostDisplayId = r.host.displayId;
+        }
         if (r.host.profile?.avatar) {
           roomObj.creatorAvatar = r.host.profile.avatar;
         }

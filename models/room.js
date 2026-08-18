@@ -9,6 +9,11 @@ const roomSchema = new mongoose.Schema(
 
     creatorName: String,
 
+    hostDisplayId: {
+      type: String,
+      default: null,
+    },
+
     creatorAvatar: {
       type: String,
       default: null,
