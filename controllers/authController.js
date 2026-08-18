@@ -16,7 +16,44 @@ exports.googleAuthSuccess = async (req, res) => {
   res.redirect(`myapp://auth/google/success?token=${token}`);
 };
 
-// for Native Firebase Google Login (Directly from APK / Mobile App using ID Token)
+// Helper to verify Google Token (supports both Google Console OAuth Client ID & Firebase Auth)
+async function verifyGoogleTokenPayload(idToken) {
+  // 1️⃣ Try Google Console OAuth Token Validation (https://oauth2.googleapis.com/tokeninfo)
+  try {
+    const googleRes = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+    );
+    if (googleRes.ok) {
+      const payload = await googleRes.json();
+      if (payload && payload.email) {
+        return {
+          uid: payload.sub,
+          email: payload.email,
+          name: payload.name || payload.email.split("@")[0],
+          picture: payload.picture || "",
+        };
+      }
+    }
+  } catch (err) {
+    console.log("Google TokenInfo check failed, trying Firebase Admin...", err.message);
+  }
+
+  // 2️⃣ Fallback to Firebase Admin Verification
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    return {
+      uid: decoded.uid || decoded.sub,
+      email: decoded.email,
+      name: decoded.name || (decoded.email ? decoded.email.split("@")[0] : ""),
+      picture: decoded.picture || "",
+    };
+  } catch (err) {
+    console.error("Firebase Admin verification failed:", err.message);
+    throw err;
+  }
+}
+
+// for Native Google / Firebase Login (Directly from APK / Mobile App using ID Token)
 exports.googleFirebaseLogin = async (req, res) => {
   try {
     const { idToken } = req.body;
@@ -24,7 +61,7 @@ exports.googleFirebaseLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: "ID token is required" });
     }
 
-    const decoded = await admin.auth().verifyIdToken(idToken);
+    const decoded = await verifyGoogleTokenPayload(idToken);
     const email = decoded.email;
     if (!email) {
       return res.status(400).json({ success: false, message: "Email not found in Google token" });
