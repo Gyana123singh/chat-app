@@ -19,6 +19,16 @@ const roomSchema = new mongoose.Schema(
       default: null,
     },
 
+    hostThemeUrl: {
+      type: String,
+      default: null,
+    },
+
+    theme: {
+      type: String,
+      default: null,
+    },
+
     title: {
       type: String,
       trim: true,

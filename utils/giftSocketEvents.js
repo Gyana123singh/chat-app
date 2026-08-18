@@ -276,8 +276,16 @@ module.exports = (socket, io) => {
       }
 
       if (gift.effectType === "THEME") {
-        update["profile.theme"] = gift.name.toLowerCase();
-        update["profile.themeUrl"] = gift.animationUrl || gift.icon;
+        const themeUrl = gift.animationUrl || gift.icon;
+        const themeName = gift.name.toLowerCase();
+        update["profile.theme"] = themeName;
+        update["profile.themeUrl"] = themeUrl;
+
+        const Room = require("../models/room");
+        await Room.updateMany(
+          { $or: [{ host: receiverId }, { creator: receiverId }] },
+          { $set: { hostThemeUrl: themeUrl, theme: themeName } }
+        );
       }
 
       if (Object.keys(update).length > 0) {

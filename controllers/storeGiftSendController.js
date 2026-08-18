@@ -109,8 +109,17 @@ exports.sendGift = async (req, res) => {
       if (gift.effectType === "ENTRANCE")
         update["profile.entranceEffect"] = gift.animationUrl;
       if (gift.effectType === "THEME") {
-        update["profile.theme"] = gift.name.toLowerCase();
-        update["profile.themeUrl"] = gift.animationUrl || gift.icon;
+        const themeUrl = gift.animationUrl || gift.icon;
+        const themeName = gift.name.toLowerCase();
+        update["profile.theme"] = themeName;
+        update["profile.themeUrl"] = themeUrl;
+
+        const Room = require("../models/room");
+        await Room.updateMany(
+          { $or: [{ host: rid }, { creator: rid }] },
+          { $set: { hostThemeUrl: themeUrl, theme: themeName } },
+          { session }
+        );
       }
 
       if (Object.keys(update).length > 0) {
@@ -229,24 +238,22 @@ exports.sendGift = async (req, res) => {
           animationUrl: gift.animationUrl,
         });
       }
+    }
 
-      // Room theme broadcast if receiver is room host
-      if (gift.effectType === "THEME") {
-        const Room = require("../models/room");
-        const roomObj = await Room.findOne({ roomId }).select("host creator").lean();
-        if (roomObj) {
-          const isReceiverHost = filteredReceivers.some(
-            (rid) =>
-              (roomObj.host && roomObj.host.toString() === rid.toString()) ||
-              (roomObj.creator && roomObj.creator.toString() === rid.toString())
-          );
-          if (isReceiverHost) {
-            io.to(`room:${roomId}`).emit("room:theme:update", {
-              theme: gift.name.toLowerCase(),
-              themeUrl: gift.animationUrl || gift.icon,
-              triggeredBy: senderId,
-            });
-          }
+    // Room theme broadcast for all rooms owned by receivers
+    if (gift.effectType === "THEME") {
+      const Room = require("../models/room");
+      const themeUrl = gift.animationUrl || gift.icon;
+      const themeName = gift.name.toLowerCase();
+
+      for (const rid of filteredReceivers) {
+        const userRooms = await Room.find({ $or: [{ host: rid }, { creator: rid }] }).select("roomId").lean();
+        for (const ur of userRooms) {
+          io.to(`room:${ur.roomId}`).emit("room:theme:update", {
+            theme: themeName,
+            themeUrl: themeUrl,
+            triggeredBy: senderId,
+          });
         }
       }
     }
