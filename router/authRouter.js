@@ -7,12 +7,12 @@ const authController = require("../controllers/authController");
 router.post("/register", authController.register);
 router.post("/login", authController.login);
 
-// 2️⃣ Start Google Auth
+// 2️⃣ Start Google Auth (Using prompt: "select_account" to skip the "Continue" consent screen after email selection)
 router.get(
   "/google",
   passport.authenticate("google", {
     scope: ["profile", "email"],
-    prompt: "select_account consent",
+    prompt: "select_account",
   }),
 );
 
@@ -24,5 +24,8 @@ router.get(
   }),
   authController.googleAuthSuccess,
 );
+
+// 4️⃣ Native Firebase Google Login (For Native Mobile Apps / APKs without browser redirect)
+router.post("/google/firebase", authController.googleFirebaseLogin);
 
 module.exports = router;

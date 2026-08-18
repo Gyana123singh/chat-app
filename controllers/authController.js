@@ -2,6 +2,7 @@ const { signToken } = require("../utils/jwtAuth");
 const User = require("../models/users");
 const bcrypt = require("bcryptjs");
 const generateDisplayId = require("../utils/generateDisplayId");
+const admin = require("../config/firebaseAdmin");
 
 // for google OAuth login
 exports.googleAuthSuccess = async (req, res) => {
@@ -13,6 +14,70 @@ exports.googleAuthSuccess = async (req, res) => {
 
   // ✅ Redirect to Vercel frontend
   res.redirect(`myapp://auth/google/success?token=${token}`);
+};
+
+// for Native Firebase Google Login (Directly from APK / Mobile App using ID Token)
+exports.googleFirebaseLogin = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: "ID token is required" });
+    }
+
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const email = decoded.email;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Email not found in Google token" });
+    }
+
+    let user = await User.findOne({ oauthProviderId: decoded.uid });
+    if (!user) {
+      user = await User.findOne({ email });
+      if (user) {
+        user.oauthProvider = "google";
+        user.oauthProviderId = decoded.uid;
+      } else {
+        const displayId = await generateDisplayId();
+        user = await User.create({
+          username: decoded.name || email.split("@")[0],
+          email,
+          displayId,
+          oauthProvider: "google",
+          oauthProviderId: decoded.uid,
+          isVerified: true,
+          profile: {
+            avatar: decoded.picture || "",
+          },
+        });
+      }
+    }
+
+    if (!user.displayId) {
+      user.displayId = await generateDisplayId();
+    }
+    await user.save();
+
+    const token = signToken(user);
+
+    return res.status(200).json({
+      success: true,
+      message: "Google login successful",
+      token,
+      userId: user._id,
+      user: {
+        _id: user._id,
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        displayId: user.displayId,
+        avatar: user.profile?.avatar || "",
+      },
+    });
+  } catch (error) {
+    console.error("FIREBASE GOOGLE LOGIN ERROR:", error);
+    return res.status(401).json({ success: false, message: "Invalid or expired Google token" });
+  }
 };
 
 // Register user with email and password
