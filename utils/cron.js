@@ -80,27 +80,67 @@ const scheduleWeeklyReset = () => {
 /**
  * 🧹 Reset MONTHLY leaderboard (1st day of month 00:00)
  */
+const performMonthlyReset = async () => {
+  console.log("🧹 [CRON] Resetting MONTHLY leaderboard & user stats...");
+  await Leaderboard.updateMany({}, {
+    $set: {
+      "monthly.coins": 0,
+      "monthly.giftsReceived": 0,
+      "monthly.totalValue": 0,
+      "rank.monthly": 0,
+    },
+  });
+
+  const User = require("../models/users");
+  await User.updateMany({}, {
+    $set: {
+      "stats.monthlySent": 0,
+      "stats.monthlyReceived": 0,
+    },
+  });
+  console.log("✅ [CRON] Monthly reset done");
+};
+
 const scheduleMonthlyReset = () => {
   const job = cron.schedule("0 0 1 * *", async () => {
     try {
-      console.log("🧹 [CRON] Resetting MONTHLY leaderboard...");
-
-      await Leaderboard.updateMany({}, {
-        $set: {
-          "monthly.coins": 0,
-          "monthly.giftsReceived": 0,
-          "monthly.totalValue": 0,
-          "rank.monthly": 0,
-        },
-      });
-
-      console.log("✅ [CRON] Monthly reset done");
+      await performMonthlyReset();
     } catch (error) {
       console.error("❌ [CRON] Monthly reset failed:", error.message);
     }
   });
 
   cronJobs.push(job);
+};
+
+/**
+ * 🔄 Check and perform monthly reset on startup if new month has started
+ */
+const checkAndRunMonthlyResetOnStartup = async () => {
+  try {
+    const mongoose = require("mongoose");
+    const SystemMeta = mongoose.models.SystemMeta || mongoose.model("SystemMeta", new mongoose.Schema({
+      key: { type: String, unique: true },
+      value: String,
+      updatedAt: { type: Date, default: Date.now }
+    }));
+
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+
+    const meta = await SystemMeta.findOne({ key: "lastMonthlyReset" });
+    if (!meta || meta.value !== currentMonthKey) {
+      console.log(`🧹 [CRON] New month detected (${currentMonthKey}). Resetting monthly trophy & gift stats...`);
+      await performMonthlyReset();
+      await SystemMeta.findOneAndUpdate(
+        { key: "lastMonthlyReset" },
+        { value: currentMonthKey, updatedAt: new Date() },
+        { upsert: true }
+      );
+    }
+  } catch (err) {
+    console.error("❌ Startup monthly reset check failed:", err.message);
+  }
 };
 
 /**
@@ -113,6 +153,7 @@ const startCronJobs = () => {
     scheduleDailyReset();
     scheduleWeeklyReset();
     scheduleMonthlyReset();
+    checkAndRunMonthlyResetOnStartup();
     console.log(`✅ ${cronJobs.length} cron jobs started`);
   } catch (error) {
     console.error("❌ Failed to start cron jobs:", error.message);
@@ -130,4 +171,5 @@ const stopCronJobs = () => {
 module.exports = {
   startCronJobs,
   stopCronJobs,
+  performMonthlyReset,
 };
