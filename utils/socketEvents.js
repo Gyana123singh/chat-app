@@ -1434,6 +1434,35 @@ module.exports = (io) => {
           console.log(`🚨 Host left room ${roomId}. Remaining users: ${room.currentUsers}`);
         }
 
+        // 🎵 DJ Left or Room Empty stops music
+        const activeMusicState = roomManager.getState(roomId);
+        if (
+          roomId &&
+          (room.currentUsers <= 0 ||
+            (activeMusicState.playedBy &&
+              activeMusicState.playedBy.toString() === userId.toString()))
+        ) {
+          console.log(`🎵 DJ/User ${userId} left room ${roomId}, stopping room music`);
+          roomManager.stopMusic(roomId);
+          await MusicState.findOneAndUpdate(
+            { roomId },
+            {
+              $set: {
+                currentTrackId: null,
+                musicFile: null,
+                musicUrl: null,
+                isPlaying: false,
+                pausedAt: 0,
+                startedAt: null,
+                localFilePath: null,
+                playedBy: null,
+                trackOwnerId: null,
+              },
+            }
+          );
+          io.to(`room:${roomId}`).emit("music:stopped", { reason: "dj_left" });
+        }
+
         // =========================
         // EMPTY ROOM (KEPT ACTIVE PER USER REQUEST)
         // =========================
@@ -1449,25 +1478,6 @@ module.exports = (io) => {
             { roomId },
             { $set: { participants: [], "video.isPlaying": false } }
           );
-
-          // 🔥 Clear room music state when room becomes empty
-          try {
-            roomManager.stop(roomId);
-            await MusicState.findOneAndUpdate(
-              { roomId },
-              {
-                $set: {
-                  currentTrackId: null,
-                  musicUrl: null,
-                  isPlaying: false,
-                  playedBy: null,
-                  trackOwnerId: null,
-                },
-              }
-            );
-          } catch (mErr) {
-            console.error("❌ Error clearing room music on empty leave:", mErr);
-          }
 
           seats.delete(roomId);
           roomUsers.delete(roomId);
@@ -4577,6 +4587,33 @@ module.exports = (io) => {
         await broadcastRoomUsers(roomId, userId);
         await broadcastWatcherCount(roomId, io, userId);
       }
+
+    socket.on("music:stop", async ({ roomId }) => {
+      try {
+        if (!roomId) return;
+        console.log(`🎵 explicit music:stop received for room ${roomId}`);
+        roomManager.stopMusic(roomId);
+        await MusicState.findOneAndUpdate(
+          { roomId },
+          {
+            $set: {
+              currentTrackId: null,
+              musicFile: null,
+              musicUrl: null,
+              isPlaying: false,
+              pausedAt: 0,
+              startedAt: null,
+              localFilePath: null,
+              playedBy: null,
+              trackOwnerId: null,
+            },
+          }
+        );
+        io.to(`room:${roomId}`).emit("music:stopped", { reason: "stopped" });
+      } catch (err) {
+        console.error("❌ music:stop error:", err);
+      }
+    });
 
       // If the user has no remaining active socket connections globally, clean up global states
       if (userId && remainingSockets.length === 0) {

@@ -690,6 +690,45 @@ exports.getMusicState = async (req, res) => {
     const state = roomManager.getState(roomId);
     const dbState = await MusicState.findOne({ roomId });
 
+    // 🔥 Check if DJ/playedBy user is still in the room
+    if (state.playedBy) {
+      const room = await Room.findOne({ roomId }).select("participants host").lean();
+      const activeUserIds = room?.participants?.map(p => p.user?.toString()) || [];
+      if (room?.host) activeUserIds.push(room.host.toString());
+
+      if (!activeUserIds.includes(state.playedBy.toString())) {
+        console.log(`🎵 DJ ${state.playedBy} no longer in room ${roomId}. Clearing music state.`);
+        roomManager.stopMusic(roomId);
+        await MusicState.findOneAndUpdate(
+          { roomId },
+          {
+            $set: {
+              currentTrackId: null,
+              musicFile: null,
+              musicUrl: null,
+              isPlaying: false,
+              pausedAt: 0,
+              startedAt: null,
+              localFilePath: null,
+              playedBy: null,
+              trackOwnerId: null,
+            },
+          }
+        );
+        return res.json({
+          roomId,
+          currentTrackId: null,
+          currentPosition: 0,
+          isPlaying: false,
+          startedAt: null,
+          pausedAt: 0,
+          playedBy: null,
+          musicFile: null,
+          musicUrl: null,
+        });
+      }
+    }
+
     res.json({
       roomId,
       currentTrackId: dbState?.currentTrackId ? dbState.currentTrackId.toString() : null,
