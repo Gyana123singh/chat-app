@@ -26,6 +26,12 @@ const storeGiftSchema = new mongoose.Schema(
       min: 1,
     },
 
+    validityDays: {
+      type: Number,
+      default: 7,
+      min: 1,
+    },
+
     category: {
       type: String,
     },
@@ -48,7 +54,15 @@ const storeGiftSchema = new mongoose.Schema(
       default: "NONE",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
+
+storeGiftSchema.virtual("days").get(function () {
+  return this.validityDays;
+});
 
 module.exports = mongoose.model("StoreGift", storeGiftSchema);

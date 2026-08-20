@@ -67,9 +67,12 @@ exports.sendGift = async (req, res) => {
     sender.totalSpent += totalCost;
     await sender.save({ session });
 
+    const isRing = gift.effectType?.toUpperCase() === "RING" || gift.category?.toUpperCase() === "RING";
+    const activeDuration = isRing ? null : (gift.validityDays || gift.days || duration || 7);
+
     const expiresAt =
-      gift.effectType !== "NONE"
-        ? new Date(Date.now() + duration * 24 * 60 * 60 * 1000)
+      (!isRing && gift.effectType !== "NONE")
+        ? new Date(Date.now() + activeDuration * 24 * 60 * 60 * 1000)
         : null;
 
     // 🔁 Deactivate previous active gifts of same type (WAFA behavior)
@@ -92,7 +95,7 @@ exports.sendGift = async (req, res) => {
       effectType: gift.effectType,
       icon: gift.icon,
       animationUrl: gift.animationUrl,
-      duration,
+      duration: activeDuration,
       expiresAt,
       isActive: true,
     }));

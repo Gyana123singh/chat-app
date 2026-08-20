@@ -194,7 +194,7 @@ exports.deleteGift = async (req, res) => {
 ================================ */
 exports.createGift = async (req, res) => {
   try {
-    const { name, price, category, description, effectType, rarity } = req.body;
+    const { name, price, category, description, effectType, rarity, validityDays, days } = req.body;
 
     if (!name || !price || !category) {
       return res.status(400).json({
@@ -219,9 +219,13 @@ exports.createGift = async (req, res) => {
       }
     }
 
+    const isRing = category?.toUpperCase() === "RING" || effectType?.toUpperCase() === "RING";
+    const parsedDays = isRing ? null : Number(validityDays || days || 7);
+
     const gift = await StoreGift.create({
       name,
-      price,
+      price: Number(price),
+      validityDays: parsedDays,
       category,
       description: description || "",
       icon,
@@ -251,7 +255,7 @@ exports.updateGift = async (req, res) => {
   try {
     const { giftId, id } = req.params;
     const targetId = giftId || id;
-    const { name, price, category, description, effectType, rarity } = req.body;
+    const { name, price, category, description, effectType, rarity, validityDays, days } = req.body;
 
     const gift = await StoreGift.findById(targetId);
     if (!gift) {
@@ -261,8 +265,17 @@ exports.updateGift = async (req, res) => {
       });
     }
 
+    const currentCat = category || gift.category;
+    const currentEffect = effectType || gift.effectType;
+    const isRing = currentCat?.toUpperCase() === "RING" || currentEffect?.toUpperCase() === "RING";
+
     if (name) gift.name = name;
     if (price) gift.price = Number(price);
+    if (isRing) {
+      gift.validityDays = null;
+    } else if (validityDays !== undefined || days !== undefined) {
+      gift.validityDays = Number(validityDays || days || 7);
+    }
     if (category) gift.category = category;
     if (description) gift.description = description;
     if (effectType) gift.effectType = effectType;

@@ -60,7 +60,7 @@ module.exports = (socket, io) => {
         _id: giftId,
         isAvailable: true,
       })
-        .select("name icon animationUrl price category rarity effectType")
+        .select("name icon animationUrl price category rarity effectType validityDays")
         .lean();
 
       console.log("🎁 Gift fetched from DB:", gift);
@@ -208,13 +208,11 @@ module.exports = (socket, io) => {
            ⏳ Duration Logic
         =============================== */
 
-      let finalDuration = duration;
+      let finalDuration = (gift.effectType?.toUpperCase() === "RING" || gift.category?.toUpperCase() === "RING")
+        ? null
+        : (gift.validityDays || gift.days || duration || 7);
 
-      if (gift.effectType === "ENTRANCE" || gift.effectType === "FRAME") {
-        finalDuration = 3;
-      }
-
-      const expiresAt = new Date(Date.now() + finalDuration * 86400000);
+      const expiresAt = finalDuration ? new Date(Date.now() + finalDuration * 86400000) : null;
 
       /* ===============================
            🧹 Disable previous same effect
@@ -492,7 +490,7 @@ module.exports = (socket, io) => {
         _id: giftId,
         isAvailable: true,
       })
-        .select("name icon animationUrl price category rarity effectType")
+        .select("name icon animationUrl price category rarity effectType validityDays")
         .lean();
 
       console.log("🛒 Gift fetched for self buy:", gift);
@@ -528,13 +526,11 @@ module.exports = (socket, io) => {
            ⏳ Duration Logic
         =============================== */
 
-      let finalDuration = duration;
+      let finalDuration = (gift.effectType?.toUpperCase() === "RING" || gift.category?.toUpperCase() === "RING")
+        ? null
+        : (gift.validityDays || gift.days || duration || 7);
 
-      if (gift.effectType === "ENTRANCE" || gift.effectType === "FRAME") {
-        finalDuration = 3;
-      }
-
-      const expiresAt = new Date(Date.now() + finalDuration * 86400000);
+      const expiresAt = finalDuration ? new Date(Date.now() + finalDuration * 86400000) : null;
 
       /* ===============================
    Disable previous same effect

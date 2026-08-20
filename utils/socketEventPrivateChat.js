@@ -409,8 +409,8 @@ module.exports = (io) => {
           return socket.emit("private:message:error", { error: "Gift details not found in DB" });
         }
 
-        const finalDuration = 1; // 1 day standard duration for rings
-        const expiresAt = new Date(Date.now() + finalDuration * 86400000);
+        const finalDuration = null;
+        const expiresAt = null;
 
         const recipientId = userId.toString();
         const senderId = message.sender.toString();
