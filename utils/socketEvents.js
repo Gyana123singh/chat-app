@@ -1450,6 +1450,25 @@ module.exports = (io) => {
             { $set: { participants: [], "video.isPlaying": false } }
           );
 
+          // 🔥 Clear room music state when room becomes empty
+          try {
+            roomManager.stop(roomId);
+            await MusicState.findOneAndUpdate(
+              { roomId },
+              {
+                $set: {
+                  currentTrackId: null,
+                  musicUrl: null,
+                  isPlaying: false,
+                  playedBy: null,
+                  trackOwnerId: null,
+                },
+              }
+            );
+          } catch (mErr) {
+            console.error("❌ Error clearing room music on empty leave:", mErr);
+          }
+
           seats.delete(roomId);
           roomUsers.delete(roomId);
           typingUsers.delete(roomId);
