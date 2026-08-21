@@ -7,6 +7,7 @@ async function expireStoreGifts() {
 
     const expiredGifts = await StoreGiftInventory.find({
       expiresAt: { $lte: now },
+      effectType: { $ne: "RING" },
       isActive: true,
     });
 
@@ -21,7 +22,7 @@ async function expireStoreGifts() {
       const update = {};
 
       if (gift.effectType === "FRAME") update["profile.frame"] = null;
-      if (gift.effectType === "RING") update["profile.ring"] = null;
+      // 💍 RING effectType is permanent until breakup! Never expire RING automatically.
       if (gift.effectType === "BUBBLE") update["profile.bubble"] = null;
       if (gift.effectType === "ENTRANCE")
         update["profile.entranceEffect"] = null;

@@ -7,7 +7,7 @@ const PrivateMessage = require("../models/privateMessage");
 const StoreGiftTransaction = require("../models/storeGiftTransaction");
 
 async function resolveRingPartner(user) {
-  if (!user || !user.profile || !user.profile.ring) {
+  if (!user || !user.profile) {
     return null;
   }
 
