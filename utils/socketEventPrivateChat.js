@@ -448,16 +448,19 @@ module.exports = (io) => {
         const recipientUser = await User.findById(recipientId).select("username profile.avatar").lean();
         const senderUser = await User.findById(senderId).select("username profile.avatar").lean();
 
+        const now = new Date();
         const recipientPartnerData = {
           userId: senderUser?._id || senderId,
           username: senderUser?.username || "Friend",
           avatar: senderUser?.profile?.avatar || null,
+          createdAt: now,
         };
 
         const senderPartnerData = {
           userId: recipientUser?._id || recipientId,
           username: recipientUser?.username || "Friend",
           avatar: recipientUser?.profile?.avatar || null,
+          createdAt: now,
         };
 
         // Apply active ring to user profile for BOTH recipient and sender

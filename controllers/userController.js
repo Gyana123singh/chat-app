@@ -26,6 +26,7 @@ async function resolveRingPartner(user) {
           userId: partner._id,
           username: partner.username,
           avatar: partner.profile?.avatar || partner.avatar || ringPartner.avatar || null,
+          createdAt: ringPartner.createdAt || ringPartner.establishedAt || user.profile?.ringPartner?.createdAt || user.updatedAt || new Date(),
         };
         return ringPartner;
       }
@@ -55,6 +56,7 @@ async function resolveRingPartner(user) {
           userId: partner._id,
           username: partner.username,
           avatar: partner.profile?.avatar || partner.avatar || null,
+          createdAt: ringMsg.createdAt || ringMsg.updatedAt || new Date(),
         };
 
         // Persist to user's profile in DB
@@ -74,13 +76,14 @@ async function resolveRingPartner(user) {
     const partner = await User.findOne({
       _id: { $ne: user._id },
       "profile.ring": user.profile.ring
-    }).select("username profile.avatar avatar").lean();
+    }).select("username profile.avatar avatar updatedAt").lean();
 
     if (partner) {
       ringPartner = {
         userId: partner._id,
         username: partner.username,
         avatar: partner.profile?.avatar || partner.avatar || null,
+        createdAt: user.profile?.ringPartner?.createdAt || partner.updatedAt || new Date(),
       };
 
       User.findByIdAndUpdate(user._id, {
@@ -114,6 +117,7 @@ async function resolveRingPartner(user) {
             userId: partner._id,
             username: partner.username,
             avatar: partner.profile?.avatar || partner.avatar || null,
+            createdAt: tx.createdAt || tx.updatedAt || new Date(),
           };
 
           User.findByIdAndUpdate(user._id, {
