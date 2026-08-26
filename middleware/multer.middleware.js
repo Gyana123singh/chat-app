@@ -94,13 +94,27 @@ const processCloudinaryOrLocal = async (req, file) => {
   // Try Cloudinary upload for standard small files (<= 10MB)
   try {
     let resourceType = "image";
-    if (isMp4) resourceType = "video";
-    else if (isSvg || isSvga) resourceType = "raw";
-
-    const uploadResult = await cloudinary.uploader.upload(diskPath, {
+    const uploadOptions = {
       folder: "chat-gifts",
-      resource_type: resourceType,
-    });
+    };
+
+    const cleanFileName = file.originalname
+      .split(".")[0]
+      .replace(/[^a-zA-Z0-9_-]/g, "_");
+
+    if (isMp4) {
+      resourceType = "video";
+    } else if (isSvga) {
+      resourceType = "raw";
+      uploadOptions.public_id = `${Date.now()}-${cleanFileName}.svga`;
+    } else if (isSvg) {
+      resourceType = "image"; // Cloudinary natively supports SVG as an image format
+      uploadOptions.public_id = `${Date.now()}-${cleanFileName}.svg`;
+    }
+
+    uploadOptions.resource_type = resourceType;
+
+    const uploadResult = await cloudinary.uploader.upload(diskPath, uploadOptions);
 
     if (uploadResult && uploadResult.secure_url) {
       file.path = uploadResult.secure_url;
