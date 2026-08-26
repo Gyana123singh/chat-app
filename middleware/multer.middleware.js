@@ -84,9 +84,8 @@ const processCloudinaryOrLocal = async (req, file) => {
   const baseUrl = `${protocol}://${host}`;
   const localUrl = `${baseUrl}/uploads/chat-gifts/${file.filename}`;
 
-  // If file > 10MB or is SVGA, Cloudinary free tier rejects raw/image > 10MB or video decoding of SVGA.
-  // Use local disk storage static URL directly in those cases.
-  if (file.size > 10 * 1024 * 1024 || isSvga) {
+  // If file > 10MB, use local disk fallback. Small files, SVGs, and SVGAs upload to Cloudinary.
+  if (file.size > 10 * 1024 * 1024) {
     file.path = localUrl;
     console.log(`✅ [Local Upload] Saved file to local storage (${(file.size / 1024 / 1024).toFixed(2)} MB):`, localUrl);
     return;
@@ -96,7 +95,7 @@ const processCloudinaryOrLocal = async (req, file) => {
   try {
     let resourceType = "image";
     if (isMp4) resourceType = "video";
-    else if (isSvg) resourceType = "raw";
+    else if (isSvg || isSvga) resourceType = "raw";
 
     const uploadResult = await cloudinary.uploader.upload(diskPath, {
       folder: "chat-gifts",
