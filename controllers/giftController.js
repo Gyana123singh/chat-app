@@ -21,8 +21,22 @@ exports.addGift = async (req, res) => {
     }
 
     let icon = "";
+    let animationUrl = null;
     if (req.file) {
       icon = req.file.path;
+      const isSvga = req.file.originalname?.toLowerCase().endsWith(".svga");
+      const isSvg =
+        req.file.originalname?.toLowerCase().endsWith(".svg") ||
+        req.file.mimetype === "image/svg+xml" ||
+        req.file.mimetype === "image/svg";
+      if (
+        isSvga ||
+        isSvg ||
+        req.file.mimetype?.startsWith("video/") ||
+        req.file.mimetype === "image/gif"
+      ) {
+        animationUrl = req.file.path;
+      }
     }
 
     const gift = await Gift.create({
@@ -30,6 +44,7 @@ exports.addGift = async (req, res) => {
       price,
       category, // string now
       icon,
+      animationUrl,
     });
 
     return res.status(201).json({
@@ -117,9 +132,24 @@ exports.getAllGifts = async (req, res) => {
       createdAt: -1,
     });
 
+    const protocol = req.protocol || "http";
+    const host = (req.get && req.get("host")) || "localhost:5005";
+    const baseUrl = `${protocol}://${host}`;
+
+    const formattedGifts = gifts.map((g) => {
+      const doc = g.toObject ? g.toObject() : { ...g };
+      if (doc.icon && doc.icon.startsWith("/uploads/")) {
+        doc.icon = `${baseUrl}${doc.icon}`;
+      }
+      if (doc.animationUrl && doc.animationUrl.startsWith("/uploads/")) {
+        doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+      }
+      return doc;
+    });
+
     return res.status(200).json({
       success: true,
-      data: gifts,
+      data: formattedGifts,
     });
   } catch (error) {
     console.error("❌ Fetch All Gifts Error:", error);
@@ -147,8 +177,24 @@ exports.updateGift = async (req, res) => {
     if (name) gift.name = name;
     if (price) gift.price = Number(price);
     if (category) gift.category = category;
-    if (req.file) gift.icon = req.file.path;
-    else if (req.body.icon) gift.icon = req.body.icon;
+    if (req.file) {
+      gift.icon = req.file.path;
+      const isSvga = req.file.originalname?.toLowerCase().endsWith(".svga");
+      const isSvg =
+        req.file.originalname?.toLowerCase().endsWith(".svg") ||
+        req.file.mimetype === "image/svg+xml" ||
+        req.file.mimetype === "image/svg";
+      if (
+        isSvga ||
+        isSvg ||
+        req.file.mimetype?.startsWith("video/") ||
+        req.file.mimetype === "image/gif"
+      ) {
+        gift.animationUrl = req.file.path;
+      }
+    } else if (req.body.icon) {
+      gift.icon = req.body.icon;
+    }
 
     await gift.save();
 
@@ -201,9 +247,24 @@ exports.getGiftsByCategory = async (req, res) => {
       isAvailable: true,
     });
 
+    const protocol = req.protocol || "http";
+    const host = (req.get && req.get("host")) || "localhost:5005";
+    const baseUrl = `${protocol}://${host}`;
+
+    const formattedGifts = gifts.map((g) => {
+      const doc = g.toObject ? g.toObject() : { ...g };
+      if (doc.icon && doc.icon.startsWith("/uploads/")) {
+        doc.icon = `${baseUrl}${doc.icon}`;
+      }
+      if (doc.animationUrl && doc.animationUrl.startsWith("/uploads/")) {
+        doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+      }
+      return doc;
+    });
+
     return res.status(200).json({
       success: true,
-      data: gifts,
+      data: formattedGifts,
     });
   } catch (error) {
     console.error("❌ Fetch Category Error:", error);

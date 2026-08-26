@@ -140,6 +140,18 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+/* ===================== ERROR HANDLER ===================== */
+app.use((err, req, res, next) => {
+  console.error("❌ Express Error:", err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  return res.status(err.status || err.statusCode || 400).json({
+    success: false,
+    message: err.message || "An error occurred on the server",
+  });
+});
+
 /* ===================== SOCKET ===================== */
 const server = http.createServer(app);
 

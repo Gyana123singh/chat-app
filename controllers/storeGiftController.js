@@ -92,9 +92,24 @@ exports.getAllGifts = async (req, res) => {
       createdAt: -1,
     });
 
+    const protocol = req.protocol || "http";
+    const host = (req.get && req.get("host")) || "localhost:5005";
+    const baseUrl = `${protocol}://${host}`;
+
+    const formattedGifts = gifts.map((g) => {
+      const doc = g.toObject ? g.toObject() : { ...g };
+      if (doc.icon && doc.icon.startsWith("/uploads/")) {
+        doc.icon = `${baseUrl}${doc.icon}`;
+      }
+      if (doc.animationUrl && doc.animationUrl.startsWith("/uploads/")) {
+        doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+      }
+      return doc;
+    });
+
     return res.status(200).json({
       success: true,
-      data: gifts,
+      data: formattedGifts,
     });
   } catch (error) {
     console.error("❌ Fetch All Gifts Error:", error);
@@ -115,9 +130,24 @@ exports.getGiftsByCategory = async (req, res) => {
       isAvailable: true,
     });
 
+    const protocol = req.protocol || "http";
+    const host = (req.get && req.get("host")) || "localhost:5005";
+    const baseUrl = `${protocol}://${host}`;
+
+    const formattedGifts = gifts.map((g) => {
+      const doc = g.toObject ? g.toObject() : { ...g };
+      if (doc.icon && doc.icon.startsWith("/uploads/")) {
+        doc.icon = `${baseUrl}${doc.icon}`;
+      }
+      if (doc.animationUrl && doc.animationUrl.startsWith("/uploads/")) {
+        doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+      }
+      return doc;
+    });
+
     return res.status(200).json({
       success: true,
-      data: gifts,
+      data: formattedGifts,
     });
   } catch (error) {
     console.error("❌ Fetch Category Error:", error);
@@ -208,13 +238,14 @@ exports.createGift = async (req, res) => {
 
     if (req.file) {
       const fileUrl = req.file.path;
-      const mimeType = req.file.mimetype;
+      const mimeType = req.file.mimetype || "";
+      const isSvga = req.file.originalname?.toLowerCase().endsWith(".svga");
 
       // store uploaded file
       icon = fileUrl;
 
-      // ✅ support ALL image and video types
-      if (mimeType.startsWith("image/") || mimeType.startsWith("video/")) {
+      // ✅ support ALL image, video, and SVGA animation types
+      if (isSvga || mimeType.startsWith("image/") || mimeType.startsWith("video/")) {
         animationUrl = fileUrl;
       }
     }
@@ -283,7 +314,8 @@ exports.updateGift = async (req, res) => {
 
     if (req.file) {
       gift.icon = req.file.path;
-      if (req.file.mimetype?.startsWith("image/") || req.file.mimetype?.startsWith("video/")) {
+      const isSvga = req.file.originalname?.toLowerCase().endsWith(".svga");
+      if (isSvga || req.file.mimetype?.startsWith("image/") || req.file.mimetype?.startsWith("video/")) {
         gift.animationUrl = req.file.path;
       }
     } else if (req.body.icon) {
