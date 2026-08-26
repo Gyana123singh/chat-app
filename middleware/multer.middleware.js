@@ -106,7 +106,7 @@ const processCloudinaryOrLocal = async (req, file) => {
       file.path = uploadResult.secure_url;
       console.log("☁️ [Cloudinary Upload] Success:", uploadResult.secure_url);
       // Remove temporary local file if Cloudinary succeeded
-      fs.remove(diskPath).catch(() => {});
+      fs.remove(diskPath).catch(() => { });
     } else {
       file.path = localUrl;
     }
