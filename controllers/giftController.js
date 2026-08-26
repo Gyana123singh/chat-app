@@ -138,11 +138,19 @@ exports.getAllGifts = async (req, res) => {
 
     const formattedGifts = gifts.map((g) => {
       const doc = g.toObject ? g.toObject() : { ...g };
-      if (doc.icon && doc.icon.startsWith("/uploads/")) {
-        doc.icon = `${baseUrl}${doc.icon}`;
+      if (doc.icon) {
+        if (doc.icon.startsWith("/uploads/")) {
+          doc.icon = `${baseUrl}${doc.icon}`;
+        } else if (doc.icon.includes("localhost:") || doc.icon.includes("127.0.0.1:")) {
+          doc.icon = doc.icon.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/g, baseUrl);
+        }
       }
-      if (doc.animationUrl && doc.animationUrl.startsWith("/uploads/")) {
-        doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+      if (doc.animationUrl) {
+        if (doc.animationUrl.startsWith("/uploads/")) {
+          doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+        } else if (doc.animationUrl.includes("localhost:") || doc.animationUrl.includes("127.0.0.1:")) {
+          doc.animationUrl = doc.animationUrl.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/g, baseUrl);
+        }
       }
       return doc;
     });
@@ -253,11 +261,19 @@ exports.getGiftsByCategory = async (req, res) => {
 
     const formattedGifts = gifts.map((g) => {
       const doc = g.toObject ? g.toObject() : { ...g };
-      if (doc.icon && doc.icon.startsWith("/uploads/")) {
-        doc.icon = `${baseUrl}${doc.icon}`;
+      if (doc.icon) {
+        if (doc.icon.startsWith("/uploads/")) {
+          doc.icon = `${baseUrl}${doc.icon}`;
+        } else if (doc.icon.includes("localhost:") || doc.icon.includes("127.0.0.1:")) {
+          doc.icon = doc.icon.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/g, baseUrl);
+        }
       }
-      if (doc.animationUrl && doc.animationUrl.startsWith("/uploads/")) {
-        doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+      if (doc.animationUrl) {
+        if (doc.animationUrl.startsWith("/uploads/")) {
+          doc.animationUrl = `${baseUrl}${doc.animationUrl}`;
+        } else if (doc.animationUrl.includes("localhost:") || doc.animationUrl.includes("127.0.0.1:")) {
+          doc.animationUrl = doc.animationUrl.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/g, baseUrl);
+        }
       }
       return doc;
     });
