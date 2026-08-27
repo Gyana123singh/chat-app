@@ -11,23 +11,90 @@ async function resolveRingPartner(user) {
     return null;
   }
 
-  let ringPartner = user.profile.ringPartner
-    ? (user.profile.ringPartner.toObject ? user.profile.ringPartner.toObject() : { ...user.profile.ringPartner })
-    : null;
+  let rawRp = user.profile.ringPartner;
+  if (rawRp && rawRp.toObject) {
+    rawRp = rawRp.toObject();
+  }
+
+  let ringPartner = rawRp ? { ...rawRp } : null;
+
+  const isValidDate = (d) => {
+    if (!d) return false;
+    const dt = new Date(d);
+    return !isNaN(dt.getTime());
+  };
+
+  const recoverEstablishedDate = async (userId, partnerId) => {
+    try {
+      const ringMsg = await PrivateMessage.findOne({
+        $or: [
+          { sender: userId, recipient: partnerId },
+          { sender: partnerId, recipient: userId }
+        ],
+        text: { $regex: /\[RING_GIFT:/i }
+      }).sort({ createdAt: 1 }).lean();
+
+      if (ringMsg) {
+        const msgDate = ringMsg.updatedAt || ringMsg.createdAt;
+        if (isValidDate(msgDate)) {
+          return msgDate;
+        }
+      }
+
+      const tx = await StoreGiftTransaction.findOne({
+        $or: [
+          { senderId: userId, receiverIds: partnerId },
+          { senderId: partnerId, receiverIds: userId }
+        ]
+      }).sort({ createdAt: 1 }).lean();
+
+      if (tx && isValidDate(tx.createdAt)) {
+        return tx.createdAt;
+      }
+    } catch (err) {
+      console.error("Error recovering established date:", err);
+    }
+    return null;
+  };
 
   // 1. If userId is stored in ringPartner, fetch fresh username & avatar
   if (ringPartner && ringPartner.userId) {
     try {
       const partner = await User.findById(ringPartner.userId)
-        .select("username profile.avatar avatar")
+        .select("username profile.avatar avatar profile.ringPartner")
         .lean();
+
       if (partner) {
+        let establishedDate = rawRp?.createdAt || rawRp?.establishedAt;
+        if (!isValidDate(establishedDate) && partner.profile?.ringPartner?.createdAt) {
+          establishedDate = partner.profile.ringPartner.createdAt;
+        }
+
+        if (!isValidDate(establishedDate)) {
+          const recovered = await recoverEstablishedDate(user._id, partner._id);
+          if (recovered) {
+            establishedDate = recovered;
+          }
+        }
+
+        if (!isValidDate(establishedDate)) {
+          establishedDate = new Date();
+        }
+
         ringPartner = {
           userId: partner._id,
           username: partner.username,
           avatar: partner.profile?.avatar || partner.avatar || ringPartner.avatar || null,
-          createdAt: ringPartner.createdAt || ringPartner.establishedAt || user.profile?.ringPartner?.createdAt || user.updatedAt || new Date(),
+          createdAt: establishedDate,
         };
+
+        // Persist to user's profile in DB if createdAt was missing or different
+        if (!rawRp?.createdAt || new Date(rawRp.createdAt).getTime() !== new Date(establishedDate).getTime()) {
+          User.findByIdAndUpdate(user._id, {
+            $set: { "profile.ringPartner.createdAt": establishedDate }
+          }).catch(e => console.error("Error saving fixed ringPartner.createdAt back to user:", e));
+        }
+
         return ringPartner;
       }
     } catch (err) {
@@ -40,7 +107,7 @@ async function resolveRingPartner(user) {
     const ringMsg = await PrivateMessage.findOne({
       $or: [{ sender: user._id }, { recipient: user._id }],
       text: { $regex: /\[RING_GIFT:/i }
-    }).sort({ updatedAt: -1 }).lean();
+    }).sort({ createdAt: 1 }).lean();
 
     if (ringMsg) {
       const partnerId = ringMsg.sender.toString() === user._id.toString()
@@ -48,18 +115,18 @@ async function resolveRingPartner(user) {
         : ringMsg.sender;
 
       const partner = await User.findById(partnerId)
-        .select("username profile.avatar avatar")
+        .select("username profile.avatar avatar profile.ringPartner")
         .lean();
 
       if (partner) {
+        const establishedDate = ringMsg.createdAt || new Date();
         ringPartner = {
           userId: partner._id,
           username: partner.username,
           avatar: partner.profile?.avatar || partner.avatar || null,
-          createdAt: ringMsg.createdAt || ringMsg.updatedAt || new Date(),
+          createdAt: establishedDate,
         };
 
-        // Persist to user's profile in DB
         User.findByIdAndUpdate(user._id, {
           $set: { "profile.ringPartner": ringPartner }
         }).catch(e => console.error("Error saving ringPartner back to user:", e));
@@ -73,24 +140,34 @@ async function resolveRingPartner(user) {
 
   // 3. Find partner by searching another user who has the EXACT same ring equipped!
   try {
-    const partner = await User.findOne({
-      _id: { $ne: user._id },
-      "profile.ring": user.profile.ring
-    }).select("username profile.avatar avatar updatedAt").lean();
+    if (user.profile && user.profile.ring) {
+      const partner = await User.findOne({
+        _id: { $ne: user._id },
+        "profile.ring": user.profile.ring
+      }).select("username profile.avatar avatar profile.ringPartner").lean();
 
-    if (partner) {
-      ringPartner = {
-        userId: partner._id,
-        username: partner.username,
-        avatar: partner.profile?.avatar || partner.avatar || null,
-        createdAt: user.profile?.ringPartner?.createdAt || partner.updatedAt || new Date(),
-      };
+      if (partner) {
+        let establishedDate = partner.profile?.ringPartner?.createdAt;
+        if (!isValidDate(establishedDate)) {
+          establishedDate = await recoverEstablishedDate(user._id, partner._id);
+        }
+        if (!isValidDate(establishedDate)) {
+          establishedDate = new Date();
+        }
 
-      User.findByIdAndUpdate(user._id, {
-        $set: { "profile.ringPartner": ringPartner }
-      }).catch(e => console.error("Error saving ringPartner from ring match:", e));
+        ringPartner = {
+          userId: partner._id,
+          username: partner.username,
+          avatar: partner.profile?.avatar || partner.avatar || null,
+          createdAt: establishedDate,
+        };
 
-      return ringPartner;
+        User.findByIdAndUpdate(user._id, {
+          $set: { "profile.ringPartner": ringPartner }
+        }).catch(e => console.error("Error saving ringPartner from ring match:", e));
+
+        return ringPartner;
+      }
     }
   } catch (err) {
     console.error("Error resolving ringPartner from ring match:", err);
@@ -100,7 +177,7 @@ async function resolveRingPartner(user) {
   try {
     const tx = await StoreGiftTransaction.findOne({
       $or: [{ senderId: user._id }, { receiverIds: user._id }]
-    }).sort({ createdAt: -1 }).lean();
+    }).sort({ createdAt: 1 }).lean();
 
     if (tx) {
       const partnerId = tx.senderId.toString() === user._id.toString()
@@ -109,15 +186,16 @@ async function resolveRingPartner(user) {
 
       if (partnerId && partnerId.toString() !== user._id.toString()) {
         const partner = await User.findById(partnerId)
-          .select("username profile.avatar avatar")
+          .select("username profile.avatar avatar profile.ringPartner")
           .lean();
 
         if (partner) {
+          const establishedDate = tx.createdAt || new Date();
           ringPartner = {
             userId: partner._id,
             username: partner.username,
             avatar: partner.profile?.avatar || partner.avatar || null,
-            createdAt: tx.createdAt || tx.updatedAt || new Date(),
+            createdAt: establishedDate,
           };
 
           User.findByIdAndUpdate(user._id, {
