@@ -479,7 +479,7 @@ exports.updateProfitLossConfig = async (req, res) => {
     if (totalChance !== 100) {
       return res.status(400).json({
         success: false,
-        message: `Sum of chances must be exactly 100%. Current sum is: ${totalChance}%`,
+        message: `Sum of chances must be exactly 100%. Current sum: ${totalChance}%`,
       });
     }
 
