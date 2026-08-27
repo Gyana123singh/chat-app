@@ -86,8 +86,15 @@ app.use(
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
-// ✅ STATIC FILES
-app.use("/uploads", express.static("uploads"));
+// ✅ STATIC FILES (with SVGA MIME support)
+app.use("/uploads", express.static("uploads", {
+  setHeaders: (res, filePath) => {
+    if (filePath.toLowerCase().endsWith('.svga')) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+  }
+}));
 
 app.use(
   session({

@@ -96,7 +96,7 @@ exports.getAllGifts = async (req, res) => {
     const host = (req.get && req.get("host")) || "localhost:5005";
     const baseUrl = `${protocol}://${host}`;
 
-    const formattedGifts = gifts.map((g) => {
+    const formatGiftDoc = (g) => {
       const doc = g.toObject ? g.toObject() : { ...g };
       if (doc.icon) {
         if (doc.icon.startsWith("/uploads/")) {
@@ -112,8 +112,18 @@ exports.getAllGifts = async (req, res) => {
           doc.animationUrl = doc.animationUrl.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/g, baseUrl);
         }
       }
+      // Ensure SVGA gifts always have both animationUrl and icon populated
+      if (!doc.animationUrl && doc.icon) {
+        const isSvga = doc.icon.toLowerCase().includes(".svga") || doc.icon.includes("/raw/upload/");
+        if (isSvga) doc.animationUrl = doc.icon;
+      }
+      if (!doc.icon && doc.animationUrl) {
+        doc.icon = doc.animationUrl;
+      }
       return doc;
-    });
+    };
+
+    const formattedGifts = gifts.map(formatGiftDoc);
 
     return res.status(200).json({
       success: true,
@@ -138,11 +148,11 @@ exports.getGiftsByCategory = async (req, res) => {
       isAvailable: true,
     });
 
-    const protocol = req.protocol || "http";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
     const host = (req.get && req.get("host")) || "localhost:5005";
     const baseUrl = `${protocol}://${host}`;
 
-    const formattedGifts = gifts.map((g) => {
+    const formatGiftDoc = (g) => {
       const doc = g.toObject ? g.toObject() : { ...g };
       if (doc.icon) {
         if (doc.icon.startsWith("/uploads/")) {
@@ -158,8 +168,18 @@ exports.getGiftsByCategory = async (req, res) => {
           doc.animationUrl = doc.animationUrl.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/g, baseUrl);
         }
       }
+      // Ensure SVGA gifts always have both animationUrl and icon populated
+      if (!doc.animationUrl && doc.icon) {
+        const isSvga = doc.icon.toLowerCase().includes(".svga") || doc.icon.includes("/raw/upload/");
+        if (isSvga) doc.animationUrl = doc.icon;
+      }
+      if (!doc.icon && doc.animationUrl) {
+        doc.icon = doc.animationUrl;
+      }
       return doc;
-    });
+    };
+
+    const formattedGifts = gifts.map(formatGiftDoc);
 
     return res.status(200).json({
       success: true,
