@@ -28,21 +28,23 @@ const scheduleRankUpdate = () => {
 /**
  * 🧹 Reset DAILY leaderboard (every day at 00:00)
  */
+const performDailyReset = async () => {
+  console.log("🧹 [CRON] Resetting DAILY leaderboard...");
+  await Leaderboard.updateMany({}, {
+    $set: {
+      "daily.coins": 0,
+      "daily.giftsReceived": 0,
+      "daily.totalValue": 0,
+      "rank.daily": 0,
+    },
+  });
+  console.log("✅ [CRON] Daily reset done");
+};
+
 const scheduleDailyReset = () => {
   const job = cron.schedule("0 0 * * *", async () => {
     try {
-      console.log("🧹 [CRON] Resetting DAILY leaderboard...");
-
-      await Leaderboard.updateMany({}, {
-        $set: {
-          "daily.coins": 0,
-          "daily.giftsReceived": 0,
-          "daily.totalValue": 0,
-          "rank.daily": 0,
-        },
-      });
-
-      console.log("✅ [CRON] Daily reset done");
+      await performDailyReset();
     } catch (error) {
       console.error("❌ [CRON] Daily reset failed:", error.message);
     }
@@ -51,24 +53,23 @@ const scheduleDailyReset = () => {
   cronJobs.push(job);
 };
 
-/**
- * 🧹 Reset WEEKLY leaderboard (every Sunday 00:00)
- */
+const performWeeklyReset = async () => {
+  console.log("🧹 [CRON] Resetting WEEKLY leaderboard...");
+  await Leaderboard.updateMany({}, {
+    $set: {
+      "weekly.coins": 0,
+      "weekly.giftsReceived": 0,
+      "weekly.totalValue": 0,
+      "rank.weekly": 0,
+    },
+  });
+  console.log("✅ [CRON] Weekly reset done");
+};
+
 const scheduleWeeklyReset = () => {
   const job = cron.schedule("0 0 * * 0", async () => {
     try {
-      console.log("🧹 [CRON] Resetting WEEKLY leaderboard...");
-
-      await Leaderboard.updateMany({}, {
-        $set: {
-          "weekly.coins": 0,
-          "weekly.giftsReceived": 0,
-          "weekly.totalValue": 0,
-          "rank.weekly": 0,
-        },
-      });
-
-      console.log("✅ [CRON] Weekly reset done");
+      await performWeeklyReset();
     } catch (error) {
       console.error("❌ [CRON] Weekly reset failed:", error.message);
     }
@@ -114,7 +115,7 @@ const scheduleMonthlyReset = () => {
 };
 
 /**
- * 🔄 Check and perform monthly reset on startup if new month has started
+ * 🔄 Check and perform daily, weekly, and monthly reset on startup if new period has started
  */
 const checkAndRunMonthlyResetOnStartup = async () => {
   try {
@@ -126,8 +127,39 @@ const checkAndRunMonthlyResetOnStartup = async () => {
     }));
 
     const now = new Date();
+    const currentDayKey = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}-${now.getDate().toString().padStart(2, "0")}`;
     const currentMonthKey = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
 
+    // Calculate week key (e.g. 2026-W37)
+    const firstJan = new Date(now.getFullYear(), 0, 1);
+    const weekNum = Math.ceil((((now - firstJan) / 86400000) + firstJan.getDay() + 1) / 7);
+    const currentWeekKey = `${now.getFullYear()}-W${weekNum}`;
+
+    // Check Daily
+    const dailyMeta = await SystemMeta.findOne({ key: "lastDailyReset" });
+    if (!dailyMeta || dailyMeta.value !== currentDayKey) {
+      console.log(`🧹 [CRON] New day detected (${currentDayKey}). Resetting daily stats...`);
+      await performDailyReset();
+      await SystemMeta.findOneAndUpdate(
+        { key: "lastDailyReset" },
+        { value: currentDayKey, updatedAt: new Date() },
+        { upsert: true }
+      );
+    }
+
+    // Check Weekly
+    const weeklyMeta = await SystemMeta.findOne({ key: "lastWeeklyReset" });
+    if (!weeklyMeta || weeklyMeta.value !== currentWeekKey) {
+      console.log(`🧹 [CRON] New week detected (${currentWeekKey}). Resetting weekly stats...`);
+      await performWeeklyReset();
+      await SystemMeta.findOneAndUpdate(
+        { key: "lastWeeklyReset" },
+        { value: currentWeekKey, updatedAt: new Date() },
+        { upsert: true }
+      );
+    }
+
+    // Check Monthly
     const meta = await SystemMeta.findOne({ key: "lastMonthlyReset" });
     if (!meta || meta.value !== currentMonthKey) {
       console.log(`🧹 [CRON] New month detected (${currentMonthKey}). Resetting monthly trophy & gift stats...`);
@@ -139,7 +171,7 @@ const checkAndRunMonthlyResetOnStartup = async () => {
       );
     }
   } catch (err) {
-    console.error("❌ Startup monthly reset check failed:", err.message);
+    console.error("❌ Startup reset check failed:", err.message);
   }
 };
 

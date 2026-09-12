@@ -573,17 +573,49 @@ exports.getGiftWall = async (req, res) => {
       return sum + (tx.totalCoinsDeducted || ((tx.giftPrice || 0) * (tx.quantity || 1)));
     }, 0);
 
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const monthlySent = validSent.filter(
+      (tx) => tx.createdAt && new Date(tx.createdAt) >= startOfMonth
+    );
+    const monthlyReceived = validReceived.filter(
+      (tx) => tx.createdAt && new Date(tx.createdAt) >= startOfMonth
+    );
+
+    const monthlySentCoins = monthlySent.reduce(
+      (sum, tx) => sum + (tx.totalCoinsDeducted || ((tx.giftPrice || 0) * (tx.quantity || 1))),
+      0,
+    );
+
+    const monthlyReceivedCoins = monthlyReceived.reduce((sum, tx) => {
+      if (tx.totalCoinsDeducted && tx.recipientCount && tx.recipientCount > 1) {
+        return sum + Math.round(tx.totalCoinsDeducted / tx.recipientCount);
+      }
+      return sum + (tx.totalCoinsDeducted || ((tx.giftPrice || 0) * (tx.quantity || 1)));
+    }, 0);
+
     const paginated = selectedList.slice(Number(skip), Number(skip) + Number(limit));
+
+    const isAllTime = req.query.period === "allTime";
 
     res.status(200).json({
       success: true,
       data: {
         transactions: paginated,
         summary: {
-          totalSentGifts: totalSentCoins,
-          totalReceivedGifts: totalReceivedCoins,
-          totalSentCoins,
-          totalReceivedCoins,
+          totalSentGifts: isAllTime ? totalSentCoins : monthlySentCoins,
+          totalReceivedGifts: isAllTime ? totalReceivedCoins : monthlyReceivedCoins,
+          monthlySentGifts: monthlySentCoins,
+          monthlyReceivedGifts: monthlyReceivedCoins,
+          allTimeSentGifts: totalSentCoins,
+          allTimeReceivedGifts: totalReceivedCoins,
+          totalSentCoins: isAllTime ? totalSentCoins : monthlySentCoins,
+          totalReceivedCoins: isAllTime ? totalReceivedCoins : monthlyReceivedCoins,
+          monthlySentCoins,
+          monthlyReceivedCoins,
+          allTimeSentCoins: totalSentCoins,
+          allTimeReceivedCoins: totalReceivedCoins,
           totalGiftsCount: selectedList.length,
           totalGifts: selectedList.length,
         },

@@ -222,12 +222,37 @@ exports.getUserContributionStats = async (req, res) => {
       4: "Platinum",
     };
 
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const lastContrib = leaderboard.lastContributionDate
+      ? new Date(leaderboard.lastContributionDate)
+      : null;
+
+    let daily = leaderboard.daily || { coins: 0, giftsReceived: 0, totalValue: 0 };
+    let weekly = leaderboard.weekly || { coins: 0, giftsReceived: 0, totalValue: 0 };
+    let monthly = leaderboard.monthly || { coins: 0, giftsReceived: 0, totalValue: 0 };
+
+    if (!lastContrib || lastContrib < startOfDay) {
+      daily = { coins: 0, giftsReceived: 0, totalValue: 0 };
+    }
+    if (!lastContrib || lastContrib < startOfWeek) {
+      weekly = { coins: 0, giftsReceived: 0, totalValue: 0 };
+    }
+    if (!lastContrib || lastContrib < startOfMonth) {
+      monthly = { coins: 0, giftsReceived: 0, totalValue: 0 };
+    }
+
     res.status(200).json({
       success: true,
       data: {
-        daily: leaderboard.daily,
-        weekly: leaderboard.weekly,
-        monthly: leaderboard.monthly,
+        daily,
+        weekly,
+        monthly,
         allTime: leaderboard.allTime,
         rank: leaderboard.rank,
         currentStreak: leaderboard.currentStreak || 0,
@@ -308,28 +333,72 @@ exports.updateLeaderboardOnGift = async (userId, totalCoinsSpent) => {
   // ✅ SAFETY GUARD: If user not found (deleted / DB glitch), stop safely
   if (!prevUser) return;
 
-  // 2️⃣ Increment leaderboard totals atomically
-  const inc = {
-    "daily.coins": totalCoinsSpent,
-    "weekly.coins": totalCoinsSpent,
-    "monthly.coins": totalCoinsSpent,
-    "allTime.coins": totalCoinsSpent,
-    "daily.giftsReceived": 1,
-    "weekly.giftsReceived": 1,
-    "monthly.giftsReceived": 1,
-    "allTime.giftsReceived": 1,
-    "daily.totalValue": totalCoinsSpent,
-    "weekly.totalValue": totalCoinsSpent,
-    "monthly.totalValue": totalCoinsSpent,
-    "allTime.totalValue": totalCoinsSpent,
+  // 2️⃣ Period rollover calculation & atomically updating leaderboard
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const prevDoc = await Leaderboard.findOne({ userId });
+  const lastContrib = prevDoc?.lastContributionDate
+    ? new Date(prevDoc.lastContributionDate)
+    : (prevUser?.trophy?.lastContributionDate ? new Date(prevUser.trophy.lastContributionDate) : null);
+
+  const isNewDay = !lastContrib || lastContrib < startOfDay;
+  const isNewWeek = !lastContrib || lastContrib < startOfWeek;
+  const isNewMonth = !lastContrib || lastContrib < startOfMonth;
+
+  const updateOps = {
+    $set: {
+      lastContributionDate: now,
+    },
+    $inc: {
+      "allTime.coins": totalCoinsSpent,
+      "allTime.giftsReceived": 1,
+      "allTime.totalValue": totalCoinsSpent,
+    },
   };
+
+  if (isNewDay) {
+    updateOps.$set["daily.coins"] = totalCoinsSpent;
+    updateOps.$set["daily.giftsReceived"] = 1;
+    updateOps.$set["daily.totalValue"] = totalCoinsSpent;
+    updateOps.$set["daily.lastUpdated"] = now;
+  } else {
+    updateOps.$inc["daily.coins"] = totalCoinsSpent;
+    updateOps.$inc["daily.giftsReceived"] = 1;
+    updateOps.$inc["daily.totalValue"] = totalCoinsSpent;
+  }
+
+  if (isNewWeek) {
+    updateOps.$set["weekly.coins"] = totalCoinsSpent;
+    updateOps.$set["weekly.giftsReceived"] = 1;
+    updateOps.$set["weekly.totalValue"] = totalCoinsSpent;
+    updateOps.$set["weekly.lastUpdated"] = now;
+  } else {
+    updateOps.$inc["weekly.coins"] = totalCoinsSpent;
+    updateOps.$inc["weekly.giftsReceived"] = 1;
+    updateOps.$inc["weekly.totalValue"] = totalCoinsSpent;
+  }
+
+  if (isNewMonth) {
+    updateOps.$set["monthly.coins"] = totalCoinsSpent;
+    updateOps.$set["monthly.giftsReceived"] = 1;
+    updateOps.$set["monthly.totalValue"] = totalCoinsSpent;
+    updateOps.$set["monthly.lastUpdated"] = now;
+  } else {
+    updateOps.$inc["monthly.coins"] = totalCoinsSpent;
+    updateOps.$inc["monthly.giftsReceived"] = 1;
+    updateOps.$inc["monthly.totalValue"] = totalCoinsSpent;
+  }
 
   await Leaderboard.findOneAndUpdate(
     { userId },
     {
-      $inc: inc,
+      ...updateOps,
       $setOnInsert: { userId },
-      $set: { lastContributionDate: new Date() },
     },
     { upsert: true, new: true },
   );
@@ -344,7 +413,6 @@ exports.updateLeaderboardOnGift = async (userId, totalCoinsSpent) => {
   else if (newTotal >= 2000) level = 2;
 
   // 4️⃣ Streak calculation using PREVIOUS date (NOT overwritten)
-  const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   let last = prevUser?.trophy?.lastContributionDate
@@ -531,9 +599,25 @@ exports.getUserLevel = async (req, res) => {
 exports.getRoomContribution = async (req, res) => {
   try {
     const { roomId } = req.params;
+    const { period = "monthly" } = req.query;
     if (!roomId) {
       return res.status(400).json({ success: false, message: "roomId required" });
     }
+
+    let dateFilter = {};
+    const now = new Date();
+    if (period === "monthly") {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      dateFilter = { createdAt: { $gte: startOfMonth } };
+    } else if (period === "daily") {
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      dateFilter = { createdAt: { $gte: startOfDay } };
+    } else if (period === "weekly") {
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      startOfWeek.setHours(0, 0, 0, 0);
+      dateFilter = { createdAt: { $gte: startOfWeek } };
+    } // if period === 'allTime', dateFilter is empty
 
     const roomMatch = {
       $or: [
@@ -544,6 +628,7 @@ exports.getRoomContribution = async (req, res) => {
           : []),
       ],
       status: "completed",
+      ...dateFilter,
     };
 
     const result = await GiftTransaction.aggregate([
@@ -555,6 +640,7 @@ exports.getRoomContribution = async (req, res) => {
     return res.json({
       success: true,
       roomId,
+      period,
       totalContribution,
     });
   } catch (err) {

@@ -1918,8 +1918,22 @@ module.exports = (io) => {
         await trophyController.updateLeaderboardOnGift(fromUserId, totalCost);
 
         try {
+          const now = new Date();
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          const roomMatch = {
+            $or: [
+              { roomIdString: roomId },
+              { roomId: roomId },
+              ...(mongoose.Types.ObjectId.isValid(roomId)
+                ? [{ roomId: new mongoose.Types.ObjectId(roomId) }, { roomIdString: new mongoose.Types.ObjectId(roomId) }]
+                : []),
+            ],
+            status: "completed",
+            createdAt: { $gte: startOfMonth },
+          };
+
           const roomContribResult = await GiftTransaction.aggregate([
-            { $match: { roomIdString: roomId, status: "completed" } },
+            { $match: roomMatch },
             { $group: { _id: null, total: { $sum: "$totalCoinsDeducted" } } },
           ]);
           const roomTotalContrib = roomContribResult[0]?.total || 0;
