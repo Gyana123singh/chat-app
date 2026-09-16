@@ -11,6 +11,7 @@ const StoreGiftTransaction = require("../models/storeGiftTransaction");
 const Room = require("../models/room");
 const VideoRoom = require("../models/videoRoom");
 const PKBattle = require("../models/pkBattle");
+const LevelConfig = require("../models/levelConfig");
 
 exports.adminLogin = async (req, res) => {
   try {
@@ -1124,3 +1125,106 @@ exports.toggleUserBan = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error", error: error.message });
   }
 };
+
+// ===============================
+// LEVEL CONFIGURATION (ADMIN)
+// ===============================
+
+// GET /api/level-config or /api/admin/level-config
+exports.getLevelConfig = async (req, res) => {
+  try {
+    let config = await LevelConfig.findOne({ key: "default" });
+    if (!config) {
+      config = await LevelConfig.create({ key: "default" });
+    }
+    return res.status(200).json({
+      success: true,
+      config,
+    });
+  } catch (error) {
+    console.error("GET LEVEL CONFIG ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error fetching level config",
+      error: error.message,
+    });
+  }
+};
+
+// PUT /api/level-config or /api/admin/level-config
+exports.updateLevelConfig = async (req, res) => {
+  try {
+    const { personal, room, trophy } = req.body;
+
+    let config = await LevelConfig.findOne({ key: "default" });
+    if (!config) {
+      config = new LevelConfig({ key: "default" });
+    }
+
+    if (personal) {
+      if (typeof personal.expPerInterval === "number") config.personal.expPerInterval = personal.expPerInterval;
+      if (typeof personal.stayIntervalMinutes === "number") config.personal.stayIntervalMinutes = personal.stayIntervalMinutes;
+      if (typeof personal.dailyLimit === "number") config.personal.dailyLimit = personal.dailyLimit;
+      if (personal.expTable) config.personal.expTable = personal.expTable;
+      if (personal.badges) config.personal.badges = personal.badges;
+      if (personal.benefits) config.personal.benefits = personal.benefits;
+    }
+
+    if (room) {
+      if (typeof room.expPerMicInterval === "number") config.room.expPerMicInterval = room.expPerMicInterval;
+      if (typeof room.micIntervalMinutes === "number") config.room.micIntervalMinutes = room.micIntervalMinutes;
+      if (typeof room.pkWinExp === "number") config.room.pkWinExp = room.pkWinExp;
+      if (typeof room.pkLoseExp === "number") config.room.pkLoseExp = room.pkLoseExp;
+      if (typeof room.pkDrawExp === "number") config.room.pkDrawExp = room.pkDrawExp;
+      if (typeof room.pkMvpExp === "number") config.room.pkMvpExp = room.pkMvpExp;
+      if (room.expTable) config.room.expTable = room.expTable;
+      if (room.benefits) config.room.benefits = room.benefits;
+    }
+
+    if (trophy && trophy.thresholds) {
+      config.trophy.thresholds = trophy.thresholds;
+    }
+
+    await config.save();
+
+    const levelController = require("./levelController");
+    if (levelController.refreshLevelConfigCache) {
+      await levelController.refreshLevelConfigCache();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Level configuration updated successfully",
+      config,
+    });
+  } catch (error) {
+    console.error("UPDATE LEVEL CONFIG ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error updating level config",
+      error: error.message,
+    });
+  }
+};
+
+// POST /api/admin/reset-monthly-levels
+exports.resetMonthlyLevels = async (req, res) => {
+  try {
+    const levelController = require("./levelController");
+    await levelController.resetAllLevelsForNewSession();
+
+    return res.status(200).json({
+      success: true,
+      message: "All Personal and Room levels have been reset to 0 for the new monthly session!",
+    });
+  } catch (error) {
+    console.error("RESET MONTHLY LEVELS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error resetting monthly levels",
+      error: error.message,
+    });
+  }
+};
+
+

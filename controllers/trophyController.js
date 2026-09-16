@@ -403,14 +403,20 @@ exports.updateLeaderboardOnGift = async (userId, totalCoinsSpent) => {
     { upsert: true, new: true },
   );
 
-  // 3️⃣ Calculate level from PREVIOUS + new total
+  // 3️⃣ Calculate level from PREVIOUS + new total using dynamic level thresholds
+  const levelController = require("./levelController");
+  const config = await levelController.getDynamicLevelConfig();
+  const t2 = Number(config.trophy?.thresholds?.[2] ?? 2000);
+  const t3 = Number(config.trophy?.thresholds?.[3] ?? 5000);
+  const t4 = Number(config.trophy?.thresholds?.[4] ?? 10000);
+
   const prevTotal = prevUser?.trophy?.totalCoinsEarned || 0;
   const newTotal = prevTotal + totalCoinsSpent;
 
   let level = 1;
-  if (newTotal >= 10000) level = 4;
-  else if (newTotal >= 5000) level = 3;
-  else if (newTotal >= 2000) level = 2;
+  if (newTotal >= t4) level = 4;
+  else if (newTotal >= t3) level = 3;
+  else if (newTotal >= t2) level = 2;
 
   // 4️⃣ Streak calculation using PREVIOUS date (NOT overwritten)
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -539,6 +545,12 @@ exports.getUserLevel = async (req, res) => {
       });
     }
 
+    const levelController = require("./levelController");
+    const config = await levelController.getDynamicLevelConfig();
+    const t2 = Number(config.trophy?.thresholds?.[2] ?? 2000);
+    const t3 = Number(config.trophy?.thresholds?.[3] ?? 5000);
+    const t4 = Number(config.trophy?.thresholds?.[4] ?? 10000);
+
     const levelMap = {
       1: "Bronze",
       2: "Silver",
@@ -547,9 +559,9 @@ exports.getUserLevel = async (req, res) => {
     };
 
     const thresholds = {
-      1: 2000,
-      2: 5000,
-      3: 10000,
+      1: t2,
+      2: t3,
+      3: t4,
       4: 999999,
     };
 
@@ -557,9 +569,9 @@ exports.getUserLevel = async (req, res) => {
 
     // Determine current level
     let currentLevel = 1;
-    if (totalEarned >= 10000) currentLevel = 4;
-    else if (totalEarned >= 5000) currentLevel = 3;
-    else if (totalEarned >= 2000) currentLevel = 2;
+    if (totalEarned >= t4) currentLevel = 4;
+    else if (totalEarned >= t3) currentLevel = 3;
+    else if (totalEarned >= t2) currentLevel = 2;
     else currentLevel = 1;
 
     const nextLevelThreshold =

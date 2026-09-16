@@ -20,6 +20,9 @@ const {
   updateHelpRoom,
   deleteHelpRoom,
   toggleUserBan,
+  getLevelConfig,
+  updateLevelConfig,
+  resetMonthlyLevels,
 } = require("../controllers/adminContrroler");
 const upload = require("../middleware/multer.middleware");
 const { authMiddleware } = require("../middleware/auth");
@@ -52,6 +55,13 @@ router.post("/deduct-coins", deductCoinsFromUser);
 // profit & loss configuration endpoints
 router.get("/profit-loss-config", getProfitLossConfig);
 router.post("/profit-loss-config", updateProfitLossConfig);
+
+// level configuration endpoints
+router.get("/level-config", getLevelConfig);
+router.put("/level-config", updateLevelConfig);
+router.post("/level-config", updateLevelConfig);
+router.post("/level-config/reset-monthly", resetMonthlyLevels);
+router.post("/admin/reset-monthly-levels", resetMonthlyLevels);
 
 // dashboard statistics & revenue analytics
 router.get("/dashboard/stats", getDashboardStats);

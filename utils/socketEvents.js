@@ -206,9 +206,10 @@ async function distributePKRewards(pk, io) {
   try {
     if (!pk || pk.rewardsDistributed) return;
 
-    const WIN_REWARD = 100;
-    const LOSE_REWARD = 20;
-    const DRAW_REWARD = 50;
+    const config = await levelController.getDynamicLevelConfig();
+    const WIN_REWARD = config.room.pkWinExp;
+    const LOSE_REWARD = config.room.pkLoseExp;
+    const DRAW_REWARD = config.room.pkDrawExp;
 
     const leftUserId = pk.leftUser?.userId?.toString();
     const rightUserId = pk.rightUser?.userId?.toString();
@@ -324,11 +325,13 @@ async function endPKInternal(pkId, io) {
     // ===============================
     if (pk.mvpSupporter) {
       try {
-        await levelController.addRoomExp(pk.mvpSupporter.toString(), 50, io);
+        const config = await levelController.getDynamicLevelConfig();
+        const mvpExp = config.room.pkMvpExp;
+        await levelController.addRoomExp(pk.mvpSupporter.toString(), mvpExp, io);
 
         // Notify MVP user
         io.to(pk.mvpSupporter.toString()).emit("pk:mvp", {
-          message: "🏆 You are the MVP Supporter! +50 EXP",
+          message: `🏆 You are the MVP Supporter! +${mvpExp} EXP`,
         });
       } catch (e) {
         console.error("❌ MVP reward error:", e.message);
@@ -1185,7 +1188,8 @@ module.exports = (io) => {
         if (!roomStayTimers.has(userId)) {
           const stayTimer = setInterval(
             async () => {
-              await levelController.addPersonalExp(userId, 10, io);
+              const cfg = await levelController.getDynamicLevelConfig();
+              await levelController.addPersonalExp(userId, cfg.personal.expPerInterval, io);
             },
             5 * 60 * 1000,
           );
@@ -2508,12 +2512,14 @@ module.exports = (io) => {
         const micTimer = setInterval(
           async () => {
             try {
-              await levelController.addRoomExp(userId, 20, io);
+              const cfg = await levelController.getDynamicLevelConfig();
+              const expEarned = cfg.room.expPerMicInterval;
+              await levelController.addRoomExp(userId, expEarned, io);
 
               io.to(userId.toString()).emit("level:exp", {
                 type: "room",
-                exp: 20,
-                message: "+20 Room EXP (10 min mic)",
+                exp: expEarned,
+                message: `+${expEarned} Room EXP (10 min mic)`,
               });
             } catch (err) {
               console.error("❌ mic EXP error:", err.message);

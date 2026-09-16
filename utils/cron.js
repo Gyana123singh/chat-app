@@ -99,6 +99,11 @@ const performMonthlyReset = async () => {
       "stats.monthlyReceived": 0,
     },
   });
+
+  // 🔄 Reset All Personal & Room Levels for the new Monthly Session
+  const levelController = require("../controllers/levelController");
+  await levelController.resetAllLevelsForNewSession();
+
   console.log("✅ [CRON] Monthly reset done");
 };
 
