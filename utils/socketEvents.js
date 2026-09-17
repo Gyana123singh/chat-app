@@ -1290,19 +1290,14 @@ module.exports = (io) => {
           });
         }
 
-        const cleanDesc = description.trim().slice(0, 150);
-        if (!cleanDesc) {
-          return socket.emit("error", {
-            message: "Description cannot be empty",
-          });
-        }
+        const cleanDesc = description ? description.trim().slice(0, 150) : "";
 
         const username = senderName || socket.data.user?.username || socket.data.username || "Host/Admin";
         const room = await Room.findOneAndUpdate(
           { roomId },
           { 
             description: cleanDesc,
-            descriptionUpdatedBy: username,
+            descriptionUpdatedBy: cleanDesc ? username : "",
           },
           { new: true },
         );
@@ -1312,11 +1307,11 @@ module.exports = (io) => {
         // ✅ already correct (with roomId)
         io.to(`room:${roomId}`).emit("room:description", {
           roomId,
-          description: room.description,
+          description: room.description || "",
           updatedBy: room.descriptionUpdatedBy || "",
         });
 
-        console.log("✅ Room description updated:", cleanDesc);
+        console.log("✅ Room description updated:", cleanDesc ? cleanDesc : "(cleared)");
       } catch (err) {
         console.error("❌ room description error:", err.message);
       }
@@ -4281,8 +4276,12 @@ module.exports = (io) => {
           .lean();
         const username = dbUser?.username || socket.data.user?.username || socket.data.username || "Host/Admin";
 
-        // 1. Clear from DB
+        // 1. Clear from DB (both messages and room announcement)
         await Message.deleteMany({ room: rId });
+        await Room.findOneAndUpdate(
+          { roomId: rId },
+          { description: "", descriptionUpdatedBy: "" }
+        );
 
         // 2. Create the system notification message in DB
         const systemText = `${username} cleared the chat message`;
@@ -4324,8 +4323,13 @@ module.exports = (io) => {
         });
         io.to(roomName).emit("room:messages", [systemMessagePayload]);
         io.to(roomName).emit("message:receive", systemMessagePayload);
+        io.to(roomName).emit("room:description", {
+          roomId: rId,
+          description: "",
+          updatedBy: "",
+        });
 
-        console.log(`🧹 Chat cleaned in room: ${rId} by ${username} (${userId})`);
+        console.log(`🧹 Chat and announcement cleaned in room: ${rId} by ${username} (${userId})`);
       } catch (err) {
         console.error("❌ room:chat:clean error:", err);
       }
