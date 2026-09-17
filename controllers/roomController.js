@@ -700,7 +700,10 @@ exports.updateRoom = async (req, res) => {
       // Save it to User model so it is persisted for the next room creation
       await User.findByIdAndUpdate(req.user.id, { roomName: title.trim() });
     }
-    room.description = description || room.description;
+    if (description !== undefined) {
+      room.description = description ? description.trim() : "";
+      room.descriptionUpdatedBy = description && description.trim() ? (req.user?.username || "") : "";
+    }
     room.category = category || room.category;
     room.privacy = privacy || room.privacy;
     room.maxParticipants = maxParticipants || room.maxParticipants;
