@@ -99,13 +99,19 @@ async function isHostOrAdmin(roomId, userId) {
   // ✅ Super Admin check
   if (await isSuperAdmin(userId)) return true;
 
-  const room = await Room.findOne({ roomId });
+  const room = await Room.findOne({
+    $or: [
+      { roomId },
+      ...(mongoose.Types.ObjectId.isValid(roomId) ? [{ _id: roomId }] : []),
+    ],
+  });
   if (!room) return false;
 
   const uid = userId.toString();
 
-  // ✅ Host check
+  // ✅ Host / Creator check
   if (room.host && room.host.toString() === uid) return true;
+  if (room.creator && room.creator.toString() === uid) return true;
 
   // ✅ Admin check
   if (Array.isArray(room.admins)) {
@@ -120,9 +126,18 @@ async function isHostOrAdmin(roomId, userId) {
 // ✅ NEW: Strict Host Check
 async function isHost(roomId, userId) {
   if (!roomId || !userId) return false;
-  const room = await Room.findOne({ roomId });
-  if (!room || !room.host) return false;
-  return room.host.toString() === userId.toString();
+  const room = await Room.findOne({
+    $or: [
+      { roomId },
+      ...(mongoose.Types.ObjectId.isValid(roomId) ? [{ _id: roomId }] : []),
+    ],
+  });
+  if (!room) return false;
+  const uid = userId.toString();
+  return (
+    (room.host && room.host.toString() === uid) ||
+    (room.creator && room.creator.toString() === uid)
+  );
 }
 
 // 🎬 Helper to trigger and broadcast entrance effect to room
@@ -1293,8 +1308,14 @@ module.exports = (io) => {
         const cleanDesc = description ? description.trim().slice(0, 150) : "";
 
         const username = senderName || socket.data.user?.username || socket.data.username || "Host/Admin";
+        const roomQuery = {
+          $or: [
+            { roomId },
+            ...(mongoose.Types.ObjectId.isValid(roomId) ? [{ _id: roomId }] : []),
+          ],
+        };
         const room = await Room.findOneAndUpdate(
-          { roomId },
+          roomQuery,
           { 
             description: cleanDesc,
             descriptionUpdatedBy: cleanDesc ? username : "",
@@ -1304,11 +1325,14 @@ module.exports = (io) => {
 
         if (!room) return;
 
-        // ✅ already correct (with roomId)
-        io.to(`room:${roomId}`).emit("room:description", {
-          roomId,
-          description: room.description || "",
-          updatedBy: room.descriptionUpdatedBy || "",
+        const canonicalRoomId = room.roomId || roomId;
+        const targets = new Set([`room:${canonicalRoomId}`, `room:${roomId}`]);
+        targets.forEach((target) => {
+          io.to(target).emit("room:description", {
+            roomId: canonicalRoomId,
+            description: room.description || "",
+            updatedBy: room.descriptionUpdatedBy || "",
+          });
         });
 
         console.log("✅ Room description updated:", cleanDesc ? cleanDesc : "(cleared)");
@@ -4260,12 +4284,13 @@ module.exports = (io) => {
     });
 
     // CLEAN CHAT (ONLY HOST/ADMIN)
-    socket.on("room:chat:clean", async ({ roomId }) => {
+    socket.on("room:chat:clean", async (data) => {
       try {
         const userId = socket.data.userId;
-        if (!userId || !roomId) return;
+        const rawRoomId = data && typeof data === "object" ? (data.roomId || data.id) : data;
+        if (!userId || !rawRoomId) return;
 
-        const rId = roomId.toString();
+        const rId = rawRoomId.toString();
 
         const allowed = await isHostOrAdmin(rId, userId);
         if (!allowed) return socket.emit("error:permission", { message: "Only host/admin can clean chat" });
@@ -4276,11 +4301,27 @@ module.exports = (io) => {
           .lean();
         const username = dbUser?.username || socket.data.user?.username || socket.data.username || "Host/Admin";
 
+        const roomQuery = {
+          $or: [
+            { roomId: rId },
+            ...(mongoose.Types.ObjectId.isValid(rId) ? [{ _id: rId }] : []),
+          ],
+        };
+        const targetRoom = await Room.findOne(roomQuery);
+        const canonicalRoomId = targetRoom?.roomId || rId;
+
         // 1. Clear from DB (both messages and room announcement)
-        await Message.deleteMany({ room: rId });
+        await Message.deleteMany({
+          $or: [
+            { room: canonicalRoomId },
+            { room: rId },
+            ...(targetRoom?._id ? [{ room: targetRoom._id.toString() }] : []),
+          ],
+        });
         await Room.findOneAndUpdate(
-          { roomId: rId },
-          { description: "", descriptionUpdatedBy: "" }
+          roomQuery,
+          { description: "", descriptionUpdatedBy: "" },
+          { new: true }
         );
 
         // 2. Create the system notification message in DB
@@ -4288,7 +4329,7 @@ module.exports = (io) => {
         const newMessage = await Message.create({
           content: systemText,
           sender: userId,
-          room: rId,
+          room: canonicalRoomId,
           messageType: "system",
         });
 
@@ -4296,7 +4337,7 @@ module.exports = (io) => {
         const systemMessagePayload = {
           id: `system-${userId}-${Date.now()}`,
           dbId: newMessage._id,
-          roomId: rId,
+          roomId: canonicalRoomId,
           userId,
           displayId: dbUser?.displayId || socket.data.displayId || null,
           username,
@@ -4312,24 +4353,29 @@ module.exports = (io) => {
         };
 
         // 4. Clear from In-Memory Map and seed with the system message
-        roomMessages.set(rId, [systemMessagePayload]);
+        roomMessages.set(canonicalRoomId.toString(), [systemMessagePayload]);
+        if (rId.toString() !== canonicalRoomId.toString()) {
+          roomMessages.set(rId.toString(), [systemMessagePayload]);
+        }
 
         // 5. Broadcast specific events to everyone in the room
-        const roomName = `room:${rId}`;
-        io.to(roomName).emit("room:chat:cleaned", {
-          roomId: rId,
-          clearedBy: username,
-          message: systemMessagePayload
-        });
-        io.to(roomName).emit("room:messages", [systemMessagePayload]);
-        io.to(roomName).emit("message:receive", systemMessagePayload);
-        io.to(roomName).emit("room:description", {
-          roomId: rId,
-          description: "",
-          updatedBy: "",
+        const broadcastTargets = new Set([`room:${canonicalRoomId}`, `room:${rId}`]);
+        broadcastTargets.forEach((roomName) => {
+          io.to(roomName).emit("room:chat:cleaned", {
+            roomId: canonicalRoomId,
+            clearedBy: username,
+            message: systemMessagePayload,
+          });
+          io.to(roomName).emit("room:messages", [systemMessagePayload]);
+          io.to(roomName).emit("message:receive", systemMessagePayload);
+          io.to(roomName).emit("room:description", {
+            roomId: canonicalRoomId,
+            description: "",
+            updatedBy: "",
+          });
         });
 
-        console.log(`🧹 Chat and announcement cleaned in room: ${rId} by ${username} (${userId})`);
+        console.log(`🧹 Chat and announcement cleaned in room: ${canonicalRoomId} by ${username} (${userId})`);
       } catch (err) {
         console.error("❌ room:chat:clean error:", err);
       }

@@ -682,8 +682,13 @@ exports.updateRoom = async (req, res) => {
       });
     }
 
-    const isHost = room.host.toString() === req.user.id;
-    const isAdmin = Array.isArray(room.admins) && room.admins.some(adminId => adminId.toString() === req.user.id);
+    const isHost =
+      (room.host && room.host.toString() === req.user.id) ||
+      (room.creator && room.creator.toString() === req.user.id) ||
+      (req.user?.role === "superadmin");
+    const isAdmin =
+      Array.isArray(room.admins) &&
+      room.admins.some((adminId) => adminId && adminId.toString() === req.user.id);
 
     if (!isHost && !isAdmin) {
       return res.status(403).json({
@@ -710,6 +715,22 @@ exports.updateRoom = async (req, res) => {
     room.tags = tags || room.tags;
 
     await room.save();
+
+    const io = req.app.get("io");
+    if (io) {
+      const canonicalRoomId = room.roomId;
+      const targets = new Set([`room:${canonicalRoomId}`, `room:${roomId}`]);
+      targets.forEach((target) => {
+        io.to(target).emit("room:description", {
+          roomId: canonicalRoomId,
+          description: room.description || "",
+          updatedBy: room.descriptionUpdatedBy || "",
+        });
+        io.to(target).emit("room:updated", {
+          room,
+        });
+      });
+    }
 
     res.status(200).json({
       success: true,
