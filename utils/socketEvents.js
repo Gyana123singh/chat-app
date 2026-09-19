@@ -1934,6 +1934,28 @@ module.exports = (io) => {
             result: luck.result,
           });
         }
+
+        // 🌐 Global Gift & Win Banner Broadcast (Emitted to every user across all screens)
+        const isWin = luck && typeof luck.coins === "number" && luck.coins > 0;
+        io.emit("gift:global_banner", {
+          roomId,
+          fromUserId,
+          fromUsername: socket.data.username,
+          fromAvatar: socket.data.avatar,
+          fromDisplayId: socket.data.displayId,
+          recipients: recipients || [],
+          gift: {
+            _id: gift._id,
+            name: gift.name,
+            icon: gift.icon,
+            animationUrl: gift.animationUrl || gift.icon,
+            price: gift.price,
+          },
+          quantity,
+          isWin,
+          winCoins: isWin ? luck.coins : 0,
+          luckResult: luck ? luck.result : null,
+        });
         // =========================
         // 8️⃣ Success Response
         // =========================
