@@ -1780,8 +1780,10 @@ module.exports = (io) => {
         const isHotCategory = giftCategory === "HOT";
         const giftName = (gift.name || "").toString().trim().toLowerCase();
         const isLollipopOrChai =
+          giftName === "lolipop" ||
           giftName === "lollipop" ||
           giftName === "chai" ||
+          giftName.includes("lolipop") ||
           giftName.includes("lollipop") ||
           giftName.includes("chai");
 
