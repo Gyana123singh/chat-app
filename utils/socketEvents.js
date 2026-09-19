@@ -1771,26 +1771,27 @@ module.exports = (io) => {
         }
 
         // ==========================
-        // 🎰 PROFIT / LOSS SYSTEM (FIXED FOR SELF SEND)
+        // 🎰 PROFIT / LOSS SYSTEM (RESTRICTED TO 'LOLLIPOP' & 'CHAI' IN 'HOT')
         // ==========================
         let luck = null;
         const amount = totalCost;
 
-        // Fetch dynamic min coins required from ProfitLossConfig database
-        let minCoins = 5000;
-        try {
-          const plConfig = await ProfitLossConfig.findOne().lean();
-          if (plConfig && typeof plConfig.minCoinsRequired === "number") {
-            minCoins = plConfig.minCoinsRequired;
-          }
-        } catch (e) {
-          console.error("Error fetching minCoinsRequired from DB:", e);
-        }
+        const giftCategory = (gift.category || gift.effectType || "").toString().trim().toUpperCase();
+        const isHotCategory = giftCategory === "HOT";
+        const giftName = (gift.name || "").toString().trim().toLowerCase();
+        const isLollipopOrChai =
+          giftName === "lollipop" ||
+          giftName === "chai" ||
+          giftName.includes("lollipop") ||
+          giftName.includes("chai");
 
-        if (amount >= minCoins && finalSendType !== "pk") {
+        // Runs on any coin amount for Lollipop and Chai in HOT category (excluding PK battles)
+        if (isHotCategory && isLollipopOrChai && finalSendType !== "pk") {
           luck = await calculateProfitLoss(amount);
 
           console.log("🎰 PROFIT/LOSS DEBUG:", {
+            giftName: gift.name,
+            giftCategory,
             amount,
             isSelfSend,
             result: luck.result,
@@ -1799,9 +1800,19 @@ module.exports = (io) => {
           });
 
           if (luck.coins !== 0) {
-            await User.findByIdAndUpdate(fromUserId, {
-              $inc: { coins: luck.coins },
-            });
+            if (luck.coins < 0) {
+              await User.findByIdAndUpdate(fromUserId, [
+                {
+                  $set: {
+                    coins: { $max: [0, { $add: ["$coins", luck.coins] }] },
+                  },
+                },
+              ]);
+            } else {
+              await User.findByIdAndUpdate(fromUserId, {
+                $inc: { coins: luck.coins },
+              });
+            }
           }
         }
         // =========================
@@ -1927,7 +1938,7 @@ module.exports = (io) => {
         let finalBalance = sender.coins;
 
         if (luck && luck.coins !== 0) {
-          finalBalance = sender.coins + luck.coins;
+          finalBalance = Math.max(0, sender.coins + luck.coins);
         }
 
         socket.emit("gift:success", {

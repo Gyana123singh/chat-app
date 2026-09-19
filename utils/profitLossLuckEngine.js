@@ -25,7 +25,12 @@ async function calculateProfitLoss(amount) {
     cumulative += outcome.chance;
 
     if (rand <= cumulative) {
-      const coins = Math.floor((amount * outcome.percent) / 100);
+      let coins = Math.round((amount * outcome.percent) / 100);
+      if (outcome.percent > 0 && coins === 0 && amount > 0) {
+        coins = 1;
+      } else if (outcome.percent < 0 && coins === 0 && amount > 0) {
+        coins = -1;
+      }
 
       return {
         result: outcome.type,
